@@ -1,0 +1,806 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer base {
+  :root {
+    /* ── SPACING TOKENS (8px grid) ── */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    /* ── BRAND (unchanged in both modes) ── */
+    --brand-navy: 207 38% 23%;
+    --brand-midnight: 195 17% 13%;
+    --brand-sky: 204 52% 84%;
+    --brand-sky-dark: 197 34% 63%;
+    --brand-offwhite: 0 0% 91%;
+    --brand-cement: 0 0% 91%;
+    --brand-orange: 27 72% 55%;
+    --brand-orange-hover: 27 78% 48%;
+
+    /* ── LIGHT MODE SEMANTIC TOKENS ── */
+
+    /* Backgrounds */
+    --bg-scene: linear-gradient(145deg, #eef6fb 0%, #f4f2e9 30%, #edf4f8 60%, #f0ede4 100%);
+    --bg-surface: #ffffff;
+    --bg-header: #ffffff;
+    --border-header: rgba(36, 60, 81, 0.08);
+    --bg-surface-alt: rgba(255, 255, 255, 0.64);
+    --bg-main: radial-gradient(ellipse at center, rgba(240, 237, 228, 0.20), rgba(255, 255, 255, 0.20)), linear-gradient(180deg, #F5FCFF 0%, #E8E8E8 100%);
+    --bg-card: rgba(255, 255, 255, 0.58);
+    --bg-card-hover: rgba(255, 255, 255, 0.75);
+    --bg-card-strong: rgba(255, 255, 255, 0.72);
+    --bg-sidebar: rgba(255, 255, 255, 0.65);
+    --bg-input: rgba(255, 255, 255, 0.72);
+    --bg-nav-active: rgba(36, 60, 81, 0.08);
+    --bg-nav-hover: rgba(36, 60, 81, 0.05);
+    --bg-table-alt: rgba(36, 60, 81, 0.025);
+    --bg-table-header: rgba(36, 60, 81, 0.04);
+    --stat-value-color: #243c51;
+    --view-toggle-bg: rgba(255, 255, 255, 0.60);
+    --view-toggle-active-bg: rgba(36, 60, 81, 0.08);
+    --view-toggle-active-color: #243c51;
+    --nudge-card-bg: linear-gradient(white, white) padding-box, linear-gradient(135deg, #AADAF2 0%, #FFF0DD 47%, #FE9B46 100%) border-box;
+    --ai-badge-bg: #C0DEED;
+    --ai-badge-color: #243c51;
+    --stat-card-bg: linear-gradient(rgba(192, 222, 237, 0.10), rgba(192, 222, 237, 0.10)), rgba(255, 255, 255, 0.64);
+    --stat-card-border: rgba(192, 222, 237, 0.40);
+    --stat-card-commission-border: rgba(225, 135, 57, 0.20);
+    --placeholder-card-bg: rgba(255, 255, 255, 0.35);
+
+    /* Borders */
+    --border-card: rgba(255, 255, 255, 0.82);
+    --border-subtle: rgba(36, 60, 81, 0.08);
+    --border-input: rgba(36, 60, 81, 0.12);
+    --border-divider: rgba(36, 60, 81, 0.07);
+
+    /* Shadows */
+    --shadow-card: 0 4px 24px rgba(36, 60, 81, 0.09), 0 1px 4px rgba(36, 60, 81, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.70);
+    --shadow-card-hover: 0 8px 32px rgba(36, 60, 81, 0.13), 0 2px 8px rgba(36, 60, 81, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.80);
+    --shadow-sidebar: 2px 0 24px rgba(36, 60, 81, 0.06);
+
+    /* Blur */
+    --glass-blur: blur(20px) saturate(160%);
+    --glass-blur-sm: blur(16px) saturate(140%);
+
+    /* ── TEXT — WCAG AA VERIFIED ── */
+    --text-primary: #1B2326;
+    --text-secondary: #6B7280;
+    --text-tertiary: #4A5568;
+    --text-muted: #374151;
+    --text-faint: #9ca3af;
+    --text-on-dark: #ffffff;
+    --text-on-orange: #ffffff;
+    --text-link: #1a5276;
+    --text-orange-ui: #b85c1a;
+
+    /* ── STATUS TEXT COLORS (light mode) ── */
+    --status-signed-text: #065f46;
+    --status-leases-text: #1d4ed8;
+    --status-loi-text: #1e6091;
+    --status-market-text: #5b21b6;
+    --status-tour-text: #0f766e;
+    --status-hold-text: #92400e;
+    --status-intro-text: #374151;
+    --status-sales-text: #3730a3;
+
+    /* ── STATUS PILL BACKGROUNDS (light mode) ── */
+    --pill-signed-bg: rgba(5, 150, 105, 0.15);
+    --pill-leases-bg: rgba(29, 78, 216, 0.15);
+    --pill-loi-bg: rgba(30, 96, 145, 0.15);
+    --pill-market-bg: rgba(91, 33, 182, 0.15);
+    --pill-tour-bg: rgba(15, 118, 110, 0.15);
+    --pill-hold-bg: rgba(146, 64, 14, 0.15);
+    --pill-intro-bg: rgba(55, 65, 81, 0.12);
+    --pill-sales-bg: rgba(55, 48, 163, 0.15);
+
+    /* Stage time */
+    --stage-ok: #065f46;
+    --stage-ok-bg: rgba(5, 150, 105, 0.08);
+    --stage-warn: #92400e;
+    --stage-warn-bg: rgba(146, 64, 14, 0.08);
+    --stage-bad: #991b1b;
+    --stage-bad-bg: rgba(153, 27, 27, 0.09);
+
+    /* Sidebar dark mode specifics */
+    --sidebar-logo-text: #243c51;
+    --sidebar-logo-sub: #c0deed;
+    --sidebar-nav-default: #6b7280;
+    --sidebar-nav-active-text: #243c51;
+    --sidebar-section-label: #b8c5d0;
+
+    /* Orb colors */
+    --orb-1: radial-gradient(circle, rgba(192, 222, 237, 0.55), rgba(192, 222, 237, 0.08));
+    --orb-2: radial-gradient(circle, rgba(225, 135, 57, 0.16), transparent);
+    --orb-3: radial-gradient(circle, rgba(192, 222, 237, 0.30), transparent);
+
+    /* ── Shadcn semantic tokens ── */
+    --background: 43 24% 93%;
+    --foreground: 195 17% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 195 17% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 195 17% 15%;
+    --primary: 207 38% 23%;
+    --primary-foreground: 43 24% 93%;
+    --secondary: 204 52% 84%;
+    --secondary-foreground: 207 38% 23%;
+    --muted: 210 15% 92%;
+    --muted-foreground: 215 13% 50%;
+    --accent: 204 52% 84%;
+    --accent-foreground: 207 38% 23%;
+    --destructive: 27 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 10% 88%;
+    --input: 210 10% 88%;
+    --ring: 207 38% 23%;
+    --radius: 0.5rem;
+
+    /* Deal stage colors */
+    --stage-prospecting: 204 52% 50%;
+    --stage-loi: 40 85% 50%;
+    --stage-lease: 27 72% 55%;
+    --stage-open: 152 45% 42%;
+    --stage-closed: 207 15% 45%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 195 17% 15%;
+    --sidebar-primary: 207 38% 23%;
+    --sidebar-primary-foreground: 43 24% 93%;
+    --sidebar-accent: 207 30% 20%;
+    --sidebar-accent-foreground: 43 24% 93%;
+    --sidebar-border: 210 10% 88%;
+    --sidebar-ring: 204 52% 84%;
+    --nav-height: 3.5rem;
+
+    /* Toggle track */
+    --toggle-track: rgba(36, 60, 81, 0.15);
+    --toggle-row-bg: rgba(36, 60, 81, 0.05);
+    --toggle-row-border: rgba(36, 60, 81, 0.08);
+  }
+
+  /* ════════════════════════════════════════
+     DARK MODE OVERRIDES
+     ════════════════════════════════════════ */
+  .dark {
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    --bg-scene: linear-gradient(145deg, #0E171D 0%, #12202B 40%, #1a2d3a 75%, #0E171D 100%);
+    --bg-surface: #12202B;
+    --bg-header: rgba(18, 32, 43, 0.70);
+    --border-header: rgba(192, 222, 237, 0.08);
+    --bg-surface-alt: rgba(255, 255, 255, 0.06);
+    --bg-main: radial-gradient(ellipse at center, rgba(14, 23, 29, 0.40), rgba(18, 32, 43, 0.40)), linear-gradient(180deg, #0E171D 0%, #12202B 100%);
+    --bg-card: rgba(255, 255, 255, 0.07);
+    --bg-card-hover: rgba(255, 255, 255, 0.11);
+    --bg-card-strong: rgba(255, 255, 255, 0.10);
+    --bg-sidebar: #12202B;
+    --bg-input: rgba(255, 255, 255, 0.08);
+    --bg-nav-active: rgba(192, 222, 237, 0.10);
+    --bg-nav-hover: rgba(255, 255, 255, 0.06);
+    --bg-table-alt: rgba(255, 255, 255, 0.03);
+    --bg-table-header: rgba(255, 255, 255, 0.05);
+    --stat-value-color: #f0f4f8;
+    --view-toggle-bg: rgba(255, 255, 255, 0.06);
+    --view-toggle-active-bg: rgba(255, 255, 255, 0.12);
+    --view-toggle-active-color: #f0f4f8;
+    --nudge-card-bg: linear-gradient(rgba(21, 34, 51, 0.95), rgba(21, 34, 51, 0.95)) padding-box, linear-gradient(135deg, rgba(170, 218, 242, 0.4) 0%, rgba(225, 135, 57, 0.5) 100%) border-box;
+    --ai-badge-bg: rgba(192, 222, 237, 0.15);
+    --ai-badge-color: #C0DEED;
+    --stat-card-bg: linear-gradient(180deg, rgba(36, 60, 81, 0.35) 0%, rgba(36, 60, 81, 0.12) 100%);
+    --stat-card-border: rgba(192, 222, 237, 0.08);
+    --stat-card-commission-border: rgba(225, 135, 57, 0.20);
+    --placeholder-card-bg: rgba(255, 255, 255, 0.04);
+
+    --border-card: rgba(255, 255, 255, 0.12);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-input: rgba(255, 255, 255, 0.14);
+    --border-divider: rgba(255, 255, 255, 0.07);
+
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.30), 0 1px 4px rgba(0, 0, 0, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --shadow-card-hover: 0 8px 32px rgba(0, 0, 0, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    --shadow-sidebar: 4px 0 32px rgba(0, 0, 0, 0.30);
+
+    --text-primary: #f0f4f8;
+    --text-secondary: #cbd5e1;
+    --text-tertiary: #94a3b8;
+    --text-muted: #94a3b8;
+    --text-faint: #64748b;
+    --text-on-dark: #ffffff;
+    --text-on-orange: #ffffff;
+    --text-link: #93c5fd;
+    --text-orange-ui: #f5a96b;
+
+    --status-signed-text: #34d399;
+    --status-leases-text: #60a5fa;
+    --status-loi-text: #7dd3fc;
+    --status-market-text: #c4b5fd;
+    --status-tour-text: #2dd4bf;
+    --status-hold-text: #fb923c;
+    --status-intro-text: #94a3b8;
+    --status-sales-text: #a5b4fc;
+
+    --pill-signed-bg: rgba(52, 211, 153, 0.15);
+    --pill-leases-bg: rgba(96, 165, 250, 0.15);
+    --pill-loi-bg: rgba(125, 211, 252, 0.15);
+    --pill-market-bg: rgba(196, 181, 253, 0.15);
+    --pill-tour-bg: rgba(45, 212, 191, 0.15);
+    --pill-hold-bg: rgba(251, 146, 60, 0.15);
+    --pill-intro-bg: rgba(148, 163, 184, 0.12);
+    --pill-sales-bg: rgba(165, 180, 252, 0.15);
+
+    --stage-ok: #34d399;
+    --stage-ok-bg: rgba(52, 211, 153, 0.10);
+    --stage-warn: #fb923c;
+    --stage-warn-bg: rgba(251, 146, 60, 0.10);
+    --stage-bad: #f87171;
+    --stage-bad-bg: rgba(248, 113, 113, 0.12);
+
+    --sidebar-logo-text: #e8f4f8;
+    --sidebar-logo-sub: #7bafc8;
+    --sidebar-nav-default: rgba(255, 255, 255, 0.50);
+    --sidebar-nav-active-text: #e8f4f8;
+    --sidebar-section-label: rgba(255, 255, 255, 0.22);
+
+    --orb-1: radial-gradient(circle, rgba(36, 60, 81, 0.7), rgba(26, 80, 118, 0.2));
+    --orb-2: radial-gradient(circle, rgba(192, 222, 237, 0.12), transparent);
+    --orb-3: radial-gradient(circle, rgba(225, 135, 57, 0.08), transparent);
+
+    /* Shadcn overrides */
+    --background: 210 30% 10%;
+    --foreground: 210 20% 96%;
+    --card: 210 28% 14%;
+    --card-foreground: 210 20% 96%;
+    --popover: 210 28% 14%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 204 52% 84%;
+    --primary-foreground: 207 38% 23%;
+    --secondary: 207 30% 20%;
+    --secondary-foreground: 210 20% 90%;
+    --muted: 210 20% 18%;
+    --muted-foreground: 215 13% 65%;
+    --accent: 207 30% 20%;
+    --accent-foreground: 210 20% 90%;
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 15% 22%;
+    --input: 210 15% 22%;
+    --ring: 204 52% 84%;
+    --sidebar-background: 210 30% 8%;
+    --sidebar-foreground: 210 20% 90%;
+    --sidebar-primary: 204 52% 84%;
+    --sidebar-primary-foreground: 207 38% 23%;
+    --sidebar-accent: 207 20% 18%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 210 15% 22%;
+    --sidebar-ring: 204 52% 84%;
+
+    --toggle-track: #243c51;
+    --toggle-row-bg: rgba(255, 255, 255, 0.05);
+    --toggle-row-border: rgba(255, 255, 255, 0.08);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply text-foreground font-sans antialiased;
+    background: transparent;
+    color: var(--text-primary);
+    transition: color 0.30s ease;
+    font-family: Inter, system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-sans font-bold;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+
+  /* Global focus indicator — WCAG AA */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--brand-sky-dark));
+    outline-offset: 2px;
+  }
+
+  .dark *:focus-visible {
+    outline-color: rgba(192, 222, 237, 0.80);
+  }
+}
+
+@layer components {
+  .nav-link {
+    @apply text-sm font-semibold tracking-wide uppercase transition-colors duration-200;
+  }
+
+  .nav-link-active {
+    color: #E18739;
+    border-bottom: 2px solid #E18739;
+  }
+
+  .deal-stage-badge {
+    @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold;
+  }
+
+  /* Glass card base */
+  .glass-card {
+    background: var(--bg-card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    transition: background 0.30s ease, border-color 0.30s ease, box-shadow 0.30s ease;
+  }
+
+  .glass-card:hover {
+    background: var(--bg-card-hover);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+    border-color: var(--border-card);
+  }
+
+  .glass-card-static {
+    background: var(--bg-card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+
+  .card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .site-card {
+    background: var(--bg-card);
+    backdrop-filter: var(--glass-blur-sm);
+    -webkit-backdrop-filter: var(--glass-blur-sm);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-card);
+    padding: var(--space-4);
+    cursor: pointer;
+    transition: background 0.30s ease, border-color 0.30s ease, box-shadow 0.30s ease;
+  }
+
+  .site-card:hover {
+    background: var(--bg-card-hover);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .table-row-hover {
+    @apply transition-colors duration-150 cursor-pointer;
+  }
+
+  .table-row-hover:hover {
+    background: var(--bg-nav-hover);
+  }
+
+  .brand-accent-text {
+    @apply font-semibold uppercase text-xs;
+    letter-spacing: 0.15em;
+  }
+
+  /* Glass table wrapper */
+  .glass-table {
+    background: var(--bg-card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+
+  .glass-table thead tr {
+    background: var(--bg-table-header);
+  }
+
+  .glass-table thead th {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .glass-table tbody tr {
+    border-bottom: 1px solid var(--border-divider);
+  }
+
+  .glass-table tbody tr:hover {
+    background: var(--bg-nav-hover);
+  }
+
+  .glass-table tbody td {
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+
+  /* Glass input */
+  .glass-input {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-input);
+    border-radius: 9999px;
+    box-shadow: 0 1px 4px rgba(36, 60, 81, 0.06);
+    color: var(--text-primary);
+    outline: none;
+    transition: all 0.2s ease;
+  }
+
+  .glass-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .glass-input:focus {
+    border-color: var(--border-input);
+    background: var(--bg-surface);
+    box-shadow: 0 0 0 4px rgba(192, 222, 237, 0.30), 0 1px 4px rgba(36, 60, 81, 0.08);
+  }
+
+  /* Global Select trigger & dropdown overrides */
+  [data-radix-popper-content-wrapper] [role="listbox"],
+  [data-radix-select-content],
+  .select-content {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-input) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 20px rgba(36, 60, 81, 0.10) !important;
+  }
+
+  /* Force all select triggers to surface background */
+  button[data-radix-select-trigger],
+  [role="combobox"] {
+    background: var(--bg-surface) !important;
+  }
+
+  /* Section label — 10px decorative ALL CAPS (approved exception) */
+  .section-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+  }
+
+  /* Status pills — using CSS variables */
+  .pill-signed {
+    background: var(--pill-signed-bg);
+    color: var(--status-signed-text);
+  }
+
+  .pill-leases {
+    background: var(--pill-leases-bg);
+    color: var(--status-leases-text);
+  }
+
+  .pill-loi {
+    background: var(--pill-loi-bg);
+    color: var(--status-loi-text);
+  }
+
+  .pill-loi-neg {
+    background: var(--pill-loi-bg);
+    color: var(--status-loi-text);
+  }
+
+  .pill-market-study {
+    background: var(--pill-market-bg);
+    color: var(--status-market-text);
+  }
+
+  .pill-prop-tour {
+    background: var(--pill-tour-bg);
+    color: var(--status-tour-text);
+  }
+
+  .pill-on-hold {
+    background: var(--pill-hold-bg);
+    color: var(--status-hold-text);
+  }
+
+  .pill-intro-call {
+    background: var(--pill-intro-bg);
+    color: var(--status-intro-text);
+  }
+
+  .pill-sales-call {
+    background: var(--pill-sales-bg);
+    color: var(--status-sales-text);
+  }
+
+  /* CTA Buttons */
+  .cta-primary {
+    background: #243C51;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(36, 60, 81, 0.28);
+    border: none;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .cta-primary:hover {
+    background: #1a2f3f;
+    box-shadow: 0 6px 18px rgba(36, 60, 81, 0.35);
+  }
+
+  .cta-secondary {
+    background: #E18739;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(36, 60, 81, 0.28);
+    border: none;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .cta-secondary:hover {
+    background: #c4622a;
+    box-shadow: 0 6px 18px rgba(36, 60, 81, 0.35);
+  }
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(36, 60, 81, 0.12);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Orb animation */
+@keyframes orb-drift {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+
+  to {
+    transform: translate(24px, -32px) scale(1.06);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Leaflet overrides */
+.leaflet-container {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  z-index: 1;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+}
+
+.leaflet-control-zoom a {
+  border-radius: 4px !important;
+}
+
+/* ════════════════════════════════════════
+   RESPONSIVE — TABLET & MOBILE
+   Desktop (>=1024px) is UNTOUCHED.
+   ════════════════════════════════════════ */
+
+/* ── FORMS — prevent iOS zoom ── */
+@media (max-width: 767px) {
+
+  input,
+  textarea,
+  select,
+  .glass-input {
+    font-size: 16px !important;
+  }
+}
+
+/* ── GLASS PERF on mobile ── */
+@media (max-width: 767px) {
+
+  .glass-card,
+  .glass-card-static {
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+  }
+}
+
+/* ── ACTIVE PIPELINE — horizontal scroll below 1024 ── */
+@media (max-width: 1023px) {
+  .pipeline-scroll-strip {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    display: flex !important;
+  }
+
+  .pipeline-scroll-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pipeline-scroll-strip>div {
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+}
+
+/* ── BOTTOM NAV (mobile <768px) ── */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: #ffffff;
+    border-top: 1px solid rgba(36, 60, 81, 0.10);
+    display: flex;
+    align-items: stretch;
+    z-index: 200;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .dark .mobile-bottom-nav {
+    background: #0d1b2a;
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-bottom-nav a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(36, 60, 81, 0.40);
+    text-decoration: none;
+    min-height: 56px;
+  }
+
+  .dark .mobile-bottom-nav a {
+    color: rgba(255, 255, 255, 0.40);
+  }
+
+  .mobile-bottom-nav a.active {
+    color: #243c51;
+  }
+
+  .dark .mobile-bottom-nav a.active {
+    color: #f0f4f8;
+  }
+}
+
+/* ── MODALS → bottom sheets on mobile ── */
+@media (max-width: 767px) {
+
+  [data-radix-dialog-content].modal-bottom-sheet,
+  .modal-bottom-sheet {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    transform: none !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90vh !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-y: auto !important;
+    animation: slideUpSheet 0.25s ease !important;
+  }
+
+  @keyframes slideUpSheet {
+    from {
+      transform: translateY(100%);
+    }
+
+    to {
+      transform: translateY(0);
+    }
+  }
+}
+
+/* ── MOBILE SIDEBAR OVERLAY ── */
+@media (max-width: 767px) {
+  .mobile-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .mobile-sidebar-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 301;
+    background: #ffffff;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    animation: slideInLeft 0.25s ease;
+    overflow-y: auto;
+  }
+
+  .dark .mobile-sidebar-drawer {
+    background: #0d1b2a;
+  }
+
+  @keyframes slideInLeft {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(0);
+    }
+  }
+}
