@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { deals, brands, getAllSites, getBrandById, getDealById, DealStage } from "@/data/mockData";
+import { deals, brands, getAllSites, getBrandById, getDealById, DealStage } from "@/data/mapRuntimeData";
 import { MapComponent } from "@/components/MapComponent";
 import { SiteCard } from "@/components/SiteCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";

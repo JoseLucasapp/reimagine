@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
+    "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings=0",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -b --pretty false",
     "format": "eslint . --fix",
     "format:check": "eslint . --max-warnings=0",
-    "test": "vitest run --pool=forks",
+    "test": "vitest run --pool=forks --reporter=dot",
     "test:watch": "vitest --pool=forks",
     "check": "npm run lint && npm run typecheck && npm run build"
   },

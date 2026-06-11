@@ -32,4 +32,5 @@ export function clearSession(): void {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(AUTH_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(ROLE_KEY);
 }

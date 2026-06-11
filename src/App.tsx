@@ -21,6 +21,7 @@ import NotFound from "./pages/NotFound";
 import TourBookPage from "./pages/TourBookPage";
 import LoginPage from "./pages/LoginPage";
 import { RouteGuard } from "@/components/access/RouteGuard";
+import { AppDataProvider } from "@/application/data/AppDataProvider";
 
 const queryClient = new QueryClient();
 
@@ -47,9 +48,10 @@ const App = () => {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
-          <AppLayout>
-            <Routes>
+        <AppDataProvider>
+          <BrowserRouter>
+            <AppLayout>
+              <Routes>
               <Route
                 path="*"
                 element={
@@ -71,9 +73,10 @@ const App = () => {
                   </RouteGuard>
                 }
               />
-            </Routes>
-          </AppLayout>
-        </BrowserRouter>
+              </Routes>
+            </AppLayout>
+          </BrowserRouter>
+        </AppDataProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

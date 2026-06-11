@@ -1,4 +1,4 @@
-import { Site, getDealById, getBrandById } from "@/data/mockData";
+import { Site, getDealById, getBrandById } from "@/data/mapRuntimeData";
 import { DealStageBadge } from "./DealStageBadge";
 import { MapPin, FileText, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";

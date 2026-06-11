@@ -12,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { getAllSites } from "@/data/mapRuntimeData";
 
 /* ───────── TYPES ───────── */
 interface SiteData {
@@ -76,16 +77,28 @@ function injectAnimations() {
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const ZOOM_LABELS = ["50%", "75%", "100%", "125%", "150%", "200%"];
 
-/* ───────── MOCK DATA ───────── */
-const INITIAL_SITES: SiteData[] = [
-  { id: "tb1", name: "Whole Foods Marketplace", address: "7208 W Lake Mead Blvd, 89128", sf: "3,078", baseRent: "$30.00", nnn: "$8.76", grossMo: "$9,942", tourTime: "", tourType: "driveby", brokerName: "Michael Horne", brokerPhone: "847.687.0006", locationNotes: "Drive-by unit 7270-190 (3,078 SF). Adjacent to Victory Martial Arts.", tourDirections: "Drive-by unit 7270-190 (3,078 SF). Adjacent to Victory Martial Arts.", uploadedPages: [], checked: true, statusDot: "#E18739", images: ["https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1604014237800-1c9102c219da?w=400&h=300&fit=crop", null] },
-  { id: "tb2", name: "Tivoli Village", address: "410 S Rampart Blvd, 89145", sf: "2,855", baseRent: "$37.20", nnn: "$0.00", grossMo: "$8,851", tourTime: "9:00 AM", tourType: "scheduled", brokerName: "Justin Witt", brokerPhone: "702.858.2826", locationNotes: "", tourDirections: "Meet Justin in front of Building 5 (350 S Rampart Blvd) at 9 AM.", uploadedPages: [], checked: true, statusDot: "#E18739", images: ["https://images.unsplash.com/photo-1567521464027-f127ff144326?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1565538810643-b5bdb714032a?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=400&h=300&fit=crop"] },
-  { id: "tb3", name: "3130 S Durango Dr", address: "3130 S Durango Dr, 89117", sf: "2,703", baseRent: "$26.40", nnn: "$2.40", grossMo: "$6,487", tourTime: "10:45 AM", tourType: "scheduled", brokerName: "Tanner Peterson", brokerPhone: "702.308.7211", locationNotes: "", tourDirections: "Meet Tanner in front of Suite 425 (2,703 SF) at 10:45 AM.", uploadedPages: [], checked: true, statusDot: "var(--text-muted)", images: ["https://images.unsplash.com/photo-1497366216548-37526070297c?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=400&h=300&fit=crop", null, null] },
-  { id: "tb4", name: "Russell Crossings", address: "5651 Grand Canyon Dr, 89148", sf: "2,625", baseRent: "$39.00", nnn: "TBD", grossMo: "$8,531", tourTime: "", tourType: "driveby", brokerName: "Joanna Zirbes", brokerPhone: "909.322.4314", locationNotes: "Endcap adjacent to barbershop.", tourDirections: "Drive-by unit 100 (2,625 SF). Endcap adjacent to barbershop.", uploadedPages: [], checked: true, statusDot: "#065f46", images: ["https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1528698827591-e19cef3a72f7?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1582037928769-181f2644ecb7?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1560472355-536de3962603?w=400&h=300&fit=crop"] },
-  { id: "tb5", name: "8925 W Post Rd", address: "8925 W Post Rd, 89118", sf: "4,176", baseRent: "$27.00", nnn: "$6.48", grossMo: "$11,651", tourTime: "12:00 PM", tourType: "scheduled", brokerName: "Alexa Guy", brokerPhone: "702.423.9422", locationNotes: "Second floor unit.", tourDirections: "Meet Alexa in front of the building at noon. Second floor.", uploadedPages: [], checked: true, statusDot: "#E18739", images: ["https://images.unsplash.com/photo-1497215842964-222b430dc094?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1497366754888-5a456d4b3f5b?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=400&h=300&fit=crop"] },
-  { id: "tb6", name: "Arroyo Ridge Shoppes", address: "6965 S Rainbow Blvd, 89118", sf: "2,229", baseRent: "$36.00", nnn: "$13.44", grossMo: "$9,183", tourTime: "12:45 PM", tourType: "scheduled", brokerName: "John Meyer", brokerPhone: "702.249.4429", locationNotes: "Adjacent to Qdoba. Former dental space.", tourDirections: "Meet John in front of Suite 130 (2,229 SF) at 12:45 PM. Adjacent to Qdoba.", uploadedPages: [], checked: true, statusDot: "#065f46", images: ["https://images.unsplash.com/photo-1464938050520-ef2571af62f3?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&h=300&fit=crop", null] },
-  { id: "tb7", name: "Village Square", address: "9440 W Sahara Ave, 89117", sf: "2,500", baseRent: "$33.60", nnn: "$6.00", grossMo: "$8,250", tourTime: "10:30 AM", tourType: "scheduled", brokerName: "Liz Clare", brokerPhone: "702.327.0303", locationNotes: "", tourDirections: "Meet Liz in front of the Pad Climbing Gym at 10:30 AM.", uploadedPages: [], checked: true, statusDot: "var(--text-muted)", images: ["https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600607687644-aac4c3eac7f4?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600573472592-401b489a3cdc?w=400&h=300&fit=crop", "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=400&h=300&fit=crop"] },
-];
+/* ───────── RUNTIME DATA ───────── */
+function createInitialSites(): SiteData[] {
+  return getAllSites().map((site) => ({
+    id: site.id,
+    name: site.address,
+    address: `${site.address}, ${site.city}, ${site.state}`,
+    sf: "",
+    baseRent: "",
+    nnn: "",
+    grossMo: "",
+    tourTime: "",
+    tourType: site.stage === "Prospecting" ? "driveby" : "scheduled",
+    brokerName: "",
+    brokerPhone: "",
+    locationNotes: site.notes,
+    tourDirections: site.notes,
+    uploadedPages: [],
+    checked: true,
+    statusDot: site.stage === "Open" ? "#065f46" : "#E18739",
+    images: [null, null, null, null],
+  }));
+}
 
 const PROGRESS_MESSAGES = [
   "Composing cover page...", "Building schedule table...", "Generating map overview...",
@@ -102,10 +115,10 @@ export function TourBookGenerator() {
   const [step, setStep] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [expandedPageEditor, setExpandedPageEditor] = useState<PageEditorKey | null>("instructions");
-  const [sites, setSites] = useState<SiteData[]>(INITIAL_SITES);
-  const [tourDate, setTourDate] = useState("January 20 & 21, 2026");
-  const [franchiseeName, setFranchiseeName] = useState("Joe Canfield");
-  const [territory, setTerritory] = useState("Las Vegas, NV");
+  const [sites, setSites] = useState<SiteData[]>(() => createInitialSites());
+  const [tourDate, setTourDate] = useState("");
+  const [franchiseeName, setFranchiseeName] = useState("");
+  const [territory, setTerritory] = useState("");
   const [expandedSite, setExpandedSite] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(0);
   const [generating, setGenerating] = useState(false);

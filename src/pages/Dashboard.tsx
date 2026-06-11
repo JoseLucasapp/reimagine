@@ -120,25 +120,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ── BROKER LEADERBOARD DATA ── */
-const BROKER_LEADERBOARD = [
-  { rank: 1, initials: "JH", name: "Jackson Hill", deals: 4, commission: 48000, accent: "#E18739" },
-  { rank: 2, initials: "JW", name: "Jeremy Wright", deals: 3, commission: 31500, accent: "#7bafc8" },
-  { rank: 3, initials: "QC", name: "Quinn C.", deals: 2, commission: 22000, accent: "#94a3b8" },
-];
-
-/* ── PIPELINE PULSE DATA ── */
-const PIPELINE_STAGES = [
-  { status: "Kick Off", label: "Intro Call", count: 4, worst: "Milkshake Factory", worstDays: 116, dotColor: "#94a3b8" },
-  { status: "Market Study", label: "Mkt Study", count: 4, worst: "The Designery", worstDays: 72, dotColor: "#8b5cf6" },
-  { status: "Site Tours", label: "Prop. Tour", count: 4, worst: "Milkshake Factory", worstDays: 46, dotColor: "#14b8a6" },
-  { status: "First LOI(s) Submitted", label: "LOI", count: 4, worst: "GolfTRK", worstDays: 38, dotColor: "#7bafc8" },
-  { status: "Lease Negotiations", label: "Leases", count: 2, worst: "The Designery", worstDays: 36, dotColor: "#3b82f6" },
-  { status: "Signed", label: "Signed", count: 6, worst: null, worstDays: 0, dotColor: "#059669" },
-  { status: "On Hold", label: "On-Hold", count: 2, worst: "NextHealth", worstDays: 67, dotColor: "#E18739" },
-];
-
-const PIPELINE_TOTAL = PIPELINE_STAGES.reduce((a, s) => a + s.count, 0);
+/* ── RUNTIME ANALYTICS LABELS ── */
+const PIPELINE_STAGE_LABELS: Record<string, string> = {
+  "Kick Off": "Intro Call",
+  "Market Study": "Mkt Study",
+  "Site Tours": "Prop. Tour",
+  "First LOI(s) Submitted": "LOI",
+  "LOI Negotiations": "LOI Neg.",
+  "Lease Negotiations": "Leases",
+  Signed: "Signed",
+  "On Hold": "On-Hold",
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -146,6 +138,64 @@ export default function Dashboard() {
   const recentActivity = useMemo(() => getRecentActivity(), []);
   const statusCounts = useMemo(() => getDealsByStatusCounts(), []);
   const brandSummaries = useMemo(() => getBrandSummaries(), []);
+
+  const brokerLeaderboard = useMemo(() => {
+    const grouped = new Map<string, { deals: number; commission: number }>();
+    for (const deal of dealRecords) {
+      if (!deal.broker) continue;
+      const current = grouped.get(deal.broker) ?? { deals: 0, commission: 0 };
+      current.deals += 1;
+      current.commission += deal.estimatedCommission;
+      grouped.set(deal.broker, current);
+    }
+
+    return [...grouped.entries()]
+      .map(([name, values], index) => ({
+        rank: index + 1,
+        initials: name
+          .split(/\s+/)
+          .map((part) => part[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+        name,
+        deals: values.deals,
+        commission: values.commission,
+        accent: ["#E18739", "#7bafc8", "#94a3b8"][index % 3],
+      }))
+      .sort((a, b) => b.commission - a.commission)
+      .map((broker, index) => ({ ...broker, rank: index + 1 }))
+      .slice(0, 3);
+  }, []);
+
+  const pipelineStages = useMemo(() => statusCounts.map(({ status, count }) => {
+    const stageDeals = dealRecords.filter((deal) => deal.status === status && !deal.isOneOff);
+    const worstDeal = [...stageDeals].sort((a, b) => getDaysInStage(b) - getDaysInStage(a))[0];
+    const worstBrand = worstDeal ? getDealBrandById(worstDeal.brandId)?.name ?? worstDeal.franchisee : null;
+
+    return {
+      status,
+      label: PIPELINE_STAGE_LABELS[status] ?? status,
+      count,
+      worst: worstBrand,
+      worstDays: worstDeal ? getDaysInStage(worstDeal) : 0,
+      dotColor: STATUS_BAR_COLORS[status] ?? "#94a3b8",
+    };
+  }), [statusCounts]);
+
+  const pipelineTotal = pipelineStages.reduce((total, stage) => total + stage.count, 0);
+
+  const dashboardNudges = useMemo(() => getDealNudges().slice(0, 4).map((item) => {
+    const deal = dealRecords.find((record) => record.id === item.id);
+    return {
+      id: `nudge-${item.id}`,
+      brand: item.title.split(" — ")[0] ?? "Deal",
+      location: deal ? `${deal.city}, ${deal.state}` : "",
+      suggestion: item.suggestion,
+      action: item.action,
+      url: item.actionUrl,
+    };
+  }), []);
 
   const forecast = useMemo(() => {
     const active = dealRecords.filter((d) => !d.isOneOff);
@@ -217,12 +267,7 @@ export default function Dashboard() {
           style={{ gap: 12, paddingBottom: 12, paddingTop: 4, marginBottom: -8, scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
           <style>{`.ai-nudge-row::-webkit-scrollbar{display:none}`}</style>
-          {[
-            { id: "nudge-1", brand: "dermani MEDSPA", location: "Plano, TX", suggestion: "LOI open 34 days — 1.6× above average. Follow up on counter-LOI with Legacy West landlord.", action: "Log Update →", url: "/deals" },
-            { id: "nudge-2", brand: "GolfTRK", location: "League City, TX", suggestion: "Engagement letter missing. Deal cannot advance to LOI without it on file.", action: "Upload Document →", url: "/deals" },
-            { id: "nudge-3", brand: "Milkshake Factory", location: "Chicago, IL", suggestion: "3 properties toured 9 days ago. No update logged. Follow up on site preference with franchisee.", action: "Add Note →", url: "/deals" },
-            { id: "nudge-4", brand: "Bright Brothers", location: "Prospect", suggestion: "Last outreach 18 days ago. Ready for 4th follow-up. Consider sharing a market study.", action: "Log Outreach →", url: "/bizdev" },
-          ].map((card) => (
+          {dashboardNudges.map((card) => (
             <div
               key={card.id}
               className="shrink-0 relative cursor-pointer transition-all hover:-translate-y-px"
@@ -459,7 +504,7 @@ export default function Dashboard() {
             <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase" as const, color: "var(--text-muted)", marginBottom: 8, display: "block" }}>
               Top Brokers — This Month
             </span>
-            {BROKER_LEADERBOARD.map((broker) => (
+            {brokerLeaderboard.map((broker) => (
               <div
                 key={broker.rank}
                 className="flex items-center"
@@ -478,7 +523,7 @@ export default function Dashboard() {
               </div>
             ))}
             <div style={{ borderTop: "1px solid var(--border-divider)", marginTop: 6, paddingTop: 6, textAlign: "right" }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Feb 1 – Feb 24, 2026</p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Current period</p>
             </div>
             <div style={{ borderTop: "1px solid var(--border-divider)", marginTop: 6, paddingTop: 8 }}>
               <button onClick={() => navigate("/deals")} style={{ fontSize: 12, fontWeight: 600, color: "var(--text-orange-ui)" }} className="hover:opacity-75 transition-opacity">
@@ -507,11 +552,22 @@ export default function Dashboard() {
 
         {/* Stage segments */}
         <div className="pipeline-scroll-strip" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 0 }}>
-          {PIPELINE_STAGES.map((stage, idx) => {
+          {pipelineStages.map((stage, idx) => {
             const isSigned = stage.status === "Signed";
-            const isLast = idx === PIPELINE_STAGES.length - 1;
-            const pillBg = `var(--pill-${stage.status === "Intro Call" ? "intro" : stage.status === "Market Study" ? "market" : stage.status === "Property Tour" ? "tour" : stage.status === "On-Hold" ? "hold" : stage.status.toLowerCase()}-bg)`;
-            const textColor = `var(--status-${stage.status === "Intro Call" ? "intro" : stage.status === "Market Study" ? "market" : stage.status === "Property Tour" ? "tour" : stage.status === "On-Hold" ? "hold" : stage.status.toLowerCase()}-text)`;
+            const isLast = idx === pipelineStages.length - 1;
+            const cssKeyByStatus: Record<string, string> = {
+              "Kick Off": "intro",
+              "Market Study": "market",
+              "Site Tours": "tour",
+              "First LOI(s) Submitted": "loi",
+              "LOI Negotiations": "loi",
+              "Lease Negotiations": "leases",
+              Signed: "signed",
+              "On Hold": "hold",
+            };
+            const cssKey = cssKeyByStatus[stage.status] ?? "intro";
+            const pillBg = `var(--pill-${cssKey}-bg)`;
+            const textColor = `var(--status-${cssKey}-text)`;
 
             // Determine worst deal severity
             let worstColor = "var(--text-muted)";
@@ -557,7 +613,7 @@ export default function Dashboard() {
                 {isSigned ? (
                   <div>
                     <p style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      Latest: dermani · Dallas
+                      Signed deals ready for post-signing review
                     </p>
                   </div>
                 ) : stage.worst ? (
@@ -577,10 +633,10 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border-divider)" }}>
           {/* Progress bar */}
           <div className="hidden sm:flex overflow-hidden" style={{ width: 340, height: 6, borderRadius: 4 }}>
-            {PIPELINE_STAGES.map((stage, idx) => {
-              const w = (stage.count / PIPELINE_TOTAL) * 340;
+            {pipelineStages.map((stage, idx) => {
+              const w = pipelineTotal > 0 ? (stage.count / pipelineTotal) * 340 : 0;
               const isFirst = idx === 0;
-              const isLastSeg = idx === PIPELINE_STAGES.length - 1;
+              const isLastSeg = idx === pipelineStages.length - 1;
               return (
                 <div
                   key={stage.status}
@@ -594,7 +650,7 @@ export default function Dashboard() {
             })}
           </div>
           <div className="flex items-center" style={{ gap: 20 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{PIPELINE_TOTAL} active deals across 7 stages</span>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{pipelineTotal} active deals across {pipelineStages.length} stages</span>
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Avg. pipeline velocity: 94 days</span>
           </div>
         </div>

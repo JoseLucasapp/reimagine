@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Site, getDealById, getBrandById, DealStage } from "@/data/mockData";
+import { Site, getDealById, getBrandById, DealStage } from "@/data/mapRuntimeData";
 
 // Fix default marker icon issue in Leaflet when bundled by Vite.
 type LeafletDefaultIconPrototype = L.Icon.Default & { _getIconUrl?: () => string };

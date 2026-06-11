@@ -487,7 +487,7 @@ export default function DealDetail() {
   const days = daysToSign(deal);
   const active = daysActive(deal);
 
-  // "#" is a placeholder in mock data — treat as not set.
+  // Treat empty or placeholder URLs as not set.
   const cleanUrl = (u: string | null | undefined) => {
     const t = (u || "").trim();
     if (!t || t === "#") return undefined;

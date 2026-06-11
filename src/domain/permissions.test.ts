@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canEditDeal, canSeeRoute, canUseInternalTakeAction, canViewFinancials, parseUserRole } from "./permissions";
 
 describe("role permissions", () => {
-  it("defaults invalid roles to admin for prototype compatibility", () => {
-    expect(parseUserRole(null)).toBe("admin");
-    expect(parseUserRole("unknown")).toBe("admin");
+  it("defaults invalid roles to the least-privileged role", () => {
+    expect(parseUserRole(null)).toBe("franchisee");
+    expect(parseUserRole("unknown")).toBe("franchisee");
   });
 
   it("allows admins to access every route", () => {

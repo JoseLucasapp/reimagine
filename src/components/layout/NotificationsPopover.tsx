@@ -13,68 +13,7 @@ interface Notification {
   read: boolean;
 }
 
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    icon: FileText,
-    iconColor: "#065f46",
-    iconBg: "rgba(5,150,105,0.10)",
-    title: "LOI Signed — McKinney Ave",
-    body: "Steve Martinez's LOI for GolfTRK Dallas was countersigned by Crow Holdings.",
-    time: "12 min ago",
-    read: false,
-  },
-  {
-    id: "n2",
-    icon: AlertTriangle,
-    iconColor: "#991b1b",
-    iconBg: "rgba(153,27,27,0.10)",
-    title: "Deal Stale — Shake Shack Denver",
-    body: "No activity for 34 days. Consider following up with the franchisee.",
-    time: "1 hr ago",
-    read: false,
-  },
-  {
-    id: "n3",
-    icon: MapPin,
-    iconColor: "#1e6091",
-    iconBg: "rgba(30,96,145,0.10)",
-    title: "New Site Added — Uptown Plaza",
-    body: "2800 Routh St was added to the GolfTRK Las Vegas top sites list.",
-    time: "3 hrs ago",
-    read: false,
-  },
-  {
-    id: "n4",
-    icon: BookOpen,
-    iconColor: "#b85c1a",
-    iconBg: "rgba(225,135,57,0.10)",
-    title: "Tour Book Generated",
-    body: "GolfTRK Las Vegas tour book is ready for download (6 sites, 14 pages).",
-    time: "5 hrs ago",
-    read: true,
-  },
-  {
-    id: "n5",
-    icon: Users,
-    iconColor: "#5b21b6",
-    iconBg: "rgba(91,33,182,0.10)",
-    title: "Co-Broker Invited",
-    body: "Sarah Chen invited Jake Müller as co-broker on the Milkshake Factory deal.",
-    time: "Yesterday",
-    read: true,
-  },
-  {
-    id: "n6",
-    icon: CheckCircle2,
-    iconColor: "#065f46",
-    iconBg: "rgba(5,150,105,0.10)",
-    title: "Lease Executed — Knox-Henderson",
-    body: "Weitzman Group countersigned the lease for 4100 Knox St, Dallas.",
-    time: "2 days ago",
-    read: true,
-  },
-];
+const INITIAL_NOTIFICATIONS: Notification[] = [];
 
 interface NotificationsPopoverProps {
   mobile?: boolean;
@@ -82,7 +21,7 @@ interface NotificationsPopoverProps {
 
 export function NotificationsPopover({ mobile }: NotificationsPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 

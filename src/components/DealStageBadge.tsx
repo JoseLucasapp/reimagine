@@ -1,4 +1,4 @@
-import { DealStage } from "@/data/mockData";
+import { DealStage } from "@/data/mapRuntimeData";
 import { cn } from "@/lib/utils";
 
 const stageBgMap: Record<DealStage, string> = {

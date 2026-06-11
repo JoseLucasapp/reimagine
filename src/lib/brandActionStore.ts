@@ -1,4 +1,4 @@
-// Lightweight in-memory store for brand-level action items (mock).
+// Lightweight in-memory store for brand-level action items created during the current session.
 // Persists to sessionStorage so counters survive nav within a session.
 
 export interface BrandActionItem {
@@ -23,7 +23,7 @@ function read(): BrandActionItem[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = sessionStorage.getItem(KEY);
-    if (!raw) return seed();
+    if (!raw) return [];
     return JSON.parse(raw);
   } catch {
     return [];
@@ -39,40 +39,6 @@ function write(items: BrandActionItem[]) {
 // Cache filtered snapshots so useSyncExternalStore gets stable references.
 const byBrandCache = new Map<string, BrandActionItem[]>();
 
-function seed(): BrandActionItem[] {
-  // Seed with a couple of mock items so the counter isn't always 0.
-  const now = Date.now();
-  const seeded: BrandActionItem[] = [
-    {
-      id: `seed-${now}-1`,
-      brandId: "br01",
-      dealName: "James Thornton — Downtown Flagship",
-      actionTypeKey: "update",
-      actionTypeLabel: "Request Update",
-      recipients: ["Sarah Chen"],
-      message: "Need landlord response timing on the redline.",
-      urgency: "high",
-      requestedBy: "ME",
-      timestamp: new Date(now - 1000 * 60 * 60 * 6).toISOString(),
-      status: "pending",
-    },
-    {
-      id: `seed-${now}-2`,
-      brandId: "br01",
-      dealName: "Westside Plaza",
-      actionTypeKey: "file",
-      actionTypeLabel: "Request File",
-      recipients: ["Michael Torres"],
-      message: "Please upload the latest LOI draft.",
-      urgency: "normal",
-      requestedBy: "ME",
-      timestamp: new Date(now - 1000 * 60 * 60 * 26).toISOString(),
-      status: "pending",
-    },
-  ];
-  sessionStorage.setItem(KEY, JSON.stringify(seeded));
-  return seeded;
-}
 
 export const brandActionStore = {
   getByBrand(brandId: string): BrandActionItem[] {
