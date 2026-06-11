@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
-  Search, Plus, MoreHorizontal, ExternalLink, ChevronDown, X, Info, Users, Download,
+  Search, Plus, MoreHorizontal, ExternalLink, ChevronDown, X, Info, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  bizDevRecords, bizDevCategories, bizDevOwners, bizDevStatuses,
+  bizDevRecords, bizDevCategories, bizDevStatuses,
   statusBadgeClasses, statusDotClasses, statusLabels,
   BizDevRecord, BizDevStatus, BizDevCategory,
 } from "@/data/bizDevData";
@@ -19,8 +19,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { createProspect, updateProspect } from "@/application/data/runtimeMutations";
 
 type TabKey = "all" | "active" | "inactive" | "prospects";
+const LINK_DEFAULT = "https://";
 
 const tabs: { key: TabKey; label: string; filter?: BizDevStatus }[] = [
   { key: "all", label: "All" },
@@ -31,7 +33,7 @@ const tabs: { key: TabKey; label: string; filter?: BizDevStatus }[] = [
 
 const emptyRecord: Omit<BizDevRecord, "id"> = {
   status: "2 - Prospect", owner: "", dateAdded: new Date().toISOString().slice(0, 10),
-  companyName: "", website: "", category: "F&B", subCategory: "",
+  companyName: "", website: LINK_DEFAULT, category: "F&B", subCategory: "",
   isFranchise: true, reachOutMethod: "", mainContact: "", cell: "",
   mainContactPosition: "", mainContactEmail: "",
   reachOut1: "", reachOut2: "", reachOut3: "", reachOut4: "",
@@ -42,10 +44,11 @@ export default function BizDevPage() {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
-  const [records, setRecords] = useState(bizDevRecords);
+  const [records, setRecords] = useState<BizDevRecord[]>(() => [...bizDevRecords]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<BizDevRecord | null>(null);
   const [formData, setFormData] = useState<Omit<BizDevRecord, "id">>(emptyRecord);
+  const [savingRecord, setSavingRecord] = useState(false);
   const [sortCol, setSortCol] = useState<keyof BizDevRecord>("companyName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(() => {
@@ -83,20 +86,55 @@ export default function BizDevPage() {
       });
   }, [records, tab, search, catFilter, ownerFilter, sortCol, sortDir]);
 
+  const ownerOptions = useMemo(
+    () => Array.from(new Set(records.map((record) => record.owner).filter(Boolean))).sort(),
+    [records]
+  );
+
   const openAdd = () => { setEditingRecord(null); setFormData(emptyRecord); setDrawerOpen(true); };
-  const openEdit = (r: BizDevRecord) => { setEditingRecord(r); const { id, ...rest } = r; setFormData(rest); setDrawerOpen(true); };
-  const handleSave = () => {
-    if (editingRecord) {
-      setRecords((prev) => prev.map((r) => r.id === editingRecord.id ? { ...r, ...formData } : r));
-      toast.success("Prospect updated");
-    } else {
-      setRecords((prev) => [...prev, { ...formData, id: `bd${Date.now()}` } as BizDevRecord]);
-      toast.success("Prospect added", { description: formData.companyName || "New prospect" });
-    }
-    setDrawerOpen(false);
+  const openEdit = (r: BizDevRecord) => {
+    setEditingRecord(r);
+    const { id, ...rest } = r;
+    setFormData({ ...rest, website: rest.website || LINK_DEFAULT });
+    setDrawerOpen(true);
   };
-  const handleConvert = (r: BizDevRecord) => {
-    setRecords((prev) => prev.map((rec) => rec.id === r.id ? { ...rec, status: "0 - Active Client" as BizDevStatus } : rec));
+  const handleSave = async () => {
+    if (!formData.companyName.trim()) {
+      toast.error("Company name is required");
+      return;
+    }
+
+    setSavingRecord(true);
+    try {
+      if (editingRecord) {
+        const updated = await updateProspect(editingRecord.id, formData);
+        setRecords((prev) => prev.map((r) => r.id === editingRecord.id ? updated : r));
+        toast.success("Prospect updated");
+      } else {
+        const created = await createProspect(formData);
+        setRecords((prev) => [created, ...prev]);
+        toast.success("Prospect added", { description: created.companyName || "New prospect" });
+      }
+      setDrawerOpen(false);
+    } catch (err) {
+      toast.error("Unable to save prospect", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    } finally {
+      setSavingRecord(false);
+    }
+  };
+  const handleConvert = async (r: BizDevRecord) => {
+    const { id, ...input } = r;
+    try {
+      const updated = await updateProspect(id, { ...input, status: "0 - Active Client" as BizDevStatus });
+      setRecords((prev) => prev.map((rec) => rec.id === id ? updated : rec));
+      toast.success("Prospect converted to active client");
+    } catch (err) {
+      toast.error("Unable to convert prospect", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    }
   };
   const toggleSort = (col: keyof BizDevRecord) => {
     if (sortCol === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
@@ -248,7 +286,7 @@ export default function BizDevPage() {
             <SelectTrigger className="glass-input"><SelectValue placeholder="All Owners" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Owners</SelectItem>
-              {bizDevOwners.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+              {ownerOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -345,7 +383,7 @@ export default function BizDevPage() {
               </div>
               <FormField label="Owner" value={formData.owner} onChange={(v) => updateForm("owner", v)} />
             </div>
-            <FormField label="Website" value={formData.website} onChange={(v) => updateForm("website", v)} />
+            <FormField label="Website" value={formData.website} onChange={(v) => updateForm("website", v)} type="url" />
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="section-label mb-1.5 block">Category</label>
@@ -385,8 +423,8 @@ export default function BizDevPage() {
               <FormField label="4th Reach Out" value={formData.reachOut4} onChange={(v) => updateForm("reachOut4", v)} type="date" />
             </div>
             <div className="flex gap-3 pt-4">
-              <button onClick={handleSave} className="cta-primary flex-1">
-                {editingRecord ? "Save Changes" : "Add Record"}
+              <button onClick={handleSave} disabled={savingRecord} className="cta-primary flex-1 disabled:cursor-not-allowed disabled:opacity-60">
+                {savingRecord ? "Saving..." : editingRecord ? "Save Changes" : "Add Record"}
               </button>
               <button onClick={() => setDrawerOpen(false)} className="px-5 py-2.5 text-sm font-semibold uppercase tracking-wide rounded-[11px] transition-colors" style={{ border: "1px solid rgba(36,60,81,0.12)", color: "#4a5568" }}>
                 Cancel

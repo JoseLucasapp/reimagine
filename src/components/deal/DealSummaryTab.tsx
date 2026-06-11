@@ -1,12 +1,23 @@
 import { useState } from "react";
-import { FileText, Check, Building2, Lock } from "lucide-react";
-import { DealRecord, getDealBrandById, daysToSign } from "@/data/dealsData";
+import { FileText, Check, Building2, Lock, X } from "lucide-react";
+import { DealRecord, daysToSign } from "@/data/dealsData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BrokerFilesCard } from "@/components/deal/BrokerFilesCard";
 import { useUserRole, isAdminRole } from "@/hooks/useUserRole";
+import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 interface DealSummaryTabProps {
   deal: DealRecord;
+}
+
+function fileNameFromUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    const lastSegment = url.pathname.split("/").filter(Boolean).pop();
+    return lastSegment ? decodeURIComponent(lastSegment) : value;
+  } catch {
+    return value;
+  }
 }
 
 export function DealSummaryTab({ deal }: DealSummaryTabProps) {
@@ -14,8 +25,22 @@ export function DealSummaryTab({ deal }: DealSummaryTabProps) {
   const role = useUserRole();
   const canViewBrokerFiles = isAdminRole(role);
   const isSigned = deal.status === "Signed";
-  const brand = getDealBrandById(deal.brandId);
   const days = daysToSign(deal);
+  const sites = getSitesByDeal(deal.id);
+  const signedSite = sites[0];
+  const signedLocationTitle = signedSite?.address || `${deal.city}, ${deal.state}`;
+  const signedLocationDetail = signedSite
+    ? [signedSite.city, signedSite.state].filter(Boolean).join(", ")
+    : "No real site details are attached to this deal yet.";
+  const locationTags = [
+    signedSite?.stage,
+    deal.storeCount ? `${deal.storeCount} store${deal.storeCount === 1 ? "" : "s"}` : null,
+    deal.corporate ? "Corporate" : "Franchisee",
+  ].filter((tag): tag is string => Boolean(tag));
+  const signedDocuments = [
+    { label: "Signed LOI", file: deal.documents.signedLOI },
+    { label: "Signed Lease", file: deal.documents.signedLease },
+  ];
 
   const brokerFilesDialog = (
     <Dialog open={showBrokerFiles} onOpenChange={setShowBrokerFiles}>
@@ -106,15 +131,19 @@ export function DealSummaryTab({ deal }: DealSummaryTabProps) {
             Signed Location
           </span>
         </div>
-        <h3 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>McKinney Ave Location</h3>
-        <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 12 }}>3421 McKinney Ave, Dallas, TX 75204</p>
+        <h3 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{signedLocationTitle}</h3>
+        <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 12 }}>{signedLocationDetail}</p>
         <div className="flex items-center gap-3">
-          {["2,400 SF", "Inline Retail", "Strip Center"].map(tag => (
-            <span key={tag} style={{
-              background: "rgba(36,60,81,0.04)", borderRadius: 8, padding: "4px 12px",
-              fontSize: 12, fontWeight: 500, color: "var(--text-secondary)",
-            }}>{tag}</span>
-          ))}
+          {locationTags.length > 0 ? (
+            locationTags.map(tag => (
+              <span key={tag} style={{
+                background: "rgba(36,60,81,0.04)", borderRadius: 8, padding: "4px 12px",
+                fontSize: 12, fontWeight: 500, color: "var(--text-secondary)",
+              }}>{tag}</span>
+            ))
+          ) : (
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>No site metadata available.</span>
+          )}
         </div>
       </div>
 
@@ -123,14 +152,21 @@ export function DealSummaryTab({ deal }: DealSummaryTabProps) {
         <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 16 }}>
           Signed Documents
         </span>
-        {[
-          { label: "Signed LOI", file: "LOI_JamesThornton_Dallas.pdf" },
-          { label: "Signed Lease", file: "Lease_McKinneyAve_Final.pdf" },
-        ].map(doc => (
+        {signedDocuments.map(doc => (
           <div key={doc.label} className="flex items-center gap-3 py-2" style={{ borderBottom: "1px solid var(--border-divider)" }}>
-            <Check className="w-4 h-4" style={{ color: "#065f46" }} />
+            {doc.file ? (
+              <Check className="w-4 h-4" style={{ color: "#065f46" }} />
+            ) : (
+              <X className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+            )}
             <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{doc.label}</span>
-            <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: "auto" }}>— "{doc.file}"</span>
+            {doc.file ? (
+              <a href={doc.file} target="_blank" rel="noopener" style={{ fontSize: 12, color: "var(--text-orange-ui)", marginLeft: "auto", fontWeight: 600 }}>
+                {fileNameFromUrl(doc.file)}
+              </a>
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: "auto" }}>Not filed</span>
+            )}
           </div>
         ))}
       </div>
@@ -142,10 +178,10 @@ export function DealSummaryTab({ deal }: DealSummaryTabProps) {
             Key Lease Terms
           </span>
           {[
-            { label: "Lease Term", value: "10 years" },
-            { label: "Commencement Date", value: "—" },
-            { label: "Rent", value: "—" },
-            { label: "TI Allowance", value: "$45/SF" },
+            { label: "Lease Signed", value: deal.dateLeaseSigned ? new Date(deal.dateLeaseSigned).toLocaleDateString() : "—" },
+            { label: "Estimated Commission", value: deal.estimatedCommission ? `$${deal.estimatedCommission.toLocaleString()}` : "—" },
+            { label: "Co-broker", value: deal.cobroker || "—" },
+            { label: "Co-broker Percent", value: deal.cobrokerPercent || "—" },
           ].map(item => (
             <div key={item.label} className="flex items-center justify-between py-2" style={{ borderBottom: "1px solid var(--border-divider)" }}>
               <span style={{ fontSize: 14, color: "var(--text-muted)" }}>{item.label}</span>

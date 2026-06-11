@@ -1,5 +1,35 @@
 -- Reimagine IQ Supabase schema
--- Run this in Supabase SQL Editor on a clean project.
+-- Run this in Supabase SQL Editor.
+-- WARNING: this resets the application tables/types below before recreating them.
+-- It does not delete auth.users.
+
+drop trigger if exists on_auth_user_created on auth.users;
+
+drop table if exists public.brand_action_items cascade;
+drop table if exists public.take_action_items cascade;
+drop table if exists public.tour_books cascade;
+drop table if exists public.space_requirements cascade;
+drop table if exists public.prospects cascade;
+drop table if exists public.deal_notes cascade;
+drop table if exists public.deal_documents cascade;
+drop table if exists public.sites cascade;
+drop table if exists public.deals cascade;
+drop table if exists public.profiles cascade;
+drop table if exists public.brands cascade;
+
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.current_user_role() cascade;
+drop function if exists public.set_updated_at() cascade;
+
+drop type if exists public.second_floor_requirement cascade;
+drop type if exists public.gas_requirement cascade;
+drop type if exists public.site_stage cascade;
+drop type if exists public.take_action_status cascade;
+drop type if exists public.take_action_audience cascade;
+drop type if exists public.tour_book_status cascade;
+drop type if exists public.prospect_status cascade;
+drop type if exists public.deal_stage cascade;
+drop type if exists public.user_role cascade;
 
 create extension if not exists "pgcrypto";
 
@@ -178,6 +208,21 @@ create table public.take_action_items (
   updated_at timestamptz not null default now()
 );
 
+create table public.brand_action_items (
+  id uuid primary key default gen_random_uuid(),
+  brand_id uuid not null references public.brands(id) on delete cascade,
+  deal_name text,
+  action_type_key text not null,
+  action_type_label text not null,
+  recipients text[] not null default '{}',
+  message text,
+  urgency text not null default 'normal',
+  requested_by text not null,
+  status text not null default 'pending' check (status in ('pending', 'resolved')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index brands_name_idx on public.brands (name);
 create index profiles_role_idx on public.profiles (role);
 create index deals_brand_id_idx on public.deals (brand_id);
@@ -186,6 +231,7 @@ create index sites_deal_id_idx on public.sites (deal_id);
 create index prospects_status_idx on public.prospects (status);
 create index space_requirements_brand_id_idx on public.space_requirements (brand_id);
 create index take_action_items_deal_id_idx on public.take_action_items (deal_id);
+create index brand_action_items_brand_id_idx on public.brand_action_items (brand_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -205,6 +251,7 @@ create trigger prospects_set_updated_at before update on public.prospects for ea
 create trigger space_requirements_set_updated_at before update on public.space_requirements for each row execute function public.set_updated_at();
 create trigger tour_books_set_updated_at before update on public.tour_books for each row execute function public.set_updated_at();
 create trigger take_action_items_set_updated_at before update on public.take_action_items for each row execute function public.set_updated_at();
+create trigger brand_action_items_set_updated_at before update on public.brand_action_items for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -244,6 +291,7 @@ alter table public.prospects enable row level security;
 alter table public.space_requirements enable row level security;
 alter table public.tour_books enable row level security;
 alter table public.take_action_items enable row level security;
+alter table public.brand_action_items enable row level security;
 
 create or replace function public.current_user_role()
 returns public.user_role
@@ -255,32 +303,35 @@ as $$
 $$;
 
 create policy "authenticated can read brands" on public.brands for select using (auth.role() = 'authenticated');
-create policy "admins can manage brands" on public.brands for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage brands" on public.brands for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "users can read own profile or admins can read all" on public.profiles for select using (id = auth.uid() or public.current_user_role() = 'admin');
 create policy "users can update own profile" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "admins can manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "authenticated can read deals" on public.deals for select using (auth.role() = 'authenticated');
-create policy "admins can manage deals" on public.deals for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage deals" on public.deals for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read sites" on public.sites for select using (auth.role() = 'authenticated');
-create policy "admins can manage sites" on public.sites for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage sites" on public.sites for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read deal documents" on public.deal_documents for select using (auth.role() = 'authenticated');
-create policy "admins can manage deal documents" on public.deal_documents for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage deal documents" on public.deal_documents for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read deal notes" on public.deal_notes for select using (auth.role() = 'authenticated');
-create policy "admins can manage deal notes" on public.deal_notes for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage deal notes" on public.deal_notes for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read prospects" on public.prospects for select using (auth.role() = 'authenticated');
-create policy "admins can manage prospects" on public.prospects for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage prospects" on public.prospects for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read space requirements" on public.space_requirements for select using (auth.role() = 'authenticated');
-create policy "admins can manage space requirements" on public.space_requirements for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage space requirements" on public.space_requirements for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read tour books" on public.tour_books for select using (auth.role() = 'authenticated');
-create policy "admins can manage tour books" on public.tour_books for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage tour books" on public.tour_books for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 create policy "authenticated can read take action items" on public.take_action_items for select using (auth.role() = 'authenticated');
-create policy "admins can manage take action items" on public.take_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "authenticated can manage take action items" on public.take_action_items for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+create policy "authenticated can read brand action items" on public.brand_action_items for select using (auth.role() = 'authenticated');
+create policy "authenticated can manage brand action items" on public.brand_action_items for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

@@ -10,12 +10,14 @@ interface DealLinksEditorModalProps {
   dealId: string;
   initial: DealLinksEditorValues;
   onClose: () => void;
-  onSave: (values: DealLinksEditorValues) => void;
+  onSave: (values: DealLinksEditorValues) => void | Promise<void>;
 }
+
+const LINK_DEFAULT = "https://";
 
 function isValidUrl(u: string): boolean {
   const t = u.trim();
-  if (!t) return true;
+  if (!t || t === LINK_DEFAULT) return true;
   try {
     const parsed = new URL(t);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -25,16 +27,22 @@ function isValidUrl(u: string): boolean {
 }
 
 export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEditorModalProps) {
-  const [marketStudyUrl, setMarketStudyUrl] = useState(initial.marketStudyUrl || "");
-  const [mapUrl, setMapUrl] = useState(initial.mapUrl || "");
+  const [marketStudyUrl, setMarketStudyUrl] = useState(initial.marketStudyUrl || LINK_DEFAULT);
+  const [mapUrl, setMapUrl] = useState(initial.mapUrl || LINK_DEFAULT);
+  const [saving, setSaving] = useState(false);
 
   const marketValid = isValidUrl(marketStudyUrl);
   const mapValid = isValidUrl(mapUrl);
-  const canSave = marketValid && mapValid;
+  const canSave = marketValid && mapValid && !saving;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canSave) return;
-    onSave({ marketStudyUrl: marketStudyUrl.trim(), mapUrl: mapUrl.trim() });
+    setSaving(true);
+    try {
+      await onSave({ marketStudyUrl: marketStudyUrl.trim(), mapUrl: mapUrl.trim() });
+    } catch {
+      setSaving(false);
+    }
   };
 
   return (
@@ -152,7 +160,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
               opacity: canSave ? 1 : 0.5,
             }}
           >
-            Save
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>

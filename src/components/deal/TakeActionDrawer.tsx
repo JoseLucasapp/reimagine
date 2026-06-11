@@ -3,6 +3,7 @@ import { X, Send, RefreshCw, FileText, MessageSquare, Sparkles, Users, Shield, B
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
+import { teamMembers, type TeamMember } from "@/data/teamData";
 
 export interface TakeActionSubmission {
   actionTypeKey: string;
@@ -17,7 +18,8 @@ interface TakeActionDrawerProps {
   onClose: () => void;
   dealName: string;
   broker: string;
-  onSubmit?: (data: TakeActionSubmission) => void;
+  sites?: ActionSite[];
+  onSubmit?: (data: TakeActionSubmission) => void | Promise<void>;
 }
 
 type ActionKey = "update" | "file" | "note" | "custom" | "report" | "tour";
@@ -41,31 +43,14 @@ const REPORT_OPTIONS: ReportOption[] = [
   { key: "activity", label: "Activity Log", desc: "Recent activity entries" },
 ];
 
-interface MockSite { id: string; name: string; cityState: string; sf: string; }
-const MOCK_TOUR_SITES: MockSite[] = [
-  { id: "s1", name: "Westfield Plaza", cityState: "Austin, TX", sf: "3,200 SF" },
-  { id: "s2", name: "Lakeline Mall Outparcel", cityState: "Cedar Park, TX", sf: "2,800 SF" },
-  { id: "s3", name: "Domain Northside", cityState: "Austin, TX", sf: "4,100 SF" },
-  { id: "s4", name: "Mueller District", cityState: "Austin, TX", sf: "3,500 SF" },
-  { id: "s5", name: "Round Rock Premium", cityState: "Round Rock, TX", sf: "2,950 SF" },
-];
-
-interface MockUser {
+interface ActionSite {
   id: string;
   name: string;
-  role: "Admin" | "Franchisor" | "Franchisee";
-  initials: string;
+  cityState: string;
+  sf: string;
 }
 
-const MOCK_TEAM: MockUser[] = [
-  { id: "1", name: "Sarah Chen", role: "Admin", initials: "SC" },
-  { id: "2", name: "Michael Torres", role: "Franchisor", initials: "MT" },
-  { id: "3", name: "Emily Brooks", role: "Franchisee", initials: "EB" },
-  { id: "4", name: "Jackson Hill", role: "Franchisor", initials: "JH" },
-  { id: "5", name: "Rachel Kim", role: "Franchisee", initials: "RK" },
-];
-
-const ROLE_COLORS: Record<MockUser["role"], string> = {
+const ROLE_COLORS: Record<TeamMember["role"], string> = {
   Admin: "#E18739",
   Franchisor: "#3b82f6",
   Franchisee: "#059669",
@@ -75,7 +60,7 @@ const MAX_CHARS = 500;
 const MIN_TA_HEIGHT = 80;
 const MAX_TA_HEIGHT = 160;
 
-export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActionDrawerProps) {
+export function TakeActionDrawer({ open, onClose, dealName, sites = [], onSubmit }: TakeActionDrawerProps) {
   const [actionType, setActionType] = useState<ActionKey | null>(null);
   const [customLabel, setCustomLabel] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string[]>([]);
@@ -91,8 +76,8 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
   const navigate = useNavigate();
   const isFranchisee = role === "franchisee";
 
-  const allSelected = selectedTeam.length === MOCK_TEAM.length;
-  const allSitesSelected = tourSites.length === MOCK_TOUR_SITES.length;
+  const allSelected = teamMembers.length > 0 && selectedTeam.length === teamMembers.length;
+  const allSitesSelected = sites.length > 0 && tourSites.length === sites.length;
 
   // auto-grow textarea
   useEffect(() => {
@@ -118,7 +103,7 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
 
   const handleSelectAll = () => {
     if (allSelected) setSelectedTeam([]);
-    else setSelectedTeam(MOCK_TEAM.map((t) => t.id));
+    else setSelectedTeam(teamMembers.map((t) => t.id));
   };
 
   const toggleMember = (id: string) => {
@@ -144,7 +129,7 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
     (actionType !== "custom" || customLabel.trim().length > 0) &&
     (actionType !== "tour" || tourSites.length > 0);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!actionType) return;
     if (actionType === "tour" && tourSites.length === 0) {
       toast.error("Select at least one site to generate a tour book");
@@ -162,14 +147,18 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
     }
     const recipientNames = isFranchisee
       ? ["Reimagine Team"]
-      : MOCK_TEAM.filter((m) => selectedTeam.includes(m.id)).map((m) => m.name);
-    onSubmit?.({
-      actionTypeKey: actionType,
-      actionTypeLabel: resolvedLabel,
-      recipients: recipientNames,
-      message: message.trim(),
-      urgency: "normal",
-    });
+      : teamMembers.filter((m) => selectedTeam.includes(m.id)).map((m) => m.name);
+    try {
+      await onSubmit?.({
+        actionTypeKey: actionType,
+        actionTypeLabel: resolvedLabel,
+        recipients: recipientNames,
+        message: message.trim(),
+        urgency: "normal",
+      });
+    } catch {
+      return;
+    }
     if (actionType === "report") {
       toast.success(
         reportFormat === "pdf"
@@ -192,7 +181,7 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
 
   if (!open) return null;
 
-  const selectedMembers = MOCK_TEAM.filter((m) => selectedTeam.includes(m.id));
+  const selectedMembers = teamMembers.filter((m) => selectedTeam.includes(m.id));
   const charCount = message.length;
 
   return (
@@ -412,14 +401,19 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Select sites to include</span>
                 <button
                   type="button"
-                  onClick={() => setTourSites(allSitesSelected ? [] : MOCK_TOUR_SITES.map((s) => s.id))}
+                  onClick={() => setTourSites(allSitesSelected ? [] : sites.map((s) => s.id))}
                   style={{ fontSize: 11, fontWeight: 600, color: "#E18739", background: "none", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.06em" }}
                 >
                   {allSitesSelected ? "Clear" : "Select all"}
                 </button>
               </div>
               <div style={{ borderRadius: 12, border: "1px solid var(--border-subtle)", background: "var(--bg-surface)", overflow: "hidden" }}>
-                {MOCK_TOUR_SITES.map((s, i) => {
+                {sites.length === 0 && (
+                  <div style={{ padding: 12, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    No real sites are attached to this deal yet.
+                  </div>
+                )}
+                {sites.map((s, i) => {
                   const sel = tourSites.includes(s.id);
                   return (
                     <button
@@ -429,7 +423,7 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
                       className="flex items-center w-full text-left transition-colors"
                       style={{
                         gap: 8, padding: "8px 12px", minHeight: 40, border: "none", background: "transparent", cursor: "pointer",
-                        borderBottom: i < MOCK_TOUR_SITES.length - 1 ? "1px solid rgba(36,60,81,0.06)" : "none",
+                        borderBottom: i < sites.length - 1 ? "1px solid rgba(36,60,81,0.06)" : "none",
                       }}
                     >
                       <div style={{
@@ -541,7 +535,22 @@ export function TakeActionDrawer({ open, onClose, dealName, onSubmit }: TakeActi
               </button>
             </div>
             <div className="flex flex-col" style={{ gap: 4 }}>
-              {MOCK_TEAM.map((member) => {
+              {teamMembers.length === 0 && (
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-card)",
+                    color: "var(--text-muted)",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  No team members found in Supabase profiles.
+                </div>
+              )}
+              {teamMembers.map((member) => {
                 const selected = selectedTeam.includes(member.id);
                 const roleColor = ROLE_COLORS[member.role];
                 return (

@@ -1,11 +1,12 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Grid3X3, Filter, Handshake } from "lucide-react";
+import { LayoutDashboard, Grid3X3, Filter, Handshake, Settings } from "lucide-react";
 
 const tabs = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Brands", to: "/brands", icon: Grid3X3 },
   { label: "Prospects", to: "/bizdev", icon: Filter },
   { label: "Deals", to: "/deals", icon: Handshake },
+  { label: "Settings", to: "/settings", icon: Settings },
 ];
 
 export function MobileBottomNav() {
@@ -25,7 +26,7 @@ export function MobileBottomNav() {
             className={isActive ? "active" : ""}
             end={tab.to === "/"}
           >
-            <tab.icon style={{ width: 20, height: 20 }} />
+            <tab.icon />
             <span>{tab.label}</span>
           </NavLink>
         );

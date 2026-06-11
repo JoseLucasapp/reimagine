@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useSyncExternalStore, useMemo } from "react";
-import { getDealBrandById, getDealRecordsByBrand, DEAL_STATUS_ORDER } from "@/data/dealsData";
+import { useEffect, useState, useSyncExternalStore, useMemo } from "react";
+import { getDealBrandById, getDealRecordsByBrand, DEAL_STATUS_ORDER, daysActive, type DealRecord } from "@/data/dealsData";
 import DealsPage from "./Deals";
 import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2 } from "lucide-react";
 import { TakeActionDrawer, type TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
 import { useUserRole } from "@/hooks/useUserRole";
+import { toast } from "sonner";
 
 const STAGE_DOT_COLORS: Record<string, string> = {
   "Kick Off": "#E18739",
@@ -26,6 +27,7 @@ const glassCard: React.CSSProperties = {
   borderRadius: 16,
   overflow: "hidden",
 };
+const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
 
 export default function BrandDeals() {
   const { brandId } = useParams();
@@ -37,14 +39,24 @@ export default function BrandDeals() {
   const items = useSyncExternalStore(
     (cb) => brandActionStore.subscribe(cb),
     () => brandActionStore.getByBrand(brandId || ""),
-    () => [] as BrandActionItem[],
+    () => EMPTY_ACTION_ITEMS,
   );
   const openCount = items.filter((i) => i.status === "pending").length;
 
   const [actionPanelOpen, setActionPanelOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [, setDealVersion] = useState(0);
   const role = useUserRole();
   const takeActionLabel = role === "franchisee" ? "Request from Reimagine" : "Take Action";
+
+  useEffect(() => {
+    if (!brandId) return;
+    void brandActionStore.loadByBrand(brandId).catch((err) => {
+      toast.error("Unable to load action items", {
+        description: err instanceof Error ? err.message : "Check Supabase schema and permissions.",
+      });
+    });
+  }, [brandId]);
 
   const signed = deals.filter((d) => d.status === "Signed").length;
   const inProgress = deals.filter((d) => d.status !== "Signed" && d.status !== "On Hold").length;
@@ -59,16 +71,23 @@ export default function BrandDeals() {
     );
   }
 
-  const handleSubmit = (data: TakeActionSubmission) => {
-    brandActionStore.add({
-      brandId: brand.id,
-      actionTypeKey: data.actionTypeKey,
-      actionTypeLabel: data.actionTypeLabel,
-      recipients: data.recipients,
-      message: data.message,
-      urgency: data.urgency,
-      requestedBy: "ME",
-    });
+  const handleSubmit = async (data: TakeActionSubmission) => {
+    try {
+      await brandActionStore.add({
+        brandId: brand.id,
+        actionTypeKey: data.actionTypeKey,
+        actionTypeLabel: data.actionTypeLabel,
+        recipients: data.recipients,
+        message: data.message,
+        urgency: data.urgency,
+        requestedBy: "ME",
+      });
+    } catch (err) {
+      toast.error("Unable to save action item", {
+        description: err instanceof Error ? err.message : "Check Supabase schema and permissions.",
+      });
+      throw err;
+    }
   };
 
   return (
@@ -133,7 +152,7 @@ export default function BrandDeals() {
       {/* ── Brand metrics ── */}
       <BrandMetricsSection deals={deals} />
 
-      <DealsPage brandFilter={brandId} />
+      <DealsPage brandFilter={brandId} onAddDeal={() => setDealVersion((version) => version + 1)} />
 
       {/* Take Action drawer at brand level */}
       <TakeActionDrawer
@@ -161,9 +180,6 @@ export default function BrandDeals() {
     </div>
   );
 }
-
-import type { DealRecord } from "@/data/dealsData";
-import { daysActive } from "@/data/dealsData";
 
 function BrandMetricsSection({ deals }: { deals: DealRecord[] }) {
   const totals = useMemo(() => {

@@ -707,7 +707,7 @@ select {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 56px;
+    height: calc(56px + env(safe-area-inset-bottom));
     background: #ffffff;
     border-top: 1px solid rgba(36, 60, 81, 0.10);
     display: flex;
@@ -728,11 +728,25 @@ select {
     align-items: center;
     justify-content: center;
     gap: 2px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 500;
     color: rgba(36, 60, 81, 0.40);
     text-decoration: none;
     min-height: 56px;
+    min-width: 0;
+    line-height: 1.1;
+  }
+
+  .mobile-bottom-nav a svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .mobile-bottom-nav a span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dark .mobile-bottom-nav a {
@@ -778,13 +792,15 @@ select {
   }
 }
 
-/* ── MOBILE SIDEBAR OVERLAY ── */
-@media (max-width: 767px) {
+/* ── MOBILE/TABLET SIDEBAR OVERLAY ── */
+@media (max-width: 1023px) {
   .mobile-sidebar-overlay {
     position: fixed;
     inset: 0;
     z-index: 300;
     background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
   }
 
   .mobile-sidebar-drawer {
@@ -792,16 +808,17 @@ select {
     top: 0;
     left: 0;
     bottom: 0;
-    width: 280px;
+    width: min(82vw, 296px);
     z-index: 301;
-    background: #ffffff;
+    background: var(--bg-surface);
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
     animation: slideInLeft 0.25s ease;
     overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .dark .mobile-sidebar-drawer {
-    background: #0d1b2a;
+    background: var(--bg-surface);
   }
 
   @keyframes slideInLeft {

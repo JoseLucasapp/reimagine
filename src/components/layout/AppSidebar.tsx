@@ -32,9 +32,10 @@ const bottomNav = [
 interface AppSidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  onNavigate?: () => void;
 }
 
-export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
+export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps) {
   const location = useLocation();
   const { theme, toggle, isDark } = useTheme();
   const isCompact = useIsCompact();
@@ -63,6 +64,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
           key={item.to}
           to={item.to}
           end={item.to === "/"}
+          onClick={onNavigate}
           className={cn(
             "flex items-center gap-[16px] rounded-[8px] text-[14px] font-medium transition-all duration-200 relative min-h-[40px]",
             active ? "font-semibold" : "",
@@ -96,7 +98,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <aside
       className={cn(
         "h-full flex flex-col shrink-0 relative z-40",
-        effectiveCollapsed ? "w-[56px]" : "w-[196px]"
+        isCompact ? "w-full" : effectiveCollapsed ? "w-[56px]" : "w-[196px]"
       )}
       style={{
         background: "var(--bg-surface)",

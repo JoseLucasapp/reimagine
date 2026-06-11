@@ -73,16 +73,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
         )}
 
-        {/* Mobile + Tablet slide-over sidebar */}
-        {isCompact && menuOpen && (
-          <>
-            <div className="mobile-sidebar-overlay" onClick={() => setMenuOpen(false)} />
-            <div className="mobile-sidebar-drawer">
-              <AppSidebar collapsed={false} onToggle={() => setMenuOpen(false)} />
-            </div>
-          </>
-        )}
-
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <HeaderBar onMobileMenuToggle={() => setMenuOpen(!menuOpen)} />
           <main
@@ -96,6 +86,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      {/* Mobile + Tablet slide-over sidebar */}
+      {isCompact && menuOpen && (
+        <>
+          <div className="mobile-sidebar-overlay" onClick={() => setMenuOpen(false)} />
+          <div className="mobile-sidebar-drawer">
+            <AppSidebar
+              collapsed={false}
+              onToggle={() => setMenuOpen(false)}
+              onNavigate={() => setMenuOpen(false)}
+            />
+          </div>
+        </>
+      )}
 
       {/* Mobile bottom nav */}
       {isMobile && <MobileBottomNav />}

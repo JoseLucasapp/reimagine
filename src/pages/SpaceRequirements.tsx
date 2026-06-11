@@ -2,7 +2,10 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Download, Check, X, Pencil } from "lucide-react";
 import { spaceRequirements, SpaceRequirement } from "@/data/spaceReqData";
+import { dealBrands } from "@/data/dealsData";
 import { cn } from "@/lib/utils";
+import { createSpaceRequirement, updateSpaceRequirement } from "@/application/data/runtimeMutations";
+import { toast } from "sonner";
 
 const columns: { key: keyof SpaceRequirement; label: string; width: string }[] = [
   { key: "spaceType", label: "Space Type", width: "w-28" },
@@ -23,32 +26,71 @@ const columns: { key: keyof SpaceRequirement; label: string; width: string }[] =
 
 export default function SpaceRequirementsPage() {
   const navigate = useNavigate();
-  const [data, setData] = useState(spaceRequirements);
+  const [data, setData] = useState<SpaceRequirement[]>(() => [...spaceRequirements]);
   const [editCell, setEditCell] = useState<{ rowId: string; col: keyof SpaceRequirement } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [savingAdd, setSavingAdd] = useState(false);
 
   const startEdit = (rowId: string, col: keyof SpaceRequirement, value: SpaceRequirement[keyof SpaceRequirement]) => { setEditCell({ rowId, col }); setEditValue(String(value)); };
-  const saveEdit = useCallback(() => {
+  const saveEdit = useCallback(async () => {
     if (!editCell) return;
-    setData((prev) => prev.map((row) => {
-      if (row.id !== editCell.rowId) return row;
-      const val = ["minSF", "maxSF", "idealSF"].includes(editCell.col) ? Number(editValue) || 0 : editValue;
-      return { ...row, [editCell.col]: val };
-    }));
-    setEditCell(null);
-  }, [editCell, editValue]);
+    const current = data.find((row) => row.id === editCell.rowId);
+    if (!current) return;
+    const val = ["minSF", "maxSF", "idealSF"].includes(editCell.col) ? Number(editValue) || 0 : editValue;
+    const next = { ...current, [editCell.col]: val } as SpaceRequirement;
+    try {
+      const saved = await updateSpaceRequirement(next.id, {
+        brandId: next.brandId,
+        brandName: next.brandName,
+        spaceType: next.spaceType,
+        minSF: next.minSF,
+        maxSF: next.maxSF,
+        idealSF: next.idealSF,
+        minStorefrontWidth: next.minStorefrontWidth,
+        power: next.power,
+        hvac: next.hvac,
+        gas: next.gas,
+        waterLineSize: next.waterLineSize,
+        sewerLineSize: next.sewerLineSize,
+        slab: next.slab,
+        greaseTrap: next.greaseTrap,
+        secondFloor: next.secondFloor,
+        parking: next.parking,
+      });
+      setData((prev) => prev.map((row) => (row.id === saved.id ? saved : row)));
+      setEditCell(null);
+    } catch (error) {
+      toast.error("Unable to save space requirement", {
+        description: error instanceof Error ? error.message : "Check Supabase permissions and try again.",
+      });
+    }
+  }, [data, editCell, editValue]);
   const cancelEdit = () => setEditCell(null);
 
-  const addRow = () => {
-    const newRow: SpaceRequirement = {
-      id: `sr${Date.now()}`, brandName: "New Brand", brandId: "",
-      spaceType: "Retail", minSF: 0, maxSF: 0, idealSF: 0,
-      minStorefrontWidth: "", power: "", hvac: "", gas: "No",
-      waterLineSize: "", sewerLineSize: "", slab: "", greaseTrap: "No",
-      secondFloor: "Not Allowed", parking: "",
-    };
-    setData((prev) => [...prev, newRow]);
-    setTimeout(() => startEdit(newRow.id, "brandName", "New Brand"), 50);
+  const addRow = async () => {
+    const brand = dealBrands.find((candidate) => !data.some((row) => row.brandId === candidate.id)) ?? dealBrands[0];
+    if (!brand) {
+      toast.error("Create a brand before adding space requirements.");
+      return;
+    }
+    setSavingAdd(true);
+    try {
+      const newRow = await createSpaceRequirement({
+        brandName: brand.name, brandId: brand.id,
+        spaceType: "Retail", minSF: 0, maxSF: 0, idealSF: 0,
+        minStorefrontWidth: "", power: "", hvac: "", gas: "No",
+        waterLineSize: "", sewerLineSize: "", slab: "", greaseTrap: "No",
+        secondFloor: "Not Allowed", parking: "",
+      });
+      setData((prev) => [...prev, newRow]);
+      startEdit(newRow.id, "spaceType", newRow.spaceType);
+    } catch (error) {
+      toast.error("Unable to add space requirement", {
+        description: error instanceof Error ? error.message : "Check Supabase permissions and try again.",
+      });
+    } finally {
+      setSavingAdd(false);
+    }
   };
 
   const handleExport = () => {
@@ -73,8 +115,8 @@ export default function SpaceRequirementsPage() {
           <button onClick={handleExport} className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide rounded-[11px] transition-colors" style={{ border: "1px solid rgba(36,60,81,0.12)", color: "var(--text-tertiary)" }}>
             <Download className="w-4 h-4" /> Export
           </button>
-          <button onClick={addRow} className="cta-primary inline-flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Add Brand
+          <button onClick={addRow} disabled={savingAdd} className="cta-primary inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60">
+            <Plus className="w-4 h-4" /> {savingAdd ? "Adding..." : "Add Brand"}
           </button>
         </div>
       </div>

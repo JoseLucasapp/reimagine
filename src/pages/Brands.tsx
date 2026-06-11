@@ -20,15 +20,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-
-const BRAND_GRADIENTS = [
-  "linear-gradient(135deg, #E18739, #c4622a)",
-  "linear-gradient(135deg, #243c51, #1a5276)",
-  "linear-gradient(135deg, #059669, #10b981)",
-  "linear-gradient(135deg, #7c3aed, #8b5cf6)",
-  "linear-gradient(135deg, #be185d, #ec4899)",
-  "linear-gradient(135deg, #0d9488, #14b8a6)",
-];
+import { createBrand } from "@/application/data/runtimeMutations";
 
 /* ── GLASS CARD — matches Dashboard exactly ── */
 const glassCard: React.CSSProperties = {
@@ -95,15 +87,18 @@ const STATUS_BAR_COLORS: Record<string, string> = {
   "Kick Off": "#E18739", "On Hold": "#E18739",
 };
 
+const LINK_DEFAULT = "https://";
+
 export default function BrandsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState<string[]>([]);
   const [dealFilter, setDealFilter] = useState("all");
   const [view, setView] = useState<BrandView>("overview");
-  const [addedBrands, setAddedBrands] = useState<BrandDetail[]>([]);
+  const [dataVersion, setDataVersion] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", category: "", franchisorLink: "", logoColor: "#E18739" });
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [form, setForm] = useState({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
 
   // Layout customizer state
   type PanelType = "list" | "kanban" | "bar" | "line";
@@ -156,33 +151,36 @@ export default function BrandsPage() {
   const toggleReportSection = (s: string) =>
     setReportSections((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
 
-  const brandDetails = useMemo(() => [...addedBrands, ...baseBrandDetails], [addedBrands]);
+  const brandDetails = useMemo(() => [...baseBrandDetails], [dataVersion]);
   const brandCategories = useMemo(
-    () => Array.from(new Set([...baseBrandCategories, ...addedBrands.map(b => b.category).filter(Boolean)])),
-    [addedBrands]
+    () => Array.from(new Set([...baseBrandCategories, ...baseBrandDetails.map(b => b.category).filter(Boolean)])),
+    [dataVersion]
   );
 
-  const resetForm = () => setForm({ name: "", category: "", franchisorLink: "", logoColor: "#E18739" });
+  const resetForm = () => setForm({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
 
-  const handleAddBrand = () => {
+  const handleAddBrand = async () => {
     const name = form.name.trim();
     if (!name) { toast.error("Brand name is required"); return; }
-    const id = `local-${Date.now()}`;
-    const newBrand: BrandDetail = {
-      id,
-      name,
-      logoColor: form.logoColor || "#E18739",
-      category: form.category.trim() || "Uncategorized",
-      activeDeals: 0,
-      signedDeals: 0,
-      internalLink: `/brands/${id}/deals`,
-      franchisorLink: form.franchisorLink.trim() || "#",
-      mapLink: `/map?brand=${id}`,
-    };
-    setAddedBrands(prev => [newBrand, ...prev]);
-    toast.success(`${name} added`);
-    resetForm();
-    setDrawerOpen(false);
+    setSavingBrand(true);
+    try {
+      await createBrand({
+        name,
+        category: form.category,
+        franchisorLink: form.franchisorLink,
+        logoColor: form.logoColor,
+      });
+      setDataVersion((version) => version + 1);
+      toast.success(`${name} added`);
+      resetForm();
+      setDrawerOpen(false);
+    } catch (err) {
+      toast.error("Unable to save brand", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    } finally {
+      setSavingBrand(false);
+    }
   };
 
   const filtered = useMemo(() => {
@@ -202,21 +200,21 @@ export default function BrandsPage() {
       activeDeals: allDeals.filter(d => d.status !== "Signed").length,
       dealsSigned: allDeals.filter(d => d.status === "Signed").length,
     };
-  }, []);
+  }, [dataVersion]);
 
   const brandDealCounts = useMemo(() => {
     return dealBrands.map(b => {
       const deals = dealRecords.filter(d => d.brandId === b.id && !d.isOneOff);
       return { name: b.name, count: deals.length, color: b.logoColor, id: b.id };
     }).sort((a, b) => b.count - a.count);
-  }, []);
+  }, [dataVersion]);
 
   const statusCounts = useMemo(() => {
     const allDeals = dealRecords.filter(d => !d.isOneOff);
     const counts: Record<string, number> = {};
     allDeals.forEach(d => { counts[d.status] = (counts[d.status] || 0) + 1; });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, []);
+  }, [dataVersion]);
 
   const maxDeals = Math.max(...brandDealCounts.map(b => b.count), 1);
   const maxStatus = Math.max(...statusCounts.map(s => s[1]), 1);
@@ -258,6 +256,14 @@ export default function BrandsPage() {
     if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
     if (val >= 1000) return `$${Math.round(val / 1000)}K`;
     return `$${val}`;
+  };
+
+  const openExternal = (url: string) => {
+    if (!url || url === "#") {
+      toast.error("No link configured for this brand");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const statCards = [
@@ -303,8 +309,7 @@ export default function BrandsPage() {
           <div className="text-right">Action</div>
         </div>
 
-        {filtered.map((brand, idx) => {
-          const gradient = BRAND_GRADIENTS[idx % BRAND_GRADIENTS.length];
+        {filtered.map((brand) => {
           const deals = dealRecords.filter((d) => d.brandId === brand.id && !d.isOneOff);
           const dealCount = deals.length;
           const siteCount = deals.reduce((s, d) => s + (d.storeCount || 0), 0);
@@ -326,7 +331,7 @@ export default function BrandsPage() {
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   className="w-[32px] h-[32px] rounded-[8px] flex items-center justify-center font-bold text-[12px] text-white shrink-0"
-                  style={{ background: gradient }}
+                  style={{ background: brand.logoColor }}
                 >
                   {brand.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
                 </div>
@@ -690,9 +695,8 @@ export default function BrandsPage() {
 
       {/* ═══ OVERVIEW VIEW — brand cards grid only ═══ */}
       {!customLayout && view === "overview" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: 16 }}>
-          {brandDetails.map((brand, idx) => {
-            const gradient = BRAND_GRADIENTS[idx % BRAND_GRADIENTS.length];
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: 16, alignItems: "start" }}>
+          {brandDetails.map((brand) => {
             const deals = dealRecords.filter((d) => d.brandId === brand.id && !d.isOneOff);
             const dealCount = deals.length;
             const siteCount = deals.reduce((s, d) => s + (d.storeCount || 0), 0);
@@ -720,7 +724,7 @@ export default function BrandsPage() {
                 <div className="flex items-start gap-3 mb-4">
                   <div
                     className="w-[40px] h-[40px] rounded-[8px] flex items-center justify-center font-bold text-[13px] text-white shrink-0"
-                    style={{ background: gradient }}
+                    style={{ background: brand.logoColor }}
                   >
                     {brand.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
                   </div>
@@ -751,16 +755,33 @@ export default function BrandsPage() {
                 </div>
 
                 <div className="flex items-center gap-2 mb-4">
-                  {[LinkIcon, ExternalLink, MapPin].map((Icon, i) => (
-                    <button
-                      key={i}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
-                      style={{ border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                    </button>
-                  ))}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(brand.internalLink); }}
+                    className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}
+                    aria-label={`Open ${brand.name} deals`}
+                    title="Open deals"
+                  >
+                    <LinkIcon className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openExternal(brand.franchisorLink); }}
+                    className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}
+                    aria-label={`Open ${brand.name} franchisor link`}
+                    title="Open franchisor link"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(brand.mapLink); }}
+                    className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ border: "1px solid var(--border-subtle)", color: "var(--text-muted)" }}
+                    aria-label={`Open ${brand.name} map`}
+                    title="Open map"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 <button
@@ -781,7 +802,7 @@ export default function BrandsPage() {
             style={{
               ...glassCard,
               padding: 20,
-              minHeight: 240,
+              minHeight: 168,
               cursor: "pointer",
               borderStyle: "dashed",
               color: "var(--text-muted)",
@@ -911,8 +932,8 @@ export default function BrandsPage() {
             <button onClick={() => setDrawerOpen(false)} style={{ flex: 1, padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)", cursor: "pointer" }}>
               Cancel
             </button>
-            <button onClick={handleAddBrand} style={{ flex: 1, padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "#243c51", color: "white", border: "none", cursor: "pointer" }}>
-              Add Brand
+            <button disabled={savingBrand} onClick={handleAddBrand} style={{ flex: 1, padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "#243c51", color: "white", border: "none", cursor: savingBrand ? "not-allowed" : "pointer", opacity: savingBrand ? 0.65 : 1 }}>
+              {savingBrand ? "Saving..." : "Add Brand"}
             </button>
           </div>
         </div>

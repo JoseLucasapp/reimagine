@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
+import { toast } from "sonner";
 
 interface ActionItemsPanelProps {
   open: boolean;
@@ -439,7 +440,13 @@ export function ActionItemsPanel({
                       </div>
                       {isPending && (
                         <button
-                          onClick={() => brandActionStore.resolve(item.id)}
+                          onClick={() => {
+                            void brandActionStore.resolve(item.id).catch((err) => {
+                              toast.error("Unable to resolve action item", {
+                                description: err instanceof Error ? err.message : "Check Supabase schema and permissions.",
+                              });
+                            });
+                          }}
                           className="flex items-center transition-all"
                           style={{
                             gap: 4,

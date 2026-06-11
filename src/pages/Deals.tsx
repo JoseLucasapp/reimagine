@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   dealRecords, dealBrands, getDealBrandById, getUniqueBrokers, getUniqueStates,
-  DealStatusNew, KANBAN_COLUMNS, daysActive, DealRecord,
+  emptyDealDocuments, DealStatusNew, KANBAN_COLUMNS, daysActive, DealRecord, DealDocuments,
 } from "@/data/dealsData";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
@@ -18,10 +18,26 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUserRole, canEditDeal, canViewFinancials } from "@/hooks/useUserRole";
+import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
+import { toast } from "sonner";
 
 type ViewMode = "table" | "kanban" | "map";
 
 const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+
+const DOCUMENT_FIELDS: { key: keyof DealDocuments; label: string }[] = [
+  { key: "engagementLetter", label: "Engagement Letter" },
+  { key: "cobrokerAgreement", label: "Co-Broker Agreement" },
+  { key: "flyer", label: "Flyer" },
+  { key: "demo", label: "Demo" },
+  { key: "signedLOI", label: "Signed LOI" },
+  { key: "floorPlan", label: "Floor Plan" },
+  { key: "approvalPackage", label: "Approval Package" },
+  { key: "commissionAgreement", label: "Commission Agreement" },
+  { key: "signedLease", label: "Signed Lease" },
+];
+
+const LINK_DEFAULT = "https://";
 
 interface DealsPageProps {
   brandFilter?: string;
@@ -43,6 +59,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
   const [stateFilter, setStateFilter] = useState<string[]>([]);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editingDeal, setEditingDeal] = useState<DealRecord | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
   const role = useUserRole();
   const allowEdit = canEditDeal(role);
   const showFinancials = canViewFinancials(role);
@@ -53,7 +70,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
     else if (brandFilter) d = d.filter((x) => x.brandId === brandFilter && !x.isOneOff);
     else d = d.filter((x) => !x.isOneOff);
     return d;
-  }, [brandFilter, isOneOff]);
+  }, [brandFilter, isOneOff, dataVersion]);
 
   const filtered = useMemo(() => {
     let d = baseDeals;
@@ -239,6 +256,15 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
         <DealDrawer
           deal={editingDeal}
           brandId={brandFilter}
+          defaultIsOneOff={Boolean(isOneOff)}
+          onSaved={() => {
+            setDataVersion((version) => version + 1);
+            setSearch("");
+            setStatusFilter([]);
+            setBrokerFilter([]);
+            setStateFilter([]);
+            onAddDeal?.();
+          }}
           onClose={() => { setShowDrawer(false); setEditingDeal(null); }}
         />
       )}
@@ -427,14 +453,45 @@ type DealFormState = {
   estimatedCommission: number;
   status: DealStatusNew;
   initialNote: string;
+  documents: DealDocuments;
   isOneOff: boolean;
   corporateComments: string;
 };
 
-function DealDrawer({ deal, brandId, onClose }: { deal: DealRecord | null; brandId?: string; onClose: () => void }) {
+function initialLinkValue(value: string | null | undefined): string {
+  return value || LINK_DEFAULT;
+}
+
+function DealSectionTitle({ children }: { children: React.ReactNode }) {
+  return <p className="section-label mt-5 mb-3">{children}</p>;
+}
+
+function DealField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function DealDrawer({
+  deal,
+  brandId,
+  defaultIsOneOff,
+  onSaved,
+  onClose,
+}: {
+  deal: DealRecord | null;
+  brandId?: string;
+  defaultIsOneOff: boolean;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
   const isEdit = !!deal;
   const role = useUserRole();
   const showFinancials = canViewFinancials(role);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<DealFormState>({
     brandId: deal?.brandId || brandId || "",
     franchisee: deal?.franchisee || "",
@@ -448,57 +505,99 @@ function DealDrawer({ deal, brandId, onClose }: { deal: DealRecord | null; brand
     dateLeaseSigned: deal?.dateLeaseSigned || "",
     storesBought: deal?.storesBought || 0,
     storeCount: deal?.storeCount || 0,
-    territoryMapLink: deal?.territoryMapLink || "",
-    marketStudyLink: deal?.marketStudyLink || "",
-    mapLink: deal?.mapLink || "",
-    tourBookLink: deal?.tourBookLink || "",
+    territoryMapLink: initialLinkValue(deal?.territoryMapLink),
+    marketStudyLink: initialLinkValue(deal?.marketStudyLink),
+    mapLink: initialLinkValue(deal?.mapLink),
+    tourBookLink: initialLinkValue(deal?.tourBookLink),
     cobroker: deal?.cobroker || "",
     cobrokerPercent: deal?.cobrokerPercent || "",
     estimatedCommission: deal?.estimatedCommission || 0,
     status: deal?.status || ("Kick Off" as DealStatusNew),
     initialNote: "",
-    isOneOff: deal?.isOneOff || false,
+    documents: deal?.documents || { ...emptyDealDocuments },
+    isOneOff: deal?.isOneOff ?? defaultIsOneOff,
     corporateComments: deal?.corporateComments || "",
   });
 
   const update = <K extends keyof DealFormState>(key: K, value: DealFormState[K]) => setFormData((p) => ({ ...p, [key]: value }));
+  const updateDocument = (key: keyof DealDocuments, value: string) => {
+    setFormData((p) => ({
+      ...p,
+      documents: {
+        ...p.documents,
+        [key]: value.trim() ? value : null,
+      },
+    }));
+  };
 
-  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <p className="section-label mt-5 mb-3">{children}</p>
-  );
+  const handleSave = async () => {
+    if (!formData.brandId) {
+      toast.error("Select a brand before saving the deal.");
+      return;
+    }
+    if (!formData.franchisee.trim()) {
+      toast.error("Franchisee is required.");
+      return;
+    }
+    if (!formData.city.trim() || !formData.state.trim()) {
+      toast.error("City and state are required.");
+      return;
+    }
+    if (!formData.broker.trim()) {
+      toast.error("Broker is required.");
+      return;
+    }
 
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium">{label}</Label>
-      {children}
-    </div>
-  );
+    setSaving(true);
+    try {
+      if (isEdit && deal) {
+        await updateDeal(deal.id, formData);
+        toast.success("Deal updated");
+      } else {
+        await createDeal(formData);
+        toast.success("Deal created", { description: formData.franchisee });
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      setSaving(false);
+      toast.error("Unable to save deal", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    }
+  };
 
   return (
     <Sheet open onOpenChange={() => onClose()}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto" style={{ background: "rgba(255,255,255,0.92)", backdropFilter: "blur(24px)" }}>
+      <SheetContent className="w-full sm:max-w-lg overflow-y-auto" style={{ background: "var(--bg-surface)", backdropFilter: "blur(24px)", color: "var(--text-primary)" }}>
         <SheetHeader>
-          <SheetTitle style={{ color: "#1b2326" }}>{isEdit ? "Edit Deal" : "Add New Deal"}</SheetTitle>
-          <SheetDescription>{isEdit ? "Update deal information." : "Create a new deal record."}</SheetDescription>
+          <SheetTitle style={{ color: "var(--text-primary)" }}>{isEdit ? "Edit Deal" : "Add New Deal"}</SheetTitle>
+          <SheetDescription style={{ color: "var(--text-muted)" }}>{isEdit ? "Update deal information." : "Create a new deal record."}</SheetDescription>
         </SheetHeader>
 
         <div className="mt-4 space-y-1">
-          <SectionTitle>Deal Info</SectionTitle>
+          <DealSectionTitle>Deal Info</DealSectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Brand">
+            <DealField label="Brand">
               <Select value={formData.brandId} onValueChange={(v) => update("brandId", v)}>
-                <SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
-                <SelectContent>{dealBrands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="glass-input w-full"><SelectValue placeholder="Select brand" /></SelectTrigger>
+                <SelectContent>
+                  {dealBrands.length === 0 ? (
+                    <div className="px-3 py-2 text-sm" style={{ color: "var(--text-muted)" }}>No brands available</div>
+                  ) : (
+                    dealBrands.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)
+                  )}
+                </SelectContent>
               </Select>
-            </Field>
-            <Field label="Status">
+            </DealField>
+            <DealField label="Status">
               <Select value={formData.status} onValueChange={(v) => update("status", v as DealStatusNew)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="glass-input w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>{ALL_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
-            </Field>
+            </DealField>
           </div>
-          <Field label="Franchisee"><Input value={formData.franchisee} onChange={(e) => update("franchisee", e.target.value)} /></Field>
+          <DealField label="Franchisee"><Input className="glass-input" value={formData.franchisee} onChange={(e) => update("franchisee", e.target.value)} /></DealField>
           {formData.franchisee && formData.brandId && (
             <DuplicateDealWarning
               franchisee={formData.franchisee}
@@ -508,81 +607,89 @@ function DealDrawer({ deal, brandId, onClose }: { deal: DealRecord | null; brand
             />
           )}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Cell Phone"><Input value={formData.cellPhone} onChange={(e) => update("cellPhone", e.target.value)} /></Field>
-            <Field label="Broker"><Input value={formData.broker} onChange={(e) => update("broker", e.target.value)} /></Field>
+            <DealField label="Cell Phone"><Input className="glass-input" value={formData.cellPhone} onChange={(e) => update("cellPhone", e.target.value)} /></DealField>
+            <DealField label="Broker"><Input className="glass-input" value={formData.broker} onChange={(e) => update("broker", e.target.value)} /></DealField>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="City"><Input value={formData.city} onChange={(e) => update("city", e.target.value)} /></Field>
-            <Field label="State"><Input value={formData.state} onChange={(e) => update("state", e.target.value)} /></Field>
-            <Field label="Associate"><Input value={formData.associate} onChange={(e) => update("associate", e.target.value)} /></Field>
+            <DealField label="City"><Input className="glass-input" value={formData.city} onChange={(e) => update("city", e.target.value)} /></DealField>
+            <DealField label="State"><Input className="glass-input" value={formData.state} onChange={(e) => update("state", e.target.value)} /></DealField>
+            <DealField label="Associate"><Input className="glass-input" value={formData.associate} onChange={(e) => update("associate", e.target.value)} /></DealField>
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Switch checked={formData.corporate} onCheckedChange={(v) => update("corporate", v)} />
-            <Label className="text-xs">Corporate Search</Label>
+            <Label className="text-xs" style={{ color: "var(--text-muted)" }}>Corporate Search</Label>
             <Switch checked={formData.isOneOff} onCheckedChange={(v) => update("isOneOff", v)} />
-            <Label className="text-xs">One-Off Deal</Label>
+            <Label className="text-xs" style={{ color: "var(--text-muted)" }}>One-Off Deal</Label>
           </div>
 
           <Separator className="my-3" />
-          <SectionTitle>Timeline</SectionTitle>
+          <DealSectionTitle>Timeline</DealSectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Date Intro Call"><Input type="date" value={formData.dateIntroCall} onChange={(e) => update("dateIntroCall", e.target.value)} /></Field>
-            <Field label="Date Lease Executed"><Input type="date" value={formData.dateLeaseSigned} onChange={(e) => update("dateLeaseSigned", e.target.value)} /></Field>
+            <DealField label="Date Intro Call"><Input className="glass-input" type="date" value={formData.dateIntroCall} onChange={(e) => update("dateIntroCall", e.target.value)} /></DealField>
+            <DealField label="Date Lease Executed"><Input className="glass-input" type="date" value={formData.dateLeaseSigned} onChange={(e) => update("dateLeaseSigned", e.target.value)} /></DealField>
           </div>
 
           <Separator className="my-3" />
-          <SectionTitle>Store Info</SectionTitle>
+          <DealSectionTitle>Store Info</DealSectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Stores Bought"><Input type="number" value={formData.storesBought} onChange={(e) => update("storesBought", +e.target.value)} /></Field>
-            <Field label="Store Count #"><Input type="number" value={formData.storeCount} onChange={(e) => update("storeCount", +e.target.value)} /></Field>
+            <DealField label="Stores Bought"><Input className="glass-input" type="number" value={formData.storesBought} onChange={(e) => update("storesBought", +e.target.value)} /></DealField>
+            <DealField label="Store Count #"><Input className="glass-input" type="number" value={formData.storeCount} onChange={(e) => update("storeCount", +e.target.value)} /></DealField>
           </div>
 
           <Separator className="my-3" />
-          <SectionTitle>Links</SectionTitle>
+          <DealSectionTitle>Links</DealSectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Territory Map URL"><Input value={formData.territoryMapLink} onChange={(e) => update("territoryMapLink", e.target.value)} /></Field>
-            <Field label="Market Study URL"><Input value={formData.marketStudyLink} onChange={(e) => update("marketStudyLink", e.target.value)} /></Field>
-            <Field label="Map URL"><Input value={formData.mapLink} onChange={(e) => update("mapLink", e.target.value)} /></Field>
-            <Field label="Tour Book URL"><Input value={formData.tourBookLink} onChange={(e) => update("tourBookLink", e.target.value)} /></Field>
+            <DealField label="Territory Map URL"><Input className="glass-input" type="url" value={formData.territoryMapLink} onChange={(e) => update("territoryMapLink", e.target.value)} /></DealField>
+            <DealField label="Market Study URL"><Input className="glass-input" type="url" value={formData.marketStudyLink} onChange={(e) => update("marketStudyLink", e.target.value)} /></DealField>
+            <DealField label="Map URL"><Input className="glass-input" type="url" value={formData.mapLink} onChange={(e) => update("mapLink", e.target.value)} /></DealField>
+            <DealField label="Tour Book URL"><Input className="glass-input" type="url" value={formData.tourBookLink} onChange={(e) => update("tourBookLink", e.target.value)} /></DealField>
           </div>
 
           {showFinancials && (
             <>
               <Separator className="my-3" />
-              <SectionTitle>Co-Broker</SectionTitle>
+              <DealSectionTitle>Co-Broker</DealSectionTitle>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Co-Broker"><Input value={formData.cobroker} onChange={(e) => update("cobroker", e.target.value)} /></Field>
-                <Field label="Co-Broker %"><Input value={formData.cobrokerPercent} onChange={(e) => update("cobrokerPercent", e.target.value)} /></Field>
+                <DealField label="Co-Broker"><Input className="glass-input" value={formData.cobroker} onChange={(e) => update("cobroker", e.target.value)} /></DealField>
+                <DealField label="Co-Broker %"><Input className="glass-input" value={formData.cobrokerPercent} onChange={(e) => update("cobrokerPercent", e.target.value)} /></DealField>
               </div>
             </>
           )}
 
           <Separator className="my-3" />
-          <SectionTitle>Notes</SectionTitle>
-          <Field label="Initial Note"><Textarea value={formData.initialNote} onChange={(e) => update("initialNote", e.target.value)} placeholder="Add a note..." rows={3} /></Field>
+          <DealSectionTitle>Notes</DealSectionTitle>
+          <DealField label="Initial Note"><Textarea className="glass-input" value={formData.initialNote} onChange={(e) => update("initialNote", e.target.value)} placeholder="Add a note..." rows={3} /></DealField>
 
           {formData.corporate && (
             <>
               <Separator className="my-3" />
-              <SectionTitle>Corporate Comments</SectionTitle>
-              <Field label="Comments"><Textarea value={formData.corporateComments} onChange={(e) => update("corporateComments", e.target.value)} rows={2} /></Field>
+              <DealSectionTitle>Corporate Comments</DealSectionTitle>
+              <DealField label="Comments"><Textarea className="glass-input" value={formData.corporateComments} onChange={(e) => update("corporateComments", e.target.value)} rows={2} /></DealField>
             </>
           )}
 
           <Separator className="my-3" />
-          <SectionTitle>Documents</SectionTitle>
+          <DealSectionTitle>Documents</DealSectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            {["Engagement Letter", "Co-Broker Agreement", "Flyer", "Demo", "Signed LOI", "Floor Plan", "Approval Package", "Signed Lease"].map((doc) => (
-              <Field key={doc} label={doc}><Input placeholder="URL" /></Field>
+            {DOCUMENT_FIELDS.map((doc) => (
+              <DealField key={doc.key} label={doc.label}>
+                <Input
+                  className="glass-input"
+                  type="url"
+                  value={formData.documents[doc.key] ?? LINK_DEFAULT}
+                  onChange={(e) => updateDocument(doc.key, e.target.value)}
+                />
+              </DealField>
             ))}
           </div>
 
           <div className="pt-6 pb-4">
             <button
-              className="cta-primary w-full"
-              onClick={onClose}
+              className="cta-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={handleSave}
+              disabled={saving}
             >
-              {isEdit ? "Save Changes" : "Create Deal"}
+              {saving ? "Saving..." : isEdit ? "Save Changes" : "Create Deal"}
             </button>
           </div>
         </div>

@@ -13,9 +13,11 @@ export type AuthSession = {
 export function getStoredSession(): AuthSession | null {
   if (typeof window === "undefined") return null;
   if (sessionStorage.getItem(AUTH_KEY) !== "true") return null;
+  const accessToken = sessionStorage.getItem(TOKEN_KEY);
+  if (!accessToken) return null;
 
   return {
-    accessToken: sessionStorage.getItem(TOKEN_KEY),
+    accessToken,
     role: parseUserRole(sessionStorage.getItem(ROLE_KEY)),
   };
 }

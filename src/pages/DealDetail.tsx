@@ -15,9 +15,11 @@ import { TakeActionDrawer, TakeActionSubmission } from "@/components/deal/TakeAc
 import { useUserRole } from "@/hooks/useUserRole";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { dealLinkOverridesStore, useDealLinkOverrides } from "@/lib/dealLinkOverridesStore";
 import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
 import { Pencil } from "lucide-react";
+import { toast } from "sonner";
+import { getSitesByDeal } from "@/data/mapRuntimeData";
+import { createDealActionItem, updateDeal, type DealMutationInput } from "@/application/data/runtimeMutations";
 
 const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
 
@@ -63,6 +65,35 @@ const ALL_DOC_KEYS: DealDocumentDescriptor[] = DOC_GROUPS.flatMap((g) => g.docs)
 const hiddenScrollbarStyle: React.CSSProperties = { scrollbarWidth: "none", msOverflowStyle: "none" };
 
 type DealTab = "project" | "topsites" | "loi" | "summary";
+
+function dealToMutationInput(deal: DealRecord, overrides: Partial<DealMutationInput> = {}): DealMutationInput {
+  return {
+    brandId: deal.brandId,
+    franchisee: deal.franchisee,
+    cellPhone: deal.cellPhone,
+    city: deal.city,
+    state: deal.state,
+    broker: deal.broker,
+    associate: deal.associate,
+    corporate: deal.corporate,
+    dateIntroCall: deal.dateIntroCall ?? "",
+    dateLeaseSigned: deal.dateLeaseSigned ?? "",
+    storesBought: deal.storesBought,
+    storeCount: deal.storeCount,
+    territoryMapLink: deal.territoryMapLink ?? "",
+    marketStudyLink: deal.marketStudyLink ?? "",
+    mapLink: deal.mapLink ?? "",
+    tourBookLink: deal.tourBookLink ?? "",
+    cobroker: deal.cobroker,
+    cobrokerPercent: deal.cobrokerPercent,
+    estimatedCommission: deal.estimatedCommission,
+    status: deal.status,
+    documents: deal.documents,
+    isOneOff: deal.isOneOff,
+    corporateComments: deal.corporateComments,
+    ...overrides,
+  };
+}
 
 // ===== DEAL VELOCITY WIDGET — DEAL-SPECIFIC stage journey =====
 const VELOCITY_STAGES: { status: DealStatusNew; label: string; dotColor: string; weight: number }[] = [
@@ -300,8 +331,13 @@ function DocCompletionWidget({ deal, onViewAll }: { deal: DealRecord; onViewAll?
   );
 }
 
+type SignedSiteOption = {
+  id: string;
+  label: string;
+};
+
 // ===== SIGNED COMPLETION MODAL =====
-function SignedCompletionModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+function SignedCompletionModal({ onClose, onConfirm, sites }: { onClose: () => void; onConfirm: () => void | Promise<void>; sites: SignedSiteOption[] }) {
   const [leaseTerm, setLeaseTerm] = useState("");
   const [commencementDate, setCommencementDate] = useState("");
   const [rent, setRent] = useState("");
@@ -310,7 +346,7 @@ function SignedCompletionModal({ onClose, onConfirm }: { onClose: () => void; on
   const [loiUploaded, setLoiUploaded] = useState(false);
   const [leaseUploaded, setLeaseUploaded] = useState(false);
 
-  const canSubmit = loiUploaded && leaseUploaded && selectedProperty;
+  const canSubmit = loiUploaded && leaseUploaded && (sites.length === 0 || !!selectedProperty);
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center" style={{ background: "rgba(20,30,40,0.65)", backdropFilter: "blur(6px)" }} onClick={onClose}>
@@ -358,14 +394,20 @@ function SignedCompletionModal({ onClose, onConfirm }: { onClose: () => void; on
           <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 8 }}>
             Select Signed Property
           </span>
-          <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-            <SelectTrigger className="w-full glass-input mb-6"><SelectValue placeholder="Select a property..." /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mckinney">McKinney Ave — 3421 McKinney Ave, Dallas, TX</SelectItem>
-              <SelectItem value="uptown">Uptown Plaza — 2800 Routh St, Dallas, TX</SelectItem>
-              <SelectItem value="knox">Knox-Henderson Strip — 4100 Knox St, Dallas, TX</SelectItem>
-            </SelectContent>
-          </Select>
+          {sites.length > 0 ? (
+            <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+              <SelectTrigger className="w-full glass-input mb-6"><SelectValue placeholder="Select a property..." /></SelectTrigger>
+              <SelectContent>
+                {sites.map((site) => (
+                  <SelectItem key={site.id} value={site.id}>{site.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="glass-input mb-6 px-3 py-2 text-sm" style={{ color: "var(--text-muted)" }}>
+              No real sites are attached to this deal yet.
+            </div>
+          )}
 
           {/* Key Lease Terms */}
           <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 12 }}>
@@ -421,7 +463,6 @@ export default function DealDetail() {
   const [showTakeAction, setShowTakeAction] = useState(false);
   const [showLinksEditor, setShowLinksEditor] = useState(false);
   const role = useUserRole();
-  const linkOverrides = useDealLinkOverrides(dealId || "");
   const takeActionLabel = role === "franchisee" ? "Request from Reimagine" : "Take Action";
   type ActionRequest = {
     typeKey: string;
@@ -438,16 +479,55 @@ export default function DealDetail() {
     if (deal?.id && deal?.brandId) recordDealVisit(deal.brandId, deal.id);
   }, [deal?.id, deal?.brandId]);
 
-  const handleAddNote = () => {
+  const persistDealChanges = async (overrides: Partial<DealMutationInput> = {}) => {
+    if (!deal) throw new Error("Deal not found.");
+    const updated = await updateDeal(deal.id, dealToMutationInput(deal, overrides));
+    Object.assign(deal, updated);
+    return updated;
+  };
+
+  const handleAddNote = async () => {
     const text = newNote.trim();
     if (!text) return;
     const entry = { date: new Date().toISOString().slice(0, 10), text, author: "ME" };
-    setLocalNotes((prev) => [entry, ...prev]);
-    if (deal) deal.notes = [entry, ...deal.notes];
     setNewNote("");
+    try {
+      await persistDealChanges({ initialNote: text });
+      setLocalNotes((prev) => [entry, ...prev]);
+    } catch (error) {
+      setNewNote(text);
+      toast.error("Unable to save note", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    }
   };
 
-  const handleTakeActionSubmit = (data: TakeActionSubmission) => {
+  const persistStatusChange = async (nextStatus: DealStatusNew) => {
+    const previousStatus = status;
+    setStatus(nextStatus);
+    try {
+      await persistDealChanges({ status: nextStatus });
+    } catch (error) {
+      setStatus(previousStatus);
+      toast.error("Unable to save deal status", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      throw error;
+    }
+  };
+
+  const handleSignedConfirm = async () => {
+    if (!pendingStatus) return;
+    try {
+      await persistStatusChange(pendingStatus);
+      setShowSignedModal(false);
+      setPendingStatus(null);
+    } catch {
+      // Toast is shown in persistStatusChange.
+    }
+  };
+
+  const handleTakeActionSubmit = async (data: TakeActionSubmission) => {
     const entry: FeedEntry = {
       date: new Date().toISOString().slice(0, 10),
       text: data.message,
@@ -461,6 +541,25 @@ export default function DealDetail() {
         status: "pending",
       },
     };
+    const noteBody = [
+      `${data.actionTypeLabel}: ${data.message || "No message"}`,
+      `Recipients: ${data.recipients.join(", ")}`,
+    ].join("\n");
+    try {
+      if (!deal) throw new Error("Deal not found.");
+      await createDealActionItem({
+        dealId: deal.id,
+        audience: role === "franchisee" ? "internal" : "franchisee",
+        title: data.actionTypeLabel,
+        body: noteBody,
+      });
+      await persistDealChanges({ initialNote: noteBody });
+    } catch (error) {
+      toast.error("Unable to save action", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      throw error;
+    }
     setLocalNotes((prev) => [entry, ...prev]);
   };
 
@@ -484,21 +583,29 @@ export default function DealDetail() {
   }
 
   const brand = getDealBrandById(deal.brandId);
+  const dealSites = getSitesByDeal(deal.id);
+  const signedSiteOptions = dealSites.map((site) => ({
+    id: site.id,
+    label: `${site.address || "Site"}${site.city || site.state ? ` — ${[site.city, site.state].filter(Boolean).join(", ")}` : ""}`,
+  }));
+  const actionSites = dealSites.map((site) => ({
+    id: site.id,
+    name: site.address || "Site",
+    cityState: [site.city, site.state].filter(Boolean).join(", "),
+    sf: site.stage,
+  }));
   const days = daysToSign(deal);
   const active = daysActive(deal);
 
   // Treat empty or placeholder URLs as not set.
   const cleanUrl = (u: string | null | undefined) => {
     const t = (u || "").trim();
-    if (!t || t === "#") return undefined;
+    if (!t || t === "#" || t === "https://") return undefined;
     return t;
   };
   const dealAddress = [deal.city, deal.state].filter(Boolean).join(", ");
-  const DEFAULT_MARKET_STUDY_URL =
-    "https://script.google.com/macros/s/AKfycbyYj45eDeSRjfawS2EfKrx02x3JhbOuYEhYunWJ2PcL6k75Q7DLhhe67WX3g2nq9RAc/exec";
-  const effectiveMarketStudyUrl =
-    cleanUrl(linkOverrides.marketStudyUrl) ?? cleanUrl(deal.marketStudyLink) ?? DEFAULT_MARKET_STUDY_URL;
-  const userMapUrl = cleanUrl(linkOverrides.mapUrl) ?? cleanUrl(deal.mapLink);
+  const effectiveMarketStudyUrl = cleanUrl(deal.marketStudyLink);
+  const userMapUrl = cleanUrl(deal.mapLink);
   const effectiveMapUrl =
     userMapUrl ?? (dealAddress ? `https://maps.google.com?q=${encodeURIComponent(dealAddress)}` : undefined);
 
@@ -527,7 +634,23 @@ export default function DealDetail() {
       setPendingStatus(newStatus as DealStatusNew);
       setShowSignedModal(true);
     } else {
-      setStatus(newStatus as DealStatusNew);
+      void persistStatusChange(newStatus as DealStatusNew);
+    }
+  };
+
+  const handleSaveDealLinks = async (vals: { marketStudyUrl: string; mapUrl: string }) => {
+    try {
+      await persistDealChanges({
+        marketStudyLink: vals.marketStudyUrl,
+        mapLink: vals.mapUrl,
+      });
+      toast.success("Deal links updated");
+      setShowLinksEditor(false);
+    } catch (error) {
+      toast.error("Unable to save deal links", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      throw error;
     }
   };
 
@@ -538,7 +661,8 @@ export default function DealDetail() {
       {showSignedModal && (
         <SignedCompletionModal
           onClose={() => { setShowSignedModal(false); setPendingStatus(null); }}
-          onConfirm={() => { if (pendingStatus) setStatus(pendingStatus); setShowSignedModal(false); setPendingStatus(null); }}
+          onConfirm={handleSignedConfirm}
+          sites={signedSiteOptions}
         />
       )}
 
@@ -722,14 +846,11 @@ export default function DealDetail() {
         <DealLinksEditorModal
           dealId={dealId || ""}
           initial={{
-            marketStudyUrl: linkOverrides.marketStudyUrl ?? (cleanUrl(deal.marketStudyLink) || ""),
-            mapUrl: linkOverrides.mapUrl ?? (cleanUrl(deal.mapLink) || ""),
+            marketStudyUrl: cleanUrl(deal.marketStudyLink) || "",
+            mapUrl: cleanUrl(deal.mapLink) || "",
           }}
           onClose={() => setShowLinksEditor(false)}
-          onSave={(vals) => {
-            dealLinkOverridesStore.set(dealId || "", vals);
-            setShowLinksEditor(false);
-          }}
+          onSave={handleSaveDealLinks}
         />
       )}
 
@@ -985,6 +1106,7 @@ export default function DealDetail() {
         onClose={() => setShowTakeAction(false)}
         dealName={deal.franchisee}
         broker={deal.broker}
+        sites={actionSites}
         onSubmit={handleTakeActionSubmit}
       />
     </div>

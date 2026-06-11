@@ -21,7 +21,10 @@ export function AppDataProvider({ children }: AppDataProviderProps) {
         }
 
         const session = getStoredSession();
-        await loadRuntimeAppData({ accessToken: session?.accessToken ?? null });
+        if (!session?.accessToken) {
+          throw new Error("Session expired. Refresh the page and log in again.");
+        }
+        await loadRuntimeAppData({ accessToken: session.accessToken });
         if (active) setStatus("ready");
       } catch (err) {
         if (!active) return;

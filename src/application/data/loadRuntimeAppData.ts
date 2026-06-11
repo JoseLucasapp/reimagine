@@ -11,6 +11,8 @@ import {
 } from "@/data/dealsData";
 import { replaceMapRuntimeData, type DealStage, type Site } from "@/data/mapRuntimeData";
 import { replaceSpaceRequirementsRuntimeData, type GasReq, type SecondFloor, type SpaceRequirement } from "@/data/spaceReqData";
+import { replaceTeamRuntimeData } from "@/data/teamData";
+import type { UserRole } from "@/domain/entities";
 import { supabaseRequest } from "@/infrastructure/supabase/client";
 
 type RuntimeLoadOptions = {
@@ -23,6 +25,13 @@ type BrandRow = {
   category: string;
   logo_color: string | null;
   corporate_link: string | null;
+};
+
+type ProfileRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  role: UserRole;
 };
 
 type DealRow = {
@@ -289,8 +298,9 @@ async function readTable<T>(table: string, accessToken: string | null): Promise<
 }
 
 export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
-  const [brandRows, dealRows, noteRows, documentRows, prospectRows, siteRows, spaceRows] = await Promise.all([
+  const [brandRows, profileRows, dealRows, noteRows, documentRows, prospectRows, siteRows, spaceRows] = await Promise.all([
     readTable<BrandRow>("brands", accessToken),
+    readTable<ProfileRow>("profiles", accessToken),
     readTable<DealRow>("deals", accessToken),
     readTable<DealNoteRow>("deal_notes", accessToken),
     readTable<DealDocumentRow>("deal_documents", accessToken),
@@ -308,6 +318,12 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
 
   replaceDealRuntimeData({ brands, deals });
   rebuildBrandRuntimeData();
+  replaceTeamRuntimeData(profileRows.map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    username: row.username,
+    role: row.role,
+  })));
   replaceBizDevRuntimeData(prospects);
   replaceSpaceRequirementsRuntimeData(spaceRequirements);
 
