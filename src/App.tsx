@@ -49,7 +49,9 @@ const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getStoredSession() !== null);
 
   const handleLogin = (session: AuthSession) => {
-    persistSession(session);
+    // The app should open in Admin preview by default after login. Users can
+    // still switch to Brand Level or Deal Level from Settings.
+    persistSession({ ...session, role: "admin" });
     setIsLoggedIn(true);
   };
 

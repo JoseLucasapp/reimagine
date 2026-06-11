@@ -16,11 +16,32 @@ import {
 
 const KEY = "rcre_role";
 const EVENT = "rcre:role-change";
+const DEFAULT_ROLE: UserRole = "admin";
+
+// Bump this when the default preview role changes. This prevents existing
+// browser sessions that were saved as Deal Level from locking the user out
+// after a deployment.
+const DEFAULT_ROLE_VERSION_KEY = "rcre_role_default_version";
+const DEFAULT_ROLE_VERSION = "admin-default-2026-06-11";
+
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
+function ensureDefaultRole(): void {
+  if (typeof window === "undefined") return;
+
+  const currentVersion = sessionStorage.getItem(DEFAULT_ROLE_VERSION_KEY);
+  const currentRole = sessionStorage.getItem(KEY);
+
+  if (currentVersion !== DEFAULT_ROLE_VERSION || !currentRole) {
+    sessionStorage.setItem(KEY, DEFAULT_ROLE);
+    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
+  }
+}
+
 function readRole(): UserRole {
-  if (typeof window === "undefined") return "admin";
+  if (typeof window === "undefined") return DEFAULT_ROLE;
+  ensureDefaultRole();
   return parseUserRole(sessionStorage.getItem(KEY));
 }
 
@@ -33,9 +54,11 @@ function emit() {
 }
 
 if (typeof window !== "undefined") {
+  ensureDefaultRole();
+
   // Sync across tabs.
   window.addEventListener("storage", (event) => {
-    if (event.key === KEY) emit();
+    if (event.key === KEY || event.key === DEFAULT_ROLE_VERSION_KEY) emit();
   });
   // Sync within the same tab.
   window.addEventListener(EVENT, emit as EventListener);
@@ -48,6 +71,13 @@ export const roleStore = {
   set(role: UserRole) {
     if (typeof window === "undefined") return;
     sessionStorage.setItem(KEY, role);
+    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
+    window.dispatchEvent(new Event(EVENT));
+  },
+  resetToAdmin() {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem(KEY, DEFAULT_ROLE);
+    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
     window.dispatchEvent(new Event(EVENT));
   },
   subscribe(listener: Listener) {
@@ -62,7 +92,7 @@ export function useUserRole(): UserRole {
   return useSyncExternalStore(
     roleStore.subscribe,
     () => current,
-    () => "admin" as UserRole,
+    () => DEFAULT_ROLE,
   );
 }
 

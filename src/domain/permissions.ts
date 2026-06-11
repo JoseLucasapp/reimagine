@@ -14,7 +14,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
 
 export function parseUserRole(value: string | null | undefined): UserRole {
   if (value === "admin" || value === "franchisor" || value === "franchisee") return value;
-  return "franchisee";
+  return "admin";
 }
 
 export function canSeeRoute(role: UserRole, path: string): boolean {
