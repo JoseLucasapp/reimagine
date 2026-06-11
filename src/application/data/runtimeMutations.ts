@@ -26,6 +26,7 @@ import {
 } from "@/data/spaceReqData";
 import type { TakeActionAudience, TakeActionStatus } from "@/domain/entities";
 import { supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
+import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
 
 type BrandRow = {
   id: string;
@@ -297,6 +298,7 @@ function upsertBrandRuntime(brand: DealBrand): void {
   const next = [brand, ...dealBrands.filter((current) => current.id !== brand.id)];
   dealBrands.splice(0, dealBrands.length, ...next);
   rebuildBrandRuntimeData();
+  notifyRuntimeDataChanged();
 }
 
 function mapProspect(row: ProspectRow): BizDevRecord {
@@ -328,6 +330,7 @@ function upsertProspectRuntime(record: BizDevRecord): void {
     ? bizDevRecords.map((current) => (current.id === record.id ? record : current))
     : [record, ...bizDevRecords];
   replaceBizDevRuntimeData(next);
+  notifyRuntimeDataChanged();
 }
 
 function mapDeal(row: DealRow, existing?: DealRecord): DealRecord {
@@ -375,6 +378,7 @@ function upsertDealRuntime(record: DealRecord): void {
     : [record, ...dealRecords];
   dealRecords.splice(0, dealRecords.length, ...next);
   rebuildBrandRuntimeData();
+  notifyRuntimeDataChanged();
 }
 
 function mapSpaceRequirement(row: SpaceRequirementRow): SpaceRequirement {
@@ -405,6 +409,7 @@ function upsertSpaceRequirementRuntime(record: SpaceRequirement): void {
     ? spaceRequirements.map((current) => (current.id === record.id ? record : current))
     : [...spaceRequirements, record];
   replaceSpaceRequirementsRuntimeData(next);
+  notifyRuntimeDataChanged();
 }
 
 function brandBody(input: BrandMutationInput): JsonObject {

@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { createBrand } from "@/application/data/runtimeMutations";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 /* ── GLASS CARD — matches Dashboard exactly ── */
 const glassCard: React.CSSProperties = {
@@ -95,7 +96,7 @@ export default function BrandsPage() {
   const [catFilter, setCatFilter] = useState<string[]>([]);
   const [dealFilter, setDealFilter] = useState("all");
   const [view, setView] = useState<BrandView>("overview");
-  const [dataVersion, setDataVersion] = useState(0);
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savingBrand, setSavingBrand] = useState(false);
   const [form, setForm] = useState({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
@@ -151,11 +152,14 @@ export default function BrandsPage() {
   const toggleReportSection = (s: string) =>
     setReportSections((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
 
-  const brandDetails = useMemo(() => [...baseBrandDetails], [dataVersion]);
-  const brandCategories = useMemo(
-    () => Array.from(new Set([...baseBrandCategories, ...baseBrandDetails.map(b => b.category).filter(Boolean)])),
-    [dataVersion]
-  );
+  const brandDetails = useMemo(() => {
+    void runtimeDataVersion;
+    return [...baseBrandDetails];
+  }, [runtimeDataVersion]);
+  const brandCategories = useMemo(() => {
+    void runtimeDataVersion;
+    return Array.from(new Set([...baseBrandCategories, ...baseBrandDetails.map(b => b.category).filter(Boolean)]));
+  }, [runtimeDataVersion]);
 
   const resetForm = () => setForm({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
 
@@ -170,7 +174,6 @@ export default function BrandsPage() {
         franchisorLink: form.franchisorLink,
         logoColor: form.logoColor,
       });
-      setDataVersion((version) => version + 1);
       toast.success(`${name} added`);
       resetForm();
       setDrawerOpen(false);
@@ -194,27 +197,30 @@ export default function BrandsPage() {
   }, [search, catFilter, dealFilter, brandDetails]);
 
   const overviewStats = useMemo(() => {
+    void runtimeDataVersion;
     const allDeals = dealRecords.filter(d => !d.isOneOff);
     return {
       totalBrands: dealBrands.length,
       activeDeals: allDeals.filter(d => d.status !== "Signed").length,
       dealsSigned: allDeals.filter(d => d.status === "Signed").length,
     };
-  }, [dataVersion]);
+  }, [runtimeDataVersion]);
 
   const brandDealCounts = useMemo(() => {
+    void runtimeDataVersion;
     return dealBrands.map(b => {
       const deals = dealRecords.filter(d => d.brandId === b.id && !d.isOneOff);
       return { name: b.name, count: deals.length, color: b.logoColor, id: b.id };
     }).sort((a, b) => b.count - a.count);
-  }, [dataVersion]);
+  }, [runtimeDataVersion]);
 
   const statusCounts = useMemo(() => {
+    void runtimeDataVersion;
     const allDeals = dealRecords.filter(d => !d.isOneOff);
     const counts: Record<string, number> = {};
     allDeals.forEach(d => { counts[d.status] = (counts[d.status] || 0) + 1; });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [dataVersion]);
+  }, [runtimeDataVersion]);
 
   const maxDeals = Math.max(...brandDealCounts.map(b => b.count), 1);
   const maxStatus = Math.max(...statusCounts.map(s => s[1]), 1);

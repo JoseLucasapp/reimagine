@@ -13,6 +13,7 @@ import { replaceMapRuntimeData, type DealStage, type Site } from "@/data/mapRunt
 import { replaceSpaceRequirementsRuntimeData, type GasReq, type SecondFloor, type SpaceRequirement } from "@/data/spaceReqData";
 import { replaceTeamRuntimeData } from "@/data/teamData";
 import type { UserRole } from "@/domain/entities";
+import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
 import { supabaseRequest } from "@/infrastructure/supabase/client";
 
 type RuntimeLoadOptions = {
@@ -360,4 +361,6 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
       createdAt: deal.dateIntroCall ?? new Date().toISOString().slice(0, 10),
     })),
   });
+
+  notifyRuntimeDataChanged();
 }

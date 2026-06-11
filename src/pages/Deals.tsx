@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   dealRecords, dealBrands, getDealBrandById, getUniqueBrokers, getUniqueStates,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useUserRole, canEditDeal, canViewFinancials } from "@/hooks/useUserRole";
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
 
 type ViewMode = "table" | "kanban" | "map";
@@ -59,18 +60,19 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
   const [stateFilter, setStateFilter] = useState<string[]>([]);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editingDeal, setEditingDeal] = useState<DealRecord | null>(null);
-  const [dataVersion, setDataVersion] = useState(0);
+  const runtimeDataVersion = useRuntimeDataVersion();
   const role = useUserRole();
   const allowEdit = canEditDeal(role);
   const showFinancials = canViewFinancials(role);
 
   const baseDeals = useMemo(() => {
+    void runtimeDataVersion;
     let d = dealRecords;
     if (isOneOff) d = d.filter((x) => x.isOneOff);
     else if (brandFilter) d = d.filter((x) => x.brandId === brandFilter && !x.isOneOff);
     else d = d.filter((x) => !x.isOneOff);
     return d;
-  }, [brandFilter, isOneOff, dataVersion]);
+  }, [brandFilter, isOneOff, runtimeDataVersion]);
 
   const filtered = useMemo(() => {
     let d = baseDeals;
@@ -258,11 +260,11 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
           brandId={brandFilter}
           defaultIsOneOff={Boolean(isOneOff)}
           onSaved={() => {
-            setDataVersion((version) => version + 1);
             setSearch("");
             setStatusFilter([]);
             setBrokerFilter([]);
             setStateFilter([]);
+            setBrandFilterState(brandFilter ? [brandFilter] : []);
             onAddDeal?.();
           }}
           onClose={() => { setShowDrawer(false); setEditingDeal(null); }}
@@ -284,7 +286,13 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer }: {
 }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(deals.length / ROWS_PER_PAGE);
-  const paginated = deals.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [deals.length]);
+
+  const safePage = Math.min(page, Math.max(totalPages, 1));
+  const paginated = deals.slice((safePage - 1) * ROWS_PER_PAGE, safePage * ROWS_PER_PAGE);
 
   const COL_HEADERS = ["Brand", "Deal / Franchisee", "City, State", "Broker", "Date Started", "Days Active", "Status", "Last Update", "Docs", ""];
 
@@ -390,31 +398,31 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer }: {
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid var(--border-divider)" }}>
           <span className="text-xs" style={{ color: "var(--text-faint)" }}>
-            Showing {(page - 1) * ROWS_PER_PAGE + 1}–{Math.min(page * ROWS_PER_PAGE, deals.length)} of {deals.length}
+            Showing {(safePage - 1) * ROWS_PER_PAGE + 1}–{Math.min(safePage * ROWS_PER_PAGE, deals.length)} of {deals.length}
           </span>
           <div className="flex items-center gap-1">
             <button
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
+              disabled={safePage <= 1}
+              onClick={() => setPage(safePage - 1)}
               className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ color: page <= 1 ? "var(--text-faint)" : "var(--text-secondary)", cursor: page <= 1 ? "default" : "pointer" }}
+              style={{ color: safePage <= 1 ? "var(--text-faint)" : "var(--text-secondary)", cursor: safePage <= 1 ? "default" : "pointer" }}
             >···</button>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
                 className="w-8 h-8 rounded-[8px] text-xs font-semibold transition-colors"
-                style={p === page
+                style={p === safePage
                   ? { background: "#243c51", color: "#fff" }
                   : { background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-divider)" }
                 }
               >{p}</button>
             ))}
             <button
-              disabled={page >= totalPages}
-              onClick={() => setPage(page + 1)}
+              disabled={safePage >= totalPages}
+              onClick={() => setPage(safePage + 1)}
               className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ color: page >= totalPages ? "var(--text-faint)" : "var(--text-secondary)", cursor: page >= totalPages ? "default" : "pointer" }}
+              style={{ color: safePage >= totalPages ? "var(--text-faint)" : "var(--text-secondary)", cursor: safePage >= totalPages ? "default" : "pointer" }}
             >···</button>
           </div>
         </div>

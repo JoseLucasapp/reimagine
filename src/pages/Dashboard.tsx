@@ -13,6 +13,7 @@ import { dealRecords, getDealBrandById, KANBAN_COLUMNS, type DealRecord } from "
 import { cn } from "@/lib/utils";
 import { calculateDealHealth, getDealNudges } from "@/lib/dealIntelligence";
 import { getFollowUpQueue } from "@/lib/dealIntelligence";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 /* ── GLASS CARD STYLE ── */
 const glassCard: React.CSSProperties = {
@@ -134,12 +135,14 @@ const PIPELINE_STAGE_LABELS: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const stats = useMemo(() => getDashboardStats(), []);
-  const recentActivity = useMemo(() => getRecentActivity(), []);
-  const statusCounts = useMemo(() => getDealsByStatusCounts(), []);
-  const brandSummaries = useMemo(() => getBrandSummaries(), []);
+  const runtimeDataVersion = useRuntimeDataVersion();
+  const stats = useMemo(() => { void runtimeDataVersion; return getDashboardStats(); }, [runtimeDataVersion]);
+  const recentActivity = useMemo(() => { void runtimeDataVersion; return getRecentActivity(); }, [runtimeDataVersion]);
+  const statusCounts = useMemo(() => { void runtimeDataVersion; return getDealsByStatusCounts(); }, [runtimeDataVersion]);
+  const brandSummaries = useMemo(() => { void runtimeDataVersion; return getBrandSummaries(); }, [runtimeDataVersion]);
 
   const brokerLeaderboard = useMemo(() => {
+    void runtimeDataVersion;
     const grouped = new Map<string, { deals: number; commission: number }>();
     for (const deal of dealRecords) {
       if (!deal.broker) continue;
@@ -166,7 +169,7 @@ export default function Dashboard() {
       .sort((a, b) => b.commission - a.commission)
       .map((broker, index) => ({ ...broker, rank: index + 1 }))
       .slice(0, 3);
-  }, []);
+  }, [runtimeDataVersion]);
 
   const pipelineStages = useMemo(() => statusCounts.map(({ status, count }) => {
     const stageDeals = dealRecords.filter((deal) => deal.status === status && !deal.isOneOff);
@@ -185,7 +188,9 @@ export default function Dashboard() {
 
   const pipelineTotal = pipelineStages.reduce((total, stage) => total + stage.count, 0);
 
-  const dashboardNudges = useMemo(() => getDealNudges().slice(0, 4).map((item) => {
+  const dashboardNudges = useMemo(() => {
+    void runtimeDataVersion;
+    return getDealNudges().slice(0, 4).map((item) => {
     const deal = dealRecords.find((record) => record.id === item.id);
     return {
       id: `nudge-${item.id}`,
@@ -195,15 +200,17 @@ export default function Dashboard() {
       action: item.action,
       url: item.actionUrl,
     };
-  }), []);
+  });
+  }, [runtimeDataVersion]);
 
   const forecast = useMemo(() => {
+    void runtimeDataVersion;
     const active = dealRecords.filter((d) => !d.isOneOff);
     const confirmed = active.filter((d) => d.status === "Signed").reduce((a, d) => a + d.estimatedCommission, 0);
     const projected = active.filter((d) => d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations").reduce((a, d) => a + d.estimatedCommission, 0) * 0.65;
     const pipelineCount = active.filter((d) => d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations").length;
     return { confirmed, projected: Math.round(projected), pipelineCount };
-  }, []);
+  }, [runtimeDataVersion]);
 
   const fcTotal = forecast.confirmed + forecast.projected;
   const fcConfPct = fcTotal > 0 ? (forecast.confirmed / fcTotal) * 100 : 50;
@@ -229,13 +236,14 @@ export default function Dashboard() {
   const chartTotal = chartRows.reduce((a, r) => a + r.count, 0);
 
   const brandCards = useMemo(() => {
+    void runtimeDataVersion;
     return brandSummaries.map((brand) => {
       const brandDeals = dealRecords.filter((d) => d.brandId === brand.id && !d.isOneOff);
       const stageCounts: Record<string, number> = {};
       brandDeals.forEach((d) => { stageCounts[d.status] = (stageCounts[d.status] || 0) + 1; });
       return { ...brand, stageCounts };
     });
-  }, [brandSummaries]);
+  }, [brandSummaries, runtimeDataVersion]);
 
   const formatCurrency = (val: number) => {
     if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
