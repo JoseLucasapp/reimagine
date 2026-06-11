@@ -9,7 +9,7 @@ import {
   type DealRecord,
   type DealStatusNew,
 } from "@/data/dealsData";
-import { replaceMapRuntimeData, type DealStage, type Site } from "@/data/mapRuntimeData";
+import { replaceMapRuntimeData, type DealStage, type Site, type SiteFile, type SiteLoiTerms } from "@/data/mapRuntimeData";
 import { replaceSpaceRequirementsRuntimeData, type GasReq, type SecondFloor, type SpaceRequirement } from "@/data/spaceReqData";
 import { replaceTeamRuntimeData } from "@/data/teamData";
 import type { UserRole } from "@/domain/entities";
@@ -103,13 +103,37 @@ type ProspectRow = {
 type SiteRow = {
   id: string;
   deal_id: string;
+  property_name: string | null;
   address: string;
   city: string;
   state: string;
+  zip_code: string | null;
   lat: number | null;
   lng: number | null;
   stage: DealStage;
+  status_label: string | null;
   notes: string | null;
+  square_footage: string | null;
+  space_type: string | null;
+  property_type: string | null;
+  landlord: string | null;
+  landlord_contact: string | null;
+  lease_term: string | null;
+  possession_date: string | null;
+  tour_time: string | null;
+  broker_name: string | null;
+  broker_phone: string | null;
+  photo_urls: string[] | null;
+  brochure_url: string | null;
+  floor_plan_url: string | null;
+  loi_url: string | null;
+  lease_url: string | null;
+  base_rent: string | null;
+  nnn: string | null;
+  gross_monthly_rent: string | null;
+  commencement_date: string | null;
+  ti_allowance: string | null;
+  loi_notes: string | null;
 };
 
 type SpaceRequirementRow = {
@@ -291,6 +315,59 @@ function mapStatusToLegacyStage(status: DealStatusNew): DealStage {
   return "Prospecting";
 }
 
+function buildSiteFiles(row: SiteRow): SiteFile[] {
+  const files: SiteFile[] = [];
+  if (row.brochure_url) files.push({ name: "Brochure", type: "brochure", url: row.brochure_url });
+  if (row.floor_plan_url) files.push({ name: "Floor Plan", type: "floor_plan", url: row.floor_plan_url });
+  if (row.loi_url) files.push({ name: "LOI", type: "loi", url: row.loi_url });
+  if (row.lease_url) files.push({ name: "Lease", type: "lease", url: row.lease_url });
+  return files;
+}
+
+function mapSite(row: SiteRow): Site {
+  const loiTerms: SiteLoiTerms = {
+    baseRent: row.base_rent ?? "",
+    nnn: row.nnn ?? "",
+    grossMonthlyRent: row.gross_monthly_rent ?? "",
+    leaseTerm: row.lease_term ?? "",
+    commencementDate: dateOnly(row.commencement_date) ?? "",
+    tiAllowance: row.ti_allowance ?? "",
+    notes: row.loi_notes ?? "",
+  };
+
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    name: row.property_name ?? row.address,
+    address: row.address,
+    city: row.city,
+    state: row.state,
+    zipCode: row.zip_code ?? "",
+    lat: row.lat ?? 0,
+    lng: row.lng ?? 0,
+    stage: row.stage,
+    statusLabel: row.status_label ?? row.stage,
+    notes: row.notes ?? "",
+    squareFootage: row.square_footage ?? "",
+    spaceType: row.space_type ?? "",
+    propertyType: row.property_type ?? "",
+    landlord: row.landlord ?? "",
+    landlordContact: row.landlord_contact ?? "",
+    leaseTerm: row.lease_term ?? "",
+    possessionDate: dateOnly(row.possession_date) ?? "",
+    tourTime: row.tour_time ?? "",
+    brokerName: row.broker_name ?? "",
+    brokerPhone: row.broker_phone ?? "",
+    photoUrls: row.photo_urls ?? [],
+    brochureUrl: row.brochure_url ?? "",
+    floorPlanUrl: row.floor_plan_url ?? "",
+    loiUrl: row.loi_url ?? "",
+    leaseUrl: row.lease_url ?? "",
+    files: buildSiteFiles(row),
+    loiTerms,
+  };
+}
+
 async function readTable<T>(table: string, accessToken: string | null): Promise<T[]> {
   return supabaseRequest<T[]>(`/rest/v1/${table}`, {
     query: new URLSearchParams({ select: "*" }),
@@ -331,18 +408,7 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
   const sitesByDeal = new Map<string, Site[]>();
   for (const row of siteRows) {
     const current = sitesByDeal.get(row.deal_id) ?? [];
-    current.push({
-      id: row.id,
-      dealId: row.deal_id,
-      address: row.address,
-      city: row.city,
-      state: row.state,
-      lat: row.lat ?? 0,
-      lng: row.lng ?? 0,
-      stage: row.stage,
-      notes: row.notes ?? "",
-      files: [],
-    });
+    current.push(mapSite(row));
     sitesByDeal.set(row.deal_id, current);
   }
 

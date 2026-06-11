@@ -25,6 +25,26 @@ import { AppDataProvider } from "@/application/data/AppDataProvider";
 
 const queryClient = new QueryClient();
 
+function MainAppRoutes() {
+  return (
+    <AppLayout>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/brands" element={<BrandsPage />} />
+        <Route path="/brands/:brandId/deals" element={<BrandDeals />} />
+        <Route path="/bizdev" element={<BizDevPage />} />
+        <Route path="/deals" element={<DealsPage />} />
+        <Route path="/deals/:dealId" element={<DealDetail />} />
+        <Route path="/map" element={<MapView />} />
+        <Route path="/space-requirements" element={<SpaceRequirementsPage />} />
+        <Route path="/one-off" element={<OneOffDealsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </AppLayout>
+  );
+}
+
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getStoredSession() !== null);
 
@@ -50,31 +70,24 @@ const App = () => {
         <Sonner />
         <AppDataProvider>
           <BrowserRouter>
-            <AppLayout>
-              <Routes>
+            <Routes>
+              <Route
+                path="/tour-book-generator"
+                element={
+                  <RouteGuard>
+                    <TourBookPage />
+                  </RouteGuard>
+                }
+              />
               <Route
                 path="*"
                 element={
                   <RouteGuard>
-                    <Routes>
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/brands" element={<BrandsPage />} />
-                      <Route path="/brands/:brandId/deals" element={<BrandDeals />} />
-                      <Route path="/bizdev" element={<BizDevPage />} />
-                      <Route path="/deals" element={<DealsPage />} />
-                      <Route path="/deals/:dealId" element={<DealDetail />} />
-                      <Route path="/map" element={<MapView />} />
-                      <Route path="/space-requirements" element={<SpaceRequirementsPage />} />
-                      <Route path="/one-off" element={<OneOffDealsPage />} />
-                      <Route path="/settings" element={<SettingsPage />} />
-                      <Route path="/tour-book-generator" element={<TourBookPage />} />
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
+                    <MainAppRoutes />
                   </RouteGuard>
                 }
               />
-              </Routes>
-            </AppLayout>
+            </Routes>
           </BrowserRouter>
         </AppDataProvider>
       </TooltipProvider>

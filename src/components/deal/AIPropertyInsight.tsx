@@ -1,0 +1,90 @@
+import { useMemo, useState } from "react";
+import { Building2, Clock, LayoutGrid, RefreshCw, Ruler } from "lucide-react";
+import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
+import type { DealRecord } from "@/data/dealsData";
+import { spaceRequirements } from "@/data/spaceReqData";
+import type { Site } from "@/data/mapRuntimeData";
+
+function extractNumber(value: string): number | null {
+  const match = value.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fitLabel(match: boolean | null) {
+  if (match === null) return "Not enough data";
+  return match ? "✓ Match" : "Needs review";
+}
+
+export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site }) {
+  const [spinning, setSpinning] = useState(false);
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+
+  const requirement = useMemo(() => spaceRequirements.find((item) => item.brandId === deal.brandId), [deal.brandId]);
+  const sf = extractNumber(site.squareFootage);
+  const sfMatch = requirement && sf ? sf >= requirement.minSF && sf <= requirement.maxSF : null;
+  const spaceMatch = requirement && site.spaceType ? site.spaceType.toLowerCase().includes(requirement.spaceType.toLowerCase()) : null;
+  const propertyMatch = requirement && site.propertyType ? site.propertyType.toLowerCase().includes(requirement.spaceType.toLowerCase()) : null;
+
+  const summary = [
+    `${site.name || site.address} is currently tracked at the ${site.stage} stage for ${deal.franchisee}.`,
+    site.squareFootage ? `The recorded size is ${site.squareFootage}.` : "Square footage has not been recorded yet.",
+    requirement ? `The brand requirement target is ${requirement.minSF.toLocaleString()}–${requirement.maxSF.toLocaleString()} SF.` : "No brand space requirement has been saved yet.",
+    site.landlord ? `Landlord: ${site.landlord}.` : "Landlord information is still missing.",
+  ].join(" ");
+
+  const chips = [
+    { icon: Ruler, label: site.squareFootage || "SF missing", sub: requirement ? `Req: ${requirement.minSF.toLocaleString()}–${requirement.maxSF.toLocaleString()} SF` : "No requirement", match: sfMatch },
+    { icon: Building2, label: site.spaceType || "Space type missing", sub: requirement ? `Req: ${requirement.spaceType}` : "No requirement", match: spaceMatch },
+    { icon: LayoutGrid, label: site.propertyType || "Property type missing", sub: site.stage, match: propertyMatch },
+  ];
+
+  return (
+    <div style={{ background: "var(--nudge-card-bg)", border: "1.5px solid transparent", borderRadius: 12, boxShadow: "var(--shadow-card)", overflow: "hidden" }}>
+      <div className="flex items-center justify-between" style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-divider)" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ai-badge-color)", background: "var(--ai-badge-bg)", borderRadius: 20, padding: "2px 10px", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <img src={aiNudgeIcon} alt="" style={{ width: 12, height: 12 }} /> Property Insight
+        </span>
+        <button
+          onClick={() => {
+            setSpinning(true);
+            window.setTimeout(() => setSpinning(false), 800);
+          }}
+          className="transition-colors"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <RefreshCw className="w-4 h-4" style={{ transition: "transform 0.6s ease", transform: spinning ? "rotate(360deg)" : "none" }} />
+        </button>
+      </div>
+      <div style={{ padding: "12px 16px 0" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", display: "block", marginBottom: 8 }}>Space Fit</span>
+        <div className="flex" style={{ gap: 8, marginBottom: 12, overflow: "hidden" }}>
+          {chips.map((chip) => (
+            <div key={chip.label} className="flex flex-col min-w-0" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, gap: 4, background: chip.match === false ? "rgba(217,119,6,0.08)" : "rgba(5,150,105,0.08)", border: `1px solid ${chip.match === false ? "rgba(217,119,6,0.18)" : "rgba(5,150,105,0.18)"}`, overflow: "hidden" }}>
+              <div className="flex items-center" style={{ gap: 4, minWidth: 0 }}>
+                <chip.icon className="w-3 h-3 shrink-0" style={{ color: chip.match === false ? "var(--stage-warn)" : "var(--status-signed-text)" }} />
+                <span className="truncate" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{chip.label}</span>
+              </div>
+              <span className="truncate" style={{ fontSize: 12, color: "var(--text-muted)" }}>{chip.sub}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: chip.match === false ? "var(--stage-warn)" : "var(--status-signed-text)" }}>{fitLabel(chip.match)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-divider)" }}>
+        <p style={{ fontSize: 12, lineHeight: 1.6, color: "var(--text-secondary)" }}>{summary}</p>
+      </div>
+      <div className="flex items-center justify-between" style={{ padding: "8px 16px", borderTop: "1px solid var(--border-divider)" }}>
+        <div className="flex items-center" style={{ gap: 4 }}>
+          <Clock className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Generated from Supabase data</span>
+        </div>
+        <div className="flex items-center" style={{ gap: 8 }}>
+          <button onClick={() => setFeedback("up")} style={{ opacity: feedback === "up" ? 1 : 0.5, fontSize: 16, transition: "opacity 0.15s" }}>👍</button>
+          <button onClick={() => setFeedback("down")} style={{ opacity: feedback === "down" ? 1 : 0.5, fontSize: 16, transition: "opacity 0.15s" }}>👎</button>
+        </div>
+      </div>
+    </div>
+  );
+}

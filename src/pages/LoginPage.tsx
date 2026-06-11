@@ -88,7 +88,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const result = await signInWithSupabase(credential, password);
     if (result.ok) {
-      onLogin({ accessToken: result.session.accessToken, role: result.session.role });
+      onLogin({ accessToken: result.session.accessToken, refreshToken: result.session.refreshToken, role: result.session.role });
       return;
     }
     setError(result.message);
@@ -118,7 +118,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const result = await signUpWithSupabase({ fullName, email, password, username });
     if (result.ok) {
-      onLogin({ accessToken: result.session.accessToken, role: result.session.role });
+      onLogin({ accessToken: result.session.accessToken, refreshToken: result.session.refreshToken, role: result.session.role });
       return;
     }
 

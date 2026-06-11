@@ -9,7 +9,7 @@ import { DealHealthIndicator } from "@/components/DealHealthIndicator";
 import { StageTimingBadge } from "@/components/StageTimingBadge";
 import { BrandAvatar } from "@/components/BrandAvatar";
 import {
-  Search, LayoutList, Columns3, Map, Plus, ChevronRight, FileText, MoreHorizontal,
+  Search, LayoutList, Columns3, Map as MapIcon, Plus, ChevronRight, FileText, MoreHorizontal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +21,8 @@ import { useUserRole, canEditDeal, canViewFinancials } from "@/hooks/useUserRole
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
+import { MapComponent } from "@/components/MapComponent";
+import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 type ViewMode = "table" | "kanban" | "map";
 
@@ -112,7 +114,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
         </div>
         <div className="flex items-center gap-3">
           <div className="flex p-0.5 rounded-[11px]" style={{ background: "var(--view-toggle-bg)", border: "1px solid var(--border-subtle)" }}>
-            {([["table", LayoutList], ["kanban", Columns3], ["map", Map]] as const).map(([m, Icon]) => (
+            {([["table", LayoutList], ["kanban", Columns3], ["map", MapIcon]] as const).map(([m, Icon]) => (
               <button
                 key={m}
                 onClick={() => setView(m)}
@@ -244,13 +246,9 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
         </div>
       )}
 
-      {/* Map View Placeholder */}
+      {/* Map View */}
       {view === "map" && (
-        <div className="glass-card-static p-16 text-center">
-          <Map className="w-10 h-10 mx-auto mb-3" style={{ color: "#b8c5d0" }} />
-          <p className="text-sm font-medium" style={{ color: "#4a5568" }}>Map view coming soon</p>
-          <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Deal locations will be plotted on an interactive map.</p>
-        </div>
+        <DealsMapPanel deals={filtered} navigate={navigate} />
       )}
 
       {/* Add/Edit Drawer */}
@@ -271,6 +269,34 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
         />
       )}
     </div>
+    </div>
+  );
+}
+
+
+function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (path: string) => void }) {
+  const sites = useMemo(() => deals.flatMap((deal) => getSitesByDeal(deal.id)), [deals]);
+
+  if (sites.length === 0) {
+    return (
+      <div className="glass-card-static p-16 text-center">
+        <MapIcon className="w-10 h-10 mx-auto mb-3" style={{ color: "#b8c5d0" }} />
+        <p className="text-sm font-medium" style={{ color: "#4a5568" }}>No mapped sites</p>
+        <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Add sites with latitude and longitude to see them on the deal map.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-card-static overflow-hidden" style={{ borderRadius: 14, padding: 0, height: 560 }}>
+      <MapComponent
+        sites={sites}
+        className="w-full h-full"
+        onSiteClick={(siteId) => {
+          const site = sites.find((item) => item.id === siteId);
+          if (site) navigate(`/deals/${site.dealId}`);
+        }}
+      />
     </div>
   );
 }

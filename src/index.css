@@ -481,6 +481,73 @@ select {
     box-shadow: 0 0 0 4px rgba(192, 222, 237, 0.30), 0 1px 4px rgba(36, 60, 81, 0.08);
   }
 
+
+  .app-input,
+  .glass-input {
+    min-height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border-input);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    outline: none;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .app-input::placeholder,
+  .glass-input::placeholder {
+    color: var(--text-faint);
+  }
+
+  .app-input:focus,
+  .app-input:focus-visible,
+  .glass-input:focus,
+  .glass-input:focus-visible {
+    border-color: rgba(225, 135, 57, 0.52);
+    background: var(--bg-surface-alt);
+    box-shadow: 0 0 0 3px rgba(225, 135, 57, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    outline: none;
+  }
+
+  .app-input[type="date"]::-webkit-calendar-picker-indicator,
+  .glass-input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0.68;
+    cursor: pointer;
+  }
+
+  .dark .app-input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark .glass-input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+
+  .themed-scrollbar {
+    scrollbar-color: rgba(148, 163, 184, 0.38) transparent;
+    scrollbar-width: thin;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.28);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(225, 135, 57, 0.42);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+
   /* Global Select trigger & dropdown overrides */
   [data-radix-popper-content-wrapper] [role="listbox"],
   [data-radix-select-content],
@@ -829,5 +896,27 @@ select {
     to {
       transform: translateX(0);
     }
+  }
+}
+
+.tour-book-page,
+.tour-book-page-shell {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  color-scheme: light !important;
+}
+
+.tour-book-page * {
+  color-scheme: light !important;
+}
+
+@media print {
+
+  .tour-book-page,
+  .tour-book-page-shell {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

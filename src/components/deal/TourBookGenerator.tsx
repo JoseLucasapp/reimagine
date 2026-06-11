@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen, Check, GripVertical, Upload, ChevronDown, ChevronRight,
   Camera, Phone, Navigation, FileText, X, Maximize, Minus, Plus, Search,
@@ -12,13 +12,19 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { getAllSites } from "@/data/mapRuntimeData";
+import { getAllSites, type Site } from "@/data/mapRuntimeData";
+import { getDealRecordById } from "@/data/dealsData";
+import { createSite as createRuntimeSite, createTourBook } from "@/application/data/runtimeMutations";
+import { buildAddressQuery, geocodeAddress, type GeocodeResult } from "@/lib/geocoding";
 
 /* ───────── TYPES ───────── */
 interface SiteData {
   id: string;
+  dealId: string;
   name: string;
   address: string;
+  lat: number;
+  lng: number;
   sf: string;
   baseRent: string;
   nnn: string;
@@ -51,8 +57,8 @@ type FieldFocusHandler = React.FocusEventHandler<HTMLInputElement | HTMLTextArea
 /* ───────── CSS KEYFRAMES ───────── */
 const STYLE_TAG_ID = "tourbook-animations";
 function injectAnimations() {
-  if (document.getElementById(STYLE_TAG_ID)) return;
-  const style = document.createElement("style");
+  const existingStyle = document.getElementById(STYLE_TAG_ID) as HTMLStyleElement | null;
+  const style = existingStyle ?? document.createElement("style");
   style.id = STYLE_TAG_ID;
   style.textContent = `
     @keyframes updateFlash {
@@ -61,16 +67,96 @@ function injectAnimations() {
       100% { box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.00); }
     }
     @keyframes fieldPulse {
-      0%   { border-color: rgba(36,60,81,0.12); }
-      40%  { border-color: #243c51; box-shadow: 0 0 0 3px rgba(36,60,81,0.10); }
-      100% { border-color: rgba(36,60,81,0.12); }
+      0%   { border-color: rgba(192,222,237,0.12); }
+      40%  { border-color: #243c51; box-shadow: 0 0 0 3px rgba(192,222,237,0.10); }
+      100% { border-color: rgba(192,222,237,0.12); }
     }
     .update-flash { animation: updateFlash 0.8s ease forwards; }
     .field-pulse { animation: fieldPulse 1s ease forwards; }
     .preview-click-zone { cursor: pointer; transition: outline 0.15s ease; border-radius: 4px; }
-    .preview-click-zone:hover { outline: 1.5px solid rgba(36,60,81,0.15); }
+    .preview-click-zone:hover { outline: 1.5px solid rgba(192,222,237,0.15); }
+    .tourbook-workspace {
+      --brand-navy-color: #243c51;
+      --tourbook-stage-bg: radial-gradient(circle at top, rgba(192,222,237,0.24), rgba(245,252,255,0.96) 60%);
+      --tourbook-preview-bg: #ffffff;
+      --tourbook-preview-text: #0f172a;
+      --tourbook-preview-muted: #64748b;
+      --tourbook-preview-faint: #94a3b8;
+      --tourbook-preview-border: #e2e8f0;
+      --tourbook-preview-soft-bg: #f8fafc;
+      --tourbook-preview-header-bg: #ffffff;
+      --tourbook-control-bg: rgba(255,255,255,0.86);
+      --tourbook-control-border: rgba(36,60,81,0.12);
+      --tourbook-control-text: #243c51;
+      --tourbook-filmstrip-bg: rgba(255,255,255,0.76);
+      --tourbook-filmstrip-border: rgba(36,60,81,0.08);
+      --tourbook-thumb-bg: #ffffff;
+      --tourbook-shadow: 0 24px 64px rgba(36,60,81,0.18), 0 4px 16px rgba(36,60,81,0.10);
+    }
+    .dark .tourbook-workspace {
+      --brand-navy-color: #243c51;
+      --tourbook-stage-bg: radial-gradient(circle at top, rgba(192,222,237,0.35), rgba(14,23,29,0.98) 58%);
+
+      /* Keep the document/PDF pages light even when the app workspace is dark. */
+      --tourbook-preview-bg: #ffffff;
+      --tourbook-preview-text: #0f172a;
+      --tourbook-preview-muted: #475569;
+      --tourbook-preview-faint: #64748b;
+      --tourbook-preview-border: #e2e8f0;
+      --tourbook-preview-soft-bg: #f8fafc;
+      --tourbook-preview-header-bg: #ffffff;
+
+      /* Workspace controls may remain dark. */
+      --tourbook-control-bg: rgba(20,35,48,0.92);
+      --tourbook-control-border: rgba(255,255,255,0.18);
+      --tourbook-control-text: rgba(255,255,255,0.85);
+      --tourbook-filmstrip-bg: rgba(18,32,43,0.96);
+      --tourbook-filmstrip-border: rgba(255,255,255,0.06);
+      --tourbook-thumb-bg: #ffffff;
+      --tourbook-shadow: 0 24px 64px rgba(0,0,0,0.50), 0 4px 16px rgba(0,0,0,0.30);
+    }
+    .tour-book-page,
+    .tour-book-page-shell {
+      --tourbook-preview-bg: #ffffff !important;
+      --tourbook-preview-text: #0f172a !important;
+      --tourbook-preview-muted: #475569 !important;
+      --tourbook-preview-faint: #64748b !important;
+      --tourbook-preview-border: #e2e8f0 !important;
+      --tourbook-preview-soft-bg: #f8fafc !important;
+      --tourbook-preview-header-bg: #ffffff !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+      color-scheme: light !important;
+    }
+    .tour-book-page *,
+    .tour-book-page-shell * {
+      color-scheme: light !important;
+    }
+    .tour-book-page [style*="var(--tourbook-preview-text)"],
+    .tour-book-page-shell [style*="var(--tourbook-preview-text)"] {
+      color: #0f172a !important;
+    }
+    .tour-book-page [style*="var(--tourbook-preview-muted)"],
+    .tour-book-page-shell [style*="var(--tourbook-preview-muted)"] {
+      color: #475569 !important;
+    }
+    .tour-book-page [style*="var(--tourbook-preview-faint)"],
+    .tour-book-page-shell [style*="var(--tourbook-preview-faint)"] {
+      color: #64748b !important;
+    }
+    @media print {
+      .tour-book-page,
+      .tour-book-page-shell {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
   `;
-  document.head.appendChild(style);
+  if (!existingStyle) {
+    document.head.appendChild(style);
+  }
 }
 
 /* ───────── ZOOM CONSTANTS ───────── */
@@ -78,32 +164,70 @@ const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const ZOOM_LABELS = ["50%", "75%", "100%", "125%", "150%", "200%"];
 
 /* ───────── RUNTIME DATA ───────── */
-function createInitialSites(): SiteData[] {
-  return getAllSites().map((site) => ({
+function toSiteData(site: Site): SiteData {
+  return {
     id: site.id,
-    name: site.address,
-    address: `${site.address}, ${site.city}, ${site.state}`,
-    sf: "",
-    baseRent: "",
-    nnn: "",
-    grossMo: "",
-    tourTime: "",
+    dealId: site.dealId,
+    name: site.name || site.address,
+    address: `${site.address}, ${site.city}, ${site.state}${site.zipCode ? ` ${site.zipCode}` : ""}`,
+    lat: site.lat,
+    lng: site.lng,
+    sf: site.squareFootage,
+    baseRent: site.loiTerms.baseRent,
+    nnn: site.loiTerms.nnn,
+    grossMo: site.loiTerms.grossMonthlyRent,
+    tourTime: site.tourTime,
     tourType: site.stage === "Prospecting" ? "driveby" : "scheduled",
-    brokerName: "",
-    brokerPhone: "",
+    brokerName: site.brokerName,
+    brokerPhone: site.brokerPhone,
     locationNotes: site.notes,
     tourDirections: site.notes,
     uploadedPages: [],
     checked: true,
     statusDot: site.stage === "Open" ? "#065f46" : "#E18739",
-    images: [null, null, null, null],
-  }));
+    images: [site.photoUrls[0] ?? null, site.photoUrls[1] ?? null, site.photoUrls[2] ?? null, site.photoUrls[3] ?? null],
+  };
+}
+
+function createInitialSites(dealId?: string | null): SiteData[] {
+  return getAllSites().filter((site) => !dealId || site.dealId === dealId).map(toSiteData);
+}
+
+function parseSiteCsv(csv: string): Array<{ name: string; address: string; city: string; state: string; lat: number; lng: number }> {
+  const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((header) => header.trim().toLowerCase());
+  const get = (values: string[], name: string) => values[headers.indexOf(name)]?.trim() ?? "";
+  return lines.slice(1).map((line) => {
+    const values = line.split(",").map((value) => value.trim());
+    return {
+      name: get(values, "name") || get(values, "property") || get(values, "property_name"),
+      address: get(values, "address"),
+      city: get(values, "city"),
+      state: get(values, "state"),
+      lat: Number(get(values, "lat")) || 0,
+      lng: Number(get(values, "lng")) || 0,
+    };
+  }).filter((row) => row.address);
 }
 
 const PROGRESS_MESSAGES = [
   "Composing cover page...", "Building schedule table...", "Generating map overview...",
   "Rendering site pages...", "Applying page frames...", "Finalising PDF...",
 ];
+
+const PDF_LIGHT_VARS = {
+  "--tourbook-preview-bg": "#ffffff",
+  "--tourbook-preview-text": "#0f172a",
+  "--tourbook-preview-muted": "#475569",
+  "--tourbook-preview-faint": "#64748b",
+  "--tourbook-preview-border": "#e2e8f0",
+  "--tourbook-preview-soft-bg": "#f8fafc",
+  "--tourbook-preview-header-bg": "#ffffff",
+  "--tourbook-control-text": "#243c51",
+  "--brand-navy-color": "#243c51",
+  colorScheme: "light",
+} as React.CSSProperties;
 
 /* (SortableSiteRow removed — SortableSiteItem is used instead) */
 
@@ -112,13 +236,16 @@ const PROGRESS_MESSAGES = [
 /* ═══════════════════════════════════════════════════════════════ */
 export function TourBookGenerator() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const dealIdParam = searchParams.get("deal");
+  const selectedDeal = dealIdParam ? getDealRecordById(dealIdParam) : undefined;
   const [step, setStep] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [expandedPageEditor, setExpandedPageEditor] = useState<PageEditorKey | null>("instructions");
-  const [sites, setSites] = useState<SiteData[]>(() => createInitialSites());
-  const [tourDate, setTourDate] = useState("");
-  const [franchiseeName, setFranchiseeName] = useState("");
-  const [territory, setTerritory] = useState("");
+  const [sites, setSites] = useState<SiteData[]>(() => createInitialSites(dealIdParam));
+  const [tourDate, setTourDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [franchiseeName, setFranchiseeName] = useState(() => selectedDeal?.franchisee ?? "");
+  const [territory, setTerritory] = useState(() => selectedDeal ? `${selectedDeal.city}, ${selectedDeal.state}` : "");
   const [expandedSite, setExpandedSite] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -147,6 +274,7 @@ export function TourBookGenerator() {
   const [dragContext, setDragContext] = useState<"sites" | "configure" | "uploaded" | null>(null);
   const [dragUploadSiteId, setDragUploadSiteId] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
+  const [resolvingMapCoordinates, setResolvingMapCoordinates] = useState(false);
 
   const coverPhotoInputRef = useRef<HTMLInputElement>(null);
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -155,6 +283,49 @@ export function TourBookGenerator() {
   const editingDotTimers = useRef<Map<number, NodeJS.Timeout>>(new Map());
 
   useEffect(() => { injectAnimations(); }, []);
+
+  useEffect(() => {
+    setSites(createInitialSites(dealIdParam));
+    if (selectedDeal) {
+      setFranchiseeName((current) => current || selectedDeal.franchisee);
+      setTerritory((current) => current || `${selectedDeal.city}, ${selectedDeal.state}`);
+    }
+  }, [dealIdParam, selectedDeal]);
+
+  const sitesMissingCoordinateKey = useMemo(() => sites
+    .filter((site) => site.checked && !isValidCoordinate(site) && site.address.trim().length > 0)
+    .map((site) => `${site.id}:${site.address}`)
+    .join("|"), [sites]);
+
+  useEffect(() => {
+    const sitesToResolve = sites.filter((site) => site.checked && !isValidCoordinate(site) && site.address.trim().length > 0);
+    if (sitesToResolve.length === 0) {
+      setResolvingMapCoordinates(false);
+      return;
+    }
+
+    let active = true;
+    setResolvingMapCoordinates(true);
+
+    void Promise.all(sitesToResolve.map(async (site) => ({
+      id: site.id,
+      result: await resolveTourSiteCoordinates(site),
+    }))).then((results) => {
+      if (!active) return;
+      const resolvedById = new Map(results.filter((item) => item.result !== null).map((item) => [item.id, item.result]));
+      if (resolvedById.size > 0) {
+        setSites((currentSites) => currentSites.map((site) => {
+          const result = resolvedById.get(site.id);
+          return result ? { ...site, lat: result.lat, lng: result.lng } : site;
+        }));
+      }
+      setResolvingMapCoordinates(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [sitesMissingCoordinateKey, sites]);
 
   // ─── DnD sensors ───
   const sensors = useSensors(
@@ -167,6 +338,8 @@ export function TourBookGenerator() {
   const canGenerate = checkedSites.length > 0 && tourDate.trim().length > 0;
   const totalUploadedPages = checkedSites.reduce((sum, s) => sum + s.uploadedPages.length, 0);
   const totalPages = 4 + checkedSites.length + totalUploadedPages;
+  const bookBrandLabel = selectedDeal ? `${selectedDeal.franchisee} — ${selectedDeal.city}, ${selectedDeal.state}` : "Tour Book";
+  const bookFileName = `${(selectedDeal?.franchisee || franchiseeName || "Reimagine").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "Reimagine"}_Tour-Book.pdf`;
 
   const getPageEditorKey = (page: number): PageEditorKey | null => {
     if (page === 1) return "instructions";
@@ -281,14 +454,41 @@ export function TourBookGenerator() {
     debounceTimers.current.set(key, setTimeout(() => { triggerFlash(key); }, 300));
   }, [getAffectedPages, markPageEditing, triggerFlash]);
 
+  const persistTourBook = useCallback(async () => {
+    const dealId = selectedDeal?.id ?? checkedSites[0]?.dealId;
+    if (!dealId) {
+      toast.error("Select a deal before saving a tour book.");
+      return;
+    }
+
+    await createTourBook({
+      dealId,
+      title: `${franchiseeName || selectedDeal?.franchisee || "Tour Book"} - ${tourDate}`,
+      status: "generated",
+      generatedUrl: window.location.href,
+    });
+  }, [checkedSites, franchiseeName, selectedDeal, tourDate]);
+
   const handleGenerate = useCallback(() => {
     setGenerating(true); setProgressPct(0); setProgressMsg(0);
-    const interval = setInterval(() => {
-      setProgressPct(prev => { if (prev >= 100) { clearInterval(interval); return 100; } return prev + 2; });
+    const interval = window.setInterval(() => {
+      setProgressPct(prev => { if (prev >= 100) { window.clearInterval(interval); return 100; } return prev + 2; });
       setProgressMsg(prev => (prev + 1) % PROGRESS_MESSAGES.length);
     }, 150);
-    setTimeout(() => { clearInterval(interval); setProgressPct(100); setGenerating(false); setGenerated(true); }, 8000);
-  }, []);
+    window.setTimeout(() => {
+      window.clearInterval(interval);
+      setProgressPct(100);
+      setGenerating(false);
+      setGenerated(true);
+      persistTourBook()
+        .then(() => toast.success("Tour book saved to Supabase"))
+        .catch((error: unknown) => {
+          toast.error("Tour book generated, but it was not saved", {
+            description: error instanceof Error ? error.message : "Check your Supabase permissions and try again.",
+          });
+        });
+    }, 8000);
+  }, [persistTourBook]);
 
   const handleAddUploadedPage = (siteId: string) => {
     const newPage: UploadedPage = { id: `up-${Date.now()}`, fileName: "Floor Plan.pdf", label: "Floor Plan", wrapStyle: "framed", type: "pdf" };
@@ -375,11 +575,11 @@ export function TourBookGenerator() {
 
   const inputStyle: React.CSSProperties = {
     width: "100%", height: 32, padding: "6px 9px", fontSize: 12, borderRadius: 6,
-    border: "1px solid var(--border-divider)", background: "var(--input-bg, rgba(36,60,81,0.03))",
+    border: "1px solid var(--border-divider)", background: "var(--input-bg, rgba(192,222,237,0.03))",
     color: "var(--text-primary)", outline: "none",
   };
   const focusHandler = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = "var(--text-secondary)"; e.currentTarget.style.background = "var(--card-bg)"; };
-  const blurHandler = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = "var(--border-divider)"; e.currentTarget.style.background = "var(--input-bg, rgba(36,60,81,0.03))"; };
+  const blurHandler = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = "var(--border-divider)"; e.currentTarget.style.background = "var(--input-bg, rgba(192,222,237,0.03))"; };
 
   // ─── DnD handlers ───
   const handleDragStart = (event: DragStartEvent) => {
@@ -437,32 +637,32 @@ export function TourBookGenerator() {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex flex-col" style={{ height: "100vh", overflow: "hidden" }}>
+      <div className="tourbook-workspace flex flex-col" style={{ position: "fixed", inset: 0, zIndex: 9999, height: "100vh", overflow: "hidden", background: "var(--bg-main)", color: "var(--text-primary)" }}>
         {coverPhotoInput}
 
         {/* ══ HEADER (52px) ══ */}
         <div className="shrink-0 flex items-center justify-between" style={{
-          height: 52, padding: "0 12px 0 12px", background: "var(--card-bg)", borderBottom: "1px solid var(--border-divider)", zIndex: 100,
+          height: 52, padding: "0 12px 0 12px", background: "var(--bg-header)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--border-divider)", zIndex: 100,
         }}>
           <div className="flex items-center" style={{ gap: 8, minWidth: 0 }}>
             <button onClick={goBack} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}>
               <ArrowLeft className="w-[15px] h-[15px]" style={{ color: "var(--text-muted)" }} />
             </button>
-            <div className="hidden sm:block" style={{ width: 1, height: 18, background: "rgba(36,60,81,0.12)" }} />
+            <div className="hidden sm:block" style={{ width: 1, height: 18, background: "rgba(192,222,237,0.12)" }} />
             <span className="hidden sm:inline" style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap" }}>Tour Book Generator</span>
-            <span className="sm:inline hidden" style={{ background: "#243c51", color: "white", fontSize: 12, fontWeight: 600, borderRadius: 20, padding: "3px 11px", whiteSpace: "nowrap" }}>GolfTRK — Las Vegas, NV</span>
+            <span className="sm:inline hidden" style={{ background: "var(--brand-navy-color, #243c51)", color: "white", fontSize: 12, fontWeight: 600, borderRadius: 20, padding: "3px 11px", whiteSpace: "nowrap" }}>{bookBrandLabel}</span>
             <span className="sm:hidden" style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap" }}>Tour Book</span>
           </div>
           <div className="flex items-center" style={{ gap: 6 }}>
             {/* Mobile panel toggle */}
-            <button onClick={() => setMobilePanel(!mobilePanel)} className="md:hidden flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, color: mobilePanel ? "white" : "var(--text-secondary)", padding: "5px 10px", borderRadius: 6, background: mobilePanel ? "#243c51" : "rgba(36,60,81,0.06)", border: "none", cursor: "pointer" }}>
+            <button onClick={() => setMobilePanel(!mobilePanel)} className="md:hidden flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, color: mobilePanel ? "white" : "var(--text-secondary)", padding: "5px 10px", borderRadius: 6, background: mobilePanel ? "#243c51" : "rgba(192,222,237,0.06)", border: "none", cursor: "pointer" }}>
               {mobilePanel ? <><X className="w-3.5 h-3.5" /> Close</> : <><FileText className="w-3.5 h-3.5" /> Edit</>}
             </button>
             <button onClick={goBack} className="hidden sm:block" style={{ fontSize: 12, color: "var(--text-muted)", padding: "5px 10px", borderRadius: 6, background: "none", border: "none", cursor: "pointer" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(36,60,81,0.05)"; }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(192,222,237,0.05)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>Cancel</button>
             <button onClick={handleGenerate} disabled={!canGenerate || generating}
-              style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 7, border: "none", cursor: canGenerate && !generating ? "pointer" : "not-allowed", background: "#243c51", color: "white", opacity: canGenerate && !generating ? 1 : 0.35, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+              style={{ fontSize: 12, fontWeight: 600, padding: "6px 14px", borderRadius: 7, border: "none", cursor: canGenerate && !generating ? "pointer" : "not-allowed", background: "var(--brand-navy-color, #243c51)", color: "white", opacity: canGenerate && !generating ? 1 : 0.35, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
               {generating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> <span className="hidden sm:inline">Generating...</span></> : <><span className="hidden sm:inline">Generate PDF</span><span className="sm:hidden">PDF</span></>}
             </button>
           </div>
@@ -475,19 +675,23 @@ export function TourBookGenerator() {
           {mobilePanel && <div className="fixed inset-0 bg-black/30 z-40 md:hidden" onClick={() => setMobilePanel(false)} />}
 
           {/* ── LEFT PANEL ── */}
-          <div className={`shrink-0 flex flex-col fixed md:relative inset-y-0 left-0 z-50 md:z-auto transition-transform duration-200 ${mobilePanel ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{ width: typeof window !== 'undefined' && window.innerWidth < 768 ? '100vw' : 352, background: "var(--card-bg)", borderRight: "1px solid var(--border-divider)", overflow: "hidden", top: 52 }}>
+          <div className={`shrink-0 flex flex-col fixed md:relative inset-y-0 left-0 z-50 md:z-auto transition-transform duration-200 ${mobilePanel ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{ width: isMobileView ? "100vw" : 352, background: "var(--bg-sidebar)", borderRight: "1px solid var(--border-divider)", overflow: "hidden", top: isMobileView ? 52 : 0 }}>
             {/* Panel header */}
             <div className="shrink-0 flex items-center justify-between" style={{ height: 44, borderBottom: "1px solid var(--border-divider)", padding: "0 16px" }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Tour Book</span>
               <div className="flex items-center gap-2">
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "rgba(36,60,81,0.08)", borderRadius: 10, padding: "2px 8px" }}>{checkedSites.length} / {sites.length} sites</span>
-                <button onClick={() => setMobilePanel(false)} className="md:hidden flex items-center justify-center" style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(36,60,81,0.08)", border: "none", cursor: "pointer" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "rgba(192,222,237,0.08)", borderRadius: 10, padding: "2px 8px" }}>{checkedSites.length} / {sites.length} sites</span>
+                <button onClick={() => setMobilePanel(false)} className="md:hidden flex items-center justify-center" style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(192,222,237,0.08)", border: "none", cursor: "pointer" }}>
                   <X className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
                 </button>
               </div>
             </div>
 
-            <div ref={leftPanelRef} className="flex-1 overflow-y-auto" style={{ padding: 16, scrollbarWidth: "thin", scrollbarColor: "rgba(36,60,81,0.15) transparent" }}>
+            <div ref={leftPanelRef} className="flex-1 overflow-y-auto" style={{ padding: 16, scrollbarWidth: "thin", scrollbarColor: "rgba(192,222,237,0.25) transparent" }}>
+              <div style={{ marginBottom: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(192,222,237,0.10)", background: "linear-gradient(135deg, rgba(192,222,237,0.10), rgba(225,135,57,0.06))" }}>
+                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--text-secondary)" }}>Build a client-ready tour book from real deal sites. Select locations, tune the schedule and preview each generated page before saving.</p>
+              </div>
+
               {/* ── BOOK SETTINGS (collapsible) ── */}
               <div style={{ marginBottom: 14 }}>
                 <button onClick={() => setSettingsOpen(!settingsOpen)} className="flex items-center justify-between w-full" style={{ background: "none", border: "none", cursor: "pointer", padding: "0 0 8px", marginBottom: settingsOpen ? 0 : 0 }}>
@@ -577,7 +781,7 @@ export function TourBookGenerator() {
                   >
                     <div className="flex flex-col" style={{ gap: 8 }}>
                       {checkedSites.map(site => (
-                        <div key={site.id} style={{ padding: 10, borderRadius: 8, border: "1px solid var(--border-divider)", background: "var(--input-bg, rgba(36,60,81,0.03))" }}>
+                        <div key={site.id} style={{ padding: 10, borderRadius: 8, border: "1px solid var(--border-divider)", background: "var(--input-bg, rgba(192,222,237,0.03))" }}>
                           <div style={{ marginBottom: 8 }}>
                             <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.3 }}>{site.name}</p>
                             <p style={{ fontSize: 10, color: "var(--text-muted)", margin: "2px 0 0", lineHeight: 1.3 }}>{site.address}</p>
@@ -659,17 +863,121 @@ export function TourBookGenerator() {
                     );
                   })}
                 </SortableContext>
-                <div className="flex flex-col" style={{ paddingTop: 12, borderTop: "1px solid rgba(36,60,81,0.08)", marginTop: 8, gap: 6 }}>
-                  <button style={{ fontSize: 12, color: "#b85c1a", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>↑ Import CSV</button>
-                  <button onClick={() => {
-                    const newId = `tb-${Date.now()}`;
-                    setSites(prev => [...prev, {
-                      id: newId, name: "New Site", address: "", sf: "", baseRent: "", nnn: "", grossMo: "",
-                      tourTime: "", tourType: "scheduled", brokerName: "", brokerPhone: "",
-                      locationNotes: "", tourDirections: "", uploadedPages: [], checked: true, statusDot: "var(--text-muted)",
-                      images: [null, null, null, null],
-                    }]);
-                    toast.success("New site added");
+                <div className="flex flex-col" style={{ paddingTop: 12, borderTop: "1px solid rgba(192,222,237,0.08)", marginTop: 8, gap: 6 }}>
+                  <button onClick={async () => {
+                    const dealId = selectedDeal?.id ?? dealIdParam;
+                    if (!dealId) {
+                      toast.error("Open the generator from a deal before importing sites.");
+                      return;
+                    }
+                    const csv = window.prompt("Paste site CSV with headers: name,address,city,state,lat,lng");
+                    if (!csv) return;
+                    const rows = parseSiteCsv(csv);
+                    if (rows.length === 0) {
+                      toast.error("No valid site rows found.");
+                      return;
+                    }
+                    try {
+                      const createdSites: Site[] = [];
+                      for (const row of rows) {
+                        const city = row.city || selectedDeal?.city || "";
+                        const state = row.state || selectedDeal?.state || "";
+                        const hasCsvCoordinates = Number.isFinite(row.lat) && Number.isFinite(row.lng) && !(Math.abs(row.lat) < 0.001 && Math.abs(row.lng) < 0.001);
+                        const resolved = hasCsvCoordinates ? null : await geocodeAddress(buildAddressQuery([row.address, city, state]));
+                        createdSites.push(await createRuntimeSite({
+                          dealId,
+                          name: row.name || row.address,
+                          address: row.address,
+                          city,
+                          state,
+                          zipCode: "",
+                          lat: hasCsvCoordinates ? row.lat : resolved?.lat ?? 0,
+                          lng: hasCsvCoordinates ? row.lng : resolved?.lng ?? 0,
+                          stage: "Prospecting",
+                          statusLabel: "Prospecting",
+                          notes: "",
+                          squareFootage: "",
+                          spaceType: "",
+                          propertyType: "",
+                          landlord: "",
+                          landlordContact: "",
+                          leaseTerm: "",
+                          possessionDate: "",
+                          tourTime: "",
+                          brokerName: "",
+                          brokerPhone: "",
+                          photoUrls: [],
+                          brochureUrl: "",
+                          floorPlanUrl: "",
+                          loiUrl: "",
+                          leaseUrl: "",
+                          baseRent: "",
+                          nnn: "",
+                          grossMonthlyRent: "",
+                          commencementDate: "",
+                          tiAllowance: "",
+                          loiNotes: "",
+                        }));
+                      }
+                      setSites(prev => [...prev, ...createdSites.map(toSiteData)]);
+                      toast.success(`${createdSites.length} site${createdSites.length === 1 ? "" : "s"} imported`);
+                    } catch (error) {
+                      toast.error("Unable to import sites", { description: error instanceof Error ? error.message : "Check your Supabase permissions." });
+                    }
+                  }} style={{ fontSize: 12, color: "#b85c1a", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>↑ Import CSV</button>
+                  <button onClick={async () => {
+                    const dealId = selectedDeal?.id ?? dealIdParam;
+                    if (!dealId) {
+                      toast.error("Open the generator from a deal before adding a site manually.");
+                      return;
+                    }
+                    const address = window.prompt("Property address", selectedDeal ? `${selectedDeal.city}, ${selectedDeal.state}` : "");
+                    if (!address) return;
+                    const name = window.prompt("Property name", address.split(",")[0]?.trim() || "New Site") || address.split(",")[0]?.trim() || "New Site";
+                    const city = window.prompt("City", selectedDeal?.city ?? "") || selectedDeal?.city || "";
+                    const state = window.prompt("State", selectedDeal?.state ?? "") || selectedDeal?.state || "";
+                    const resolved = await geocodeAddress(buildAddressQuery([address, city, state]));
+
+                    try {
+                      const created = await createRuntimeSite({
+                        dealId,
+                        name,
+                        address,
+                        city,
+                        state,
+                        zipCode: "",
+                        lat: resolved?.lat ?? 0,
+                        lng: resolved?.lng ?? 0,
+                        stage: "Prospecting",
+                        statusLabel: "Prospecting",
+                        notes: "",
+                        squareFootage: "",
+                        spaceType: "",
+                        propertyType: "",
+                        landlord: "",
+                        landlordContact: "",
+                        leaseTerm: "",
+                        possessionDate: "",
+                        tourTime: "",
+                        brokerName: "",
+                        brokerPhone: "",
+                        photoUrls: [],
+                        brochureUrl: "",
+                        floorPlanUrl: "",
+                        loiUrl: "",
+                        leaseUrl: "",
+                        baseRent: "",
+                        nnn: "",
+                        grossMonthlyRent: "",
+                        commencementDate: "",
+                        tiAllowance: "",
+                        loiNotes: "",
+                      });
+                      setSites(prev => [...prev, toSiteData(created)]);
+                      toast.success("Site saved to Supabase");
+                    } catch (error) {
+                      toast.error("Unable to add site", { description: error instanceof Error ? error.message : "Check your Supabase permissions." });
+                    }
                   }} style={{ fontSize: 12, color: "#b85c1a", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>+ Add manually</button>
                 </div>
               </div>
@@ -678,41 +986,41 @@ export function TourBookGenerator() {
 
           {/* ── CENTER STAGE ── */}
           <div ref={stageRef} className="flex-1 flex flex-col items-center" style={{
-            background: "#1c2b38", padding: "12px 8px", gap: 12,
+            background: "var(--tourbook-stage-bg)", padding: "16px 12px", gap: 12,
             overflow: zoomLevel > 1.0 ? "auto" : "hidden",
             justifyContent: zoomLevel > 1.0 ? "flex-start" : "center",
             position: "relative",
           }}>
             {generating ? (
-              <div style={{ maxWidth: 340, padding: 36, borderRadius: 12, background: "white", boxShadow: "0 4px 24px rgba(0,0,0,0.25)", textAlign: "center" }}>
-                <BookOpen className="w-9 h-9 mx-auto" style={{ color: "#243c51", marginBottom: 14 }} />
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", margin: 0 }}>Generating your tour book</h3>
-                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>About 8 seconds</p>
-                <div style={{ marginTop: 20, width: "100%", height: 4, borderRadius: 2, background: "rgba(36,60,81,0.10)", overflow: "hidden" }}>
-                  <div style={{ width: `${progressPct}%`, height: 4, borderRadius: 2, background: "#243c51", transition: "width 0.15s linear" }} />
+              <div style={{ maxWidth: 340, padding: 36, borderRadius: 12, background: "var(--bg-surface)", boxShadow: "var(--shadow-card)", textAlign: "center" }}>
+                <BookOpen className="w-9 h-9 mx-auto" style={{ color: "#C0DEED", marginBottom: 14 }} />
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Generating your tour book</h3>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>About 8 seconds</p>
+                <div style={{ marginTop: 20, width: "100%", height: 4, borderRadius: 2, background: "rgba(192,222,237,0.10)", overflow: "hidden" }}>
+                  <div style={{ width: `${progressPct}%`, height: 4, borderRadius: 2, background: "var(--brand-navy-color, #243c51)", transition: "width 0.15s linear" }} />
                 </div>
-                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>{PROGRESS_MESSAGES[progressMsg]}</p>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>{PROGRESS_MESSAGES[progressMsg]}</p>
               </div>
             ) : generated ? (
-              <div style={{ maxWidth: 340, padding: 36, borderRadius: 12, background: "white", boxShadow: "0 4px 24px rgba(0,0,0,0.25)", textAlign: "center" }}>
+              <div style={{ maxWidth: 340, padding: 36, borderRadius: 12, background: "var(--bg-surface)", boxShadow: "var(--shadow-card)", textAlign: "center" }}>
                 <div className="mx-auto flex items-center justify-center" style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(5,150,105,0.10)" }}>
                   <Check className="w-5 h-5" style={{ color: "#065f46" }} />
                 </div>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", marginTop: 14, margin: "14px 0 0" }}>Tour book ready</h3>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 14, margin: "14px 0 0" }}>Tour book ready</h3>
                 <div className="flex items-center justify-center" style={{ gap: 6, marginTop: 6 }}>
                   <FileText className="w-3 h-3" style={{ color: "#E18739" }} />
-                  <span style={{ fontSize: 12, color: "#6b7280" }}>GolfTRK_Las-Vegas_Tour-Book.pdf</span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{bookFileName}</span>
                 </div>
                 <div className="flex items-center justify-center" style={{ gap: 10, marginTop: 18 }}>
-                  <button onClick={() => toast.success("PDF downloaded!")} style={{ padding: "8px 20px", borderRadius: 7, background: "#243c51", color: "white", fontSize: 14, fontWeight: 600, border: "none", cursor: "pointer" }}>Download PDF</button>
-                  <button onClick={() => { setGenerated(false); setStep(3); }} style={{ padding: "8px 20px", borderRadius: 7, background: "transparent", color: "#243c51", fontSize: 14, fontWeight: 600, border: "1px solid #243c51", cursor: "pointer" }}>Open Preview</button>
+                  <button onClick={() => toast.success("Use the browser print dialog to save the current preview as PDF")} style={{ padding: "8px 20px", borderRadius: 7, background: "var(--brand-navy-color, #243c51)", color: "white", fontSize: 14, fontWeight: 600, border: "none", cursor: "pointer" }}>Download PDF</button>
+                  <button onClick={() => { setGenerated(false); setStep(3); }} style={{ padding: "8px 20px", borderRadius: 7, background: "rgba(192,222,237,0.08)", color: "#C0DEED", fontSize: 14, fontWeight: 600, border: "1px solid rgba(192,222,237,0.20)", cursor: "pointer" }}>Open Preview</button>
                 </div>
-                <button onClick={() => toast.success("Saved to Deal Files")} className="flex items-center justify-center mx-auto" style={{ gap: 5, marginTop: 10, fontSize: 12, color: "#b85c1a", background: "none", border: "none", cursor: "pointer" }}><Save className="w-3 h-3" /> Save to Deal Files</button>
+                <button onClick={() => persistTourBook().then(() => toast.success("Saved to Deal Files")).catch((error: unknown) => toast.error("Unable to save tour book", { description: error instanceof Error ? error.message : "Check your Supabase permissions." }))} className="flex items-center justify-center mx-auto" style={{ gap: 5, marginTop: 10, fontSize: 12, color: "#b85c1a", background: "none", border: "none", cursor: "pointer" }}><Save className="w-3 h-3" /> Save to Deal Files</button>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between" style={{ width: "100%", maxWidth: scaledWidth, flexShrink: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.40)", letterSpacing: "0.08em" }}>PREVIEW</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.08em" }}>PREVIEW</span>
                   <div className="flex items-center gap-3">
                     {/* Mobile page nav */}
                     <div className="flex items-center gap-2 md:hidden">
@@ -720,37 +1028,49 @@ export function TourBookGenerator() {
                       <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", minWidth: 60, textAlign: "center" }}>{activePage + 1} / {totalPages}</span>
                       <button onClick={() => setActivePage(p => Math.min(totalPages - 1, p + 1))} disabled={activePage === totalPages - 1} style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(255,255,255,0.10)", border: "none", color: "white", cursor: activePage === totalPages - 1 ? "not-allowed" : "pointer", opacity: activePage === totalPages - 1 ? 0.3 : 1, display: "flex", alignItems: "center", justifyContent: "center" }}><ChevronRightIcon className="w-4 h-4" /></button>
                     </div>
-                    <span className="hidden md:inline" style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>Page {activePage + 1} of {totalPages}</span>
+                    <span className="hidden md:inline" style={{ fontSize: 12, color: "var(--text-muted)" }}>Page {activePage + 1} of {totalPages}</span>
                   </div>
                 </div>
 
                 {/* Page frame with zoom */}
-                <div style={{
-                  width: scaledWidth, maxWidth: "none", aspectRatio: "8.5 / 11",
-                  background: "white", borderRadius: 3, overflow: "hidden", flexShrink: 0,
-                  boxShadow: "0 24px 64px rgba(0,0,0,0.50), 0 4px 16px rgba(0,0,0,0.30)",
-                  position: "relative", transition: "width 0.2s ease",
-                }}>
+                <div
+  className="tour-book-page-shell"
+  style={{
+    ...PDF_LIGHT_VARS,
+    width: scaledWidth,
+    maxWidth: "none",
+    aspectRatio: "8.5 / 11",
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 3,
+    overflow: "hidden",
+    flexShrink: 0,
+    boxShadow: "var(--tourbook-shadow)",
+    position: "relative",
+    transition: "width 0.2s ease",
+    colorScheme: "light",
+  }}
+>
                   <div style={{ width: 742, height: 960, transform: `scale(${(scaledWidth / 742)})`, transformOrigin: "top left" }}>
-                    <ActivePageRenderer activePage={activePage} checkedSites={checkedSites} tourDate={tourDate} territory={territory} franchisee={franchiseeName} totalPages={totalPages} coverPhoto={coverPhoto} flashSections={flashSections} onPreviewClick={handlePreviewClick} onSiteImageUpload={(siteId, imageIdx, dataUrl) => { setSites(prev => prev.map(s => s.id === siteId ? { ...s, images: s.images.map((img, i) => i === imageIdx ? dataUrl : img) } : s)); }} instructionSections={instructionSections} mapTitle={mapTitle} mapNotes={mapNotes} />
+                    <ActivePageRenderer activePage={activePage} checkedSites={checkedSites} tourDate={tourDate} territory={territory} franchisee={franchiseeName} totalPages={totalPages} coverPhoto={coverPhoto} flashSections={flashSections} onPreviewClick={handlePreviewClick} onSiteImageUpload={(siteId, imageIdx, dataUrl) => { setSites(prev => prev.map(s => s.id === siteId ? { ...s, images: s.images.map((img, i) => i === imageIdx ? dataUrl : img) } : s)); }} instructionSections={instructionSections} mapTitle={mapTitle} mapNotes={mapNotes} resolvingMapCoordinates={resolvingMapCoordinates} />
                   </div>
                 </div>
 
                 {/* Navigation bar */}
                 <div className="flex items-center shrink-0" style={{ gap: 10 }}>
                   <button onClick={() => setActivePage(p => Math.max(0, p - 1))} disabled={activePage === 0}
-                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.60)", display: "flex", alignItems: "center", justifyContent: "center", cursor: activePage === 0 ? "not-allowed" : "pointer", opacity: activePage === 0 ? 0.20 : 1 }}
+                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "var(--tourbook-control-text)", display: "flex", alignItems: "center", justifyContent: "center", cursor: activePage === 0 ? "not-allowed" : "pointer", opacity: activePage === 0 ? 0.20 : 1 }}
                     onMouseEnter={e => { if (activePage > 0) e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}>
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
                   <div className="flex items-center" style={{ gap: 3 }}>
                     {Array.from({ length: totalPages }).map((_, i) => (
-                      <div key={i} onClick={() => setActivePage(i)} style={{ width: activePage === i ? 20 : 4, height: 4, borderRadius: activePage === i ? 2 : "50%", background: activePage === i ? "white" : "rgba(255,255,255,0.22)", cursor: "pointer", transition: "width 0.2s ease" }} />
+                      <div key={i} onClick={() => setActivePage(i)} style={{ width: activePage === i ? 20 : 4, height: 4, borderRadius: activePage === i ? 2 : "50%", background: activePage === i ? "#C0DEED" : "rgba(255,255,255,0.22)", cursor: "pointer", transition: "width 0.2s ease" }} />
                     ))}
                   </div>
                   <button onClick={() => setActivePage(p => Math.min(totalPages - 1, p + 1))} disabled={activePage === totalPages - 1}
-                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.60)", display: "flex", alignItems: "center", justifyContent: "center", cursor: activePage === totalPages - 1 ? "not-allowed" : "pointer", opacity: activePage === totalPages - 1 ? 0.20 : 1 }}
+                    style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "var(--tourbook-control-text)", display: "flex", alignItems: "center", justifyContent: "center", cursor: activePage === totalPages - 1 ? "not-allowed" : "pointer", opacity: activePage === totalPages - 1 ? 0.20 : 1 }}
                     onMouseEnter={e => { if (activePage < totalPages - 1) e.currentTarget.style.background = "rgba(255,255,255,0.15)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}>
                     <ChevronRightIcon className="w-3.5 h-3.5" />
@@ -761,12 +1081,12 @@ export function TourBookGenerator() {
                 <div style={{
                   position: "sticky", bottom: 16, alignSelf: "center",
                   display: "flex", alignItems: "center", gap: 2,
-                  background: "rgba(20,35,48,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-                  border: "1px solid rgba(255,255,255,0.18)", borderRadius: 10, padding: 4, zIndex: 20,
+                  background: "var(--tourbook-control-bg)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+                  border: "1px solid var(--tourbook-control-border)", borderRadius: 10, padding: 4, zIndex: 20,
                   marginTop: -48,
                 }}>
                   <button onClick={zoomOut} disabled={zoomIdx === 0}
-                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "rgba(255,255,255,0.70)", fontSize: 18, fontWeight: 300, cursor: zoomIdx === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: zoomIdx === 0 ? 0.25 : 1, transition: "background 0.12s" }}
+                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "var(--tourbook-control-text)", fontSize: 18, fontWeight: 300, cursor: zoomIdx === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: zoomIdx === 0 ? 0.25 : 1, transition: "background 0.12s" }}
                     onMouseEnter={e => { if (zoomIdx > 0) e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                     <Minus className="w-4 h-4" />
@@ -775,7 +1095,7 @@ export function TourBookGenerator() {
                   {/* Zoom level dropdown trigger */}
                   <div style={{ position: "relative" }}>
                     <button onClick={() => setZoomDropdownOpen(!zoomDropdownOpen)}
-                      style={{ minWidth: 52, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, transition: "background 0.12s" }}
+                      style={{ minWidth: 52, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "var(--tourbook-control-text)", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, transition: "background 0.12s" }}
                       onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
                       onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                       {zoomLabel} <ChevronDown className="w-3 h-3" style={{ opacity: 0.5 }} />
@@ -809,14 +1129,14 @@ export function TourBookGenerator() {
                   </div>
 
                   <button onClick={resetZoom} title="Fit to page"
-                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.60)", transition: "background 0.12s, color 0.12s" }}
+                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tourbook-control-text)", transition: "background 0.12s, color 0.12s" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "white"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.60)"; }}>
                     <Maximize className="w-3.5 h-3.5" />
                   </button>
 
                   <button onClick={zoomIn} disabled={zoomIdx === ZOOM_LEVELS.length - 1}
-                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "rgba(255,255,255,0.70)", fontSize: 18, fontWeight: 300, cursor: zoomIdx === ZOOM_LEVELS.length - 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: zoomIdx === ZOOM_LEVELS.length - 1 ? 0.25 : 1, transition: "background 0.12s" }}
+                    style={{ width: 32, height: 32, borderRadius: 7, background: "transparent", border: "none", color: "var(--tourbook-control-text)", fontSize: 18, fontWeight: 300, cursor: zoomIdx === ZOOM_LEVELS.length - 1 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: zoomIdx === ZOOM_LEVELS.length - 1 ? 0.25 : 1, transition: "background 0.12s" }}
                     onMouseEnter={e => { if (zoomIdx < ZOOM_LEVELS.length - 1) e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                     <Plus className="w-4 h-4" />
@@ -827,7 +1147,7 @@ export function TourBookGenerator() {
           </div>
 
           {/* ── FILMSTRIP (72px) — hidden on mobile ── */}
-          <div className="shrink-0 hidden md:flex flex-col items-center" style={{ width: 72, background: "#1c2b38", borderLeft: "1px solid rgba(255,255,255,0.06)", overflowY: "auto", padding: "12px 6px", gap: 6, scrollbarWidth: "none" as const }}>
+          <div className="shrink-0 hidden md:flex flex-col items-center" style={{ width: 72, background: "var(--tourbook-filmstrip-bg)", borderLeft: "1px solid var(--tourbook-filmstrip-border)", overflowY: "auto", padding: "12px 6px", gap: 6, scrollbarWidth: "none" as const }}>
             <FilmstripThumb active={activePage === 0} onClick={() => setActivePage(0)} type="cover" editing={editingPages.has(0)} zoomed={zoomLevel > 1.0 && activePage === 0} />
             <FilmstripThumb active={activePage === 1} onClick={() => setActivePage(1)} type="guide" editing={editingPages.has(1)} zoomed={zoomLevel > 1.0 && activePage === 1} />
             <FilmstripThumb active={activePage === 2} onClick={() => setActivePage(2)} type="schedule" editing={editingPages.has(2)} zoomed={zoomLevel > 1.0 && activePage === 2} />
@@ -842,8 +1162,8 @@ export function TourBookGenerator() {
       {/* Drag overlay */}
       <DragOverlay>
         {draggedSite ? (
-          <div style={{ background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--border-divider)", boxShadow: "0 8px 24px rgba(36,60,81,0.16)", padding: "0 12px", height: 48, display: "flex", alignItems: "center", gap: 8, opacity: 0.95, width: 248 }}>
-            <GripVertical className="w-3 h-3" style={{ color: "rgba(36,60,81,0.25)" }} />
+          <div style={{ background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--border-divider)", boxShadow: "0 8px 24px rgba(192,222,237,0.16)", padding: "0 12px", height: 48, display: "flex", alignItems: "center", gap: 8, opacity: 0.95, width: 248 }}>
+            <GripVertical className="w-3 h-3" style={{ color: "rgba(192,222,237,0.25)" }} />
             <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)" }}>{draggedSite.name}</span>
           </div>
         ) : null}
@@ -871,7 +1191,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
     <div ref={setNodeRef} style={rowStyle} id={`site-accordion-${site.id}`} {...attributes}>
       <div style={{
         borderRadius: 8,
-        border: isExpanded ? "1.5px solid rgba(225,135,57,0.55)" : isHighlighted ? "1.5px solid rgba(36,60,81,0.22)" : "1px solid rgba(36,60,81,0.08)",
+        border: isExpanded ? "1.5px solid rgba(225,135,57,0.55)" : isHighlighted ? "1.5px solid rgba(192,222,237,0.22)" : "1px solid rgba(192,222,237,0.08)",
         boxShadow: isExpanded ? "0 0 0 2px rgba(225,135,57,0.10)" : "none",
         overflow: "hidden",
         transition: "all 0.15s ease",
@@ -879,16 +1199,16 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
       <div className="flex items-center"
         style={{
           height: 44, padding: "0 6px", gap: 6,
-          background: isExpanded ? "rgba(36,60,81,0.025)" : isHighlighted ? "rgba(36,60,81,0.05)" : site.checked ? "rgba(36,60,81,0.03)" : "transparent",
+          background: isExpanded ? "rgba(192,222,237,0.025)" : isHighlighted ? "rgba(192,222,237,0.05)" : site.checked ? "rgba(192,222,237,0.03)" : "transparent",
           cursor: "pointer", transition: "all 0.15s ease",
         }}>
         <div {...listeners} onClick={e => e.stopPropagation()} style={{ cursor: "grab", padding: 2, flexShrink: 0 }}>
-          <GripVertical className="w-3 h-3" style={{ color: "rgba(36,60,81,0.20)" }} />
+          <GripVertical className="w-3 h-3" style={{ color: "rgba(192,222,237,0.20)" }} />
         </div>
-        <div onClick={e => { e.stopPropagation(); onToggleCheck(); }} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, border: site.checked ? "none" : "1.5px solid rgba(36,60,81,0.25)", background: site.checked ? "#243c51" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+        <div onClick={e => { e.stopPropagation(); onToggleCheck(); }} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, border: site.checked ? "none" : "1.5px solid rgba(192,222,237,0.25)", background: site.checked ? "#243c51" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           {site.checked && <Check className="w-2 h-2 text-white" />}
         </div>
-        <div style={{ width: 20, height: 20, borderRadius: "50%", background: site.checked ? "#243c51" : "rgba(36,60,81,0.07)", color: site.checked ? "white" : "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 10, fontWeight: 600 }}>{order || "—"}</div>
+        <div style={{ width: 20, height: 20, borderRadius: "50%", background: site.checked ? "#243c51" : "rgba(192,222,237,0.07)", color: site.checked ? "white" : "var(--text-muted)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 10, fontWeight: 600 }}>{order || "—"}</div>
         <div onClick={onToggleExpand} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
           <p style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0, lineHeight: 1.3 }}>{site.name}</p>
           <p style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0, marginTop: 1, lineHeight: 1.2 }}>{site.address}</p>
@@ -896,7 +1216,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
         {site.tourType === "driveby" ? (
           <span style={{ background: "rgba(225,135,57,0.12)", color: "#b85c1a", fontSize: 9, fontWeight: 600, borderRadius: 4, padding: "2px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Drive-by</span>
         ) : (
-          <span style={{ background: "rgba(36,60,81,0.10)", color: "#243c51", fontSize: 9, fontWeight: 600, borderRadius: 4, padding: "2px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>{site.tourTime || "Scheduled"}</span>
+          <span style={{ background: "rgba(192,222,237,0.10)", color: "#C0DEED", fontSize: 9, fontWeight: 600, borderRadius: 4, padding: "2px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>{site.tourTime || "Scheduled"}</span>
         )}
         <span style={{ width: 6, height: 6, borderRadius: "50%", background: site.statusDot, flexShrink: 0 }} />
         <div onClick={onToggleExpand} style={{ cursor: "pointer", padding: 2, flexShrink: 0 }}>
@@ -904,7 +1224,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
         </div>
       </div>
       {isExpanded && site.checked && (
-        <div style={{ padding: "10px 10px 12px", background: "rgba(36,60,81,0.025)" }}>
+        <div style={{ padding: "10px 10px 12px", background: "var(--tourbook-preview-soft-bg)" }}>
           {/* Property details — editable */}
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>Property Details</label>
@@ -935,7 +1255,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
           {/* Site Status */}
           <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>Status</label>
-            <div className="flex" style={{ gap: 0, width: "100%", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(36,60,81,0.12)" }}>
+            <div className="flex" style={{ gap: 0, width: "100%", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(192,222,237,0.12)" }}>
               {([
                 { key: "#E18739", label: "Under Review", activeBg: "#E18739" },
                 { key: "#1e6091", label: "Active Tour", activeBg: "#1e6091" },
@@ -962,7 +1282,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
           {/* Tour Type */}
           <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>Tour Type</label>
-            <div className="flex" style={{ gap: 0, width: "100%", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(36,60,81,0.12)" }}>
+            <div className="flex" style={{ gap: 0, width: "100%", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(192,222,237,0.12)" }}>
               {(["scheduled", "driveby"] as const).map(t => (
                 <button key={t} onClick={() => { updateSite(site.id, "tourType", t); const pages = getAffectedPages("tourType", site.id); pages.forEach(p => markPageEditing(p)); triggerFlash(`${site.id}-tourType`); }}
                   style={{ flex: 1, height: 30, fontSize: 11, cursor: "pointer", border: "none", background: site.tourType === t ? "#243c51" : "transparent", color: site.tourType === t ? "white" : "var(--text-muted)", fontWeight: site.tourType === t ? 600 : 400, transition: "all 0.15s ease" }}>
@@ -973,7 +1293,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
           </div>
 
           {/* Broker info — compact two-field group */}
-          <div style={{ marginBottom: 8, padding: "8px 8px 6px", background: "rgba(36,60,81,0.03)", borderRadius: 6, border: "1px solid rgba(36,60,81,0.06)" }}>
+          <div style={{ marginBottom: 8, padding: "8px 8px 6px", background: "rgba(192,222,237,0.03)", borderRadius: 6, border: "1px solid rgba(192,222,237,0.06)" }}>
             <div className="flex items-center" style={{ gap: 4, marginBottom: 6 }}>
               <Phone className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
               <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.06em" }}>Broker Contact</span>
@@ -997,7 +1317,7 @@ function UnifiedSiteRow({ site, order, idx, isExpanded, isHighlighted, onToggleC
           </div>
 
           {/* Additional pages */}
-          <div style={{ paddingTop: 8, borderTop: "1px solid rgba(36,60,81,0.08)" }}>
+          <div style={{ paddingTop: 8, borderTop: "1px solid rgba(192,222,237,0.08)" }}>
             <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.08em" }}>Additional Pages</span>
             <SortableContext items={site.uploadedPages.map(p => p.id)} strategy={verticalListSortingStrategy}>
               {site.uploadedPages.map(page => (
@@ -1070,9 +1390,9 @@ function SortableUploadedPage({ page, siteId, removeUploadedPage, toggleWrapStyl
   const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
 
   return (
-    <div ref={setNodeRef} style={{ ...style, gap: 6, marginTop: 8, padding: "8px 8px", borderRadius: 6, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)", display: "flex", alignItems: "center" }} {...attributes}>
+    <div ref={setNodeRef} style={{ ...style, gap: 6, marginTop: 8, padding: "8px 8px", borderRadius: 6, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)", display: "flex", alignItems: "center" }} {...attributes}>
       <div {...listeners} onClick={e => e.stopPropagation()} style={{ cursor: "grab", padding: 2, flexShrink: 0 }}>
-        <GripVertical className="w-3 h-3" style={{ color: "rgba(36,60,81,0.20)" }} />
+        <GripVertical className="w-3 h-3" style={{ color: "rgba(192,222,237,0.20)" }} />
       </div>
       <FileText className="w-3 h-3 shrink-0" style={{ color: "var(--text-muted)" }} />
       <input value={page.label} onChange={e => {
@@ -1085,7 +1405,7 @@ function SortableUploadedPage({ page, siteId, removeUploadedPage, toggleWrapStyl
             style={{ fontSize: 9, padding: "3px 8px", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap",
               background: page.wrapStyle === ws ? "#243c51" : "transparent",
               color: page.wrapStyle === ws ? "white" : "var(--text-muted)",
-              border: page.wrapStyle === ws ? "1px solid #243c51" : "1px solid rgba(36,60,81,0.12)",
+              border: page.wrapStyle === ws ? "1px solid #243c51" : "1px solid rgba(192,222,237,0.12)",
               fontWeight: page.wrapStyle === ws ? 600 : 400, lineHeight: 1.2 }}>
             {ws === "fullbleed" ? "Full" : "Frame"}
           </button>
@@ -1103,52 +1423,134 @@ function FilmstripThumb({ active, onClick, type, isUploaded, editing, zoomed }: 
   return (
     <div onClick={onClick} className="relative shrink-0" style={{
       width: 60, height: 78, borderRadius: 3, overflow: "hidden", cursor: "pointer",
-      background: "white", position: "relative", transition: "transform 0.2s ease",
-      border: active ? "2px solid #E18739" : "1.5px solid rgba(255,255,255,0.08)",
+      background: "var(--tourbook-thumb-bg)", position: "relative", transition: "transform 0.2s ease",
+      border: active ? "2px solid #E18739" : "1.5px solid var(--tourbook-preview-border)",
       boxShadow: active ? "0 0 0 2px rgba(225,135,57,0.20)" : "none",
     }}
-      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; e.currentTarget.style.transform = "scale(1.04)"; } }}
-      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.transform = "scale(1)"; } }}>
+      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = "rgba(225,135,57,0.35)"; e.currentTarget.style.transform = "scale(1.04)"; } }}
+      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = "var(--tourbook-preview-border)"; e.currentTarget.style.transform = "scale(1)"; } }}>
       {editing && <div style={{ position: "absolute", top: 2, right: 2, width: 6, height: 6, borderRadius: "50%", background: "#E18739", zIndex: 10 }} />}
-      {zoomed && <div style={{ position: "absolute", bottom: 4, right: 4, fontSize: 10, background: "rgba(36,60,81,0.70)", borderRadius: 3, padding: "1px 3px", lineHeight: 1, zIndex: 10 }}>🔍</div>}
-      {type === "cover" && (<><div style={{ height: "55%", background: "#243c51", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 5, fontWeight: 700, color: "white" }}>GOLFTRK</span></div><div style={{ height: "45%", background: "white" }} /></>)}
-      {type === "guide" && (<div style={{ background: "white", height: "100%", padding: "6px 6px", display: "flex", flexDirection: "column", gap: 2 }}>{Array.from({ length: 7 }).map((_, i) => (<div key={i} style={{ height: 2, background: "rgba(36,60,81,0.12)", borderRadius: 1, width: "78%", margin: "0 auto" }} />))}</div>)}
-      {type === "schedule" && (<div style={{ background: "white", height: "100%", display: "flex", flexDirection: "column" }}><div style={{ height: 10, background: "#243c51" }} />{Array.from({ length: 5 }).map((_, i) => (<div key={i} style={{ height: 3, background: i % 2 === 0 ? "white" : "rgba(36,60,81,0.04)" }} />))}</div>)}
-      {type === "map" && (<div style={{ background: "white", height: "100%", position: "relative" }}><svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.08 }}>{Array.from({ length: 6 }).map((_, i) => <line key={`h${i}`} x1="0" y1={i * 14} x2="100%" y2={i * 14} stroke="#243c51" strokeWidth="0.5" />)}{Array.from({ length: 6 }).map((_, i) => <line key={`v${i}`} x1={i * 12} y1="0" x2={i * 12} y2="100%" stroke="#243c51" strokeWidth="0.5" />)}</svg>{[{ left: "25%", top: "30%" }, { left: "60%", top: "50%" }, { left: "40%", top: "70%" }].map((pos, i) => (<div key={i} style={{ position: "absolute", ...pos, width: 3, height: 3, borderRadius: "50%", background: "#E18739" }} />))}</div>)}
-      {type === "site" && (<div style={{ background: "white", height: "100%", position: "relative" }}><div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: "#E18739" }} /><div style={{ padding: "6px 6px 6px 8px", display: "flex", flexDirection: "column", gap: 2 }}><div style={{ height: 2, background: "rgba(36,60,81,0.20)", borderRadius: 1, width: "65%" }} />{Array.from({ length: 4 }).map((_, i) => (<div key={i} style={{ height: 1.5, background: "rgba(36,60,81,0.10)", borderRadius: 1, width: `${55 + i * 6}%` }} />))}</div></div>)}
+      {zoomed && <div style={{ position: "absolute", bottom: 4, right: 4, fontSize: 10, background: "rgba(192,222,237,0.70)", borderRadius: 3, padding: "1px 3px", lineHeight: 1, zIndex: 10 }}>🔍</div>}
+      {type === "cover" && (<><div style={{ height: "55%", background: "var(--brand-navy-color, #243c51)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 5, fontWeight: 700, color: "white" }}>GOLFTRK</span></div><div style={{ height: "45%", background: "var(--tourbook-thumb-bg)" }} /></>)}
+      {type === "guide" && (<div style={{ background: "var(--tourbook-thumb-bg)", height: "100%", padding: "6px 6px", display: "flex", flexDirection: "column", gap: 2 }}>{Array.from({ length: 7 }).map((_, i) => (<div key={i} style={{ height: 2, background: "rgba(192,222,237,0.12)", borderRadius: 1, width: "78%", margin: "0 auto" }} />))}</div>)}
+      {type === "schedule" && (<div style={{ background: "var(--tourbook-thumb-bg)", height: "100%", display: "flex", flexDirection: "column" }}><div style={{ height: 10, background: "var(--brand-navy-color, #243c51)" }} />{Array.from({ length: 5 }).map((_, i) => (<div key={i} style={{ height: 3, background: i % 2 === 0 ? "rgba(192,222,237,0.08)" : "rgba(192,222,237,0.04)" }} />))}</div>)}
+      {type === "map" && (<div style={{ background: "var(--tourbook-thumb-bg)", height: "100%", position: "relative" }}><svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.08 }}>{Array.from({ length: 6 }).map((_, i) => <line key={`h${i}`} x1="0" y1={i * 14} x2="100%" y2={i * 14} stroke="#C0DEED" strokeWidth="0.5" />)}{Array.from({ length: 6 }).map((_, i) => <line key={`v${i}`} x1={i * 12} y1="0" x2={i * 12} y2="100%" stroke="#C0DEED" strokeWidth="0.5" />)}</svg>{[{ left: "25%", top: "30%" }, { left: "60%", top: "50%" }, { left: "40%", top: "70%" }].map((pos, i) => (<div key={i} style={{ position: "absolute", ...pos, width: 3, height: 3, borderRadius: "50%", background: "#E18739" }} />))}</div>)}
+      {type === "site" && (<div style={{ background: "var(--tourbook-thumb-bg)", height: "100%", position: "relative" }}><div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: "#E18739" }} /><div style={{ padding: "6px 6px 6px 8px", display: "flex", flexDirection: "column", gap: 2 }}><div style={{ height: 2, background: "rgba(192,222,237,0.20)", borderRadius: 1, width: "65%" }} />{Array.from({ length: 4 }).map((_, i) => (<div key={i} style={{ height: 1.5, background: "rgba(192,222,237,0.10)", borderRadius: 1, width: `${55 + i * 6}%` }} />))}</div></div>)}
       {isUploaded && (<div style={{ position: "absolute", top: 2, right: 2, width: 8, height: 8, borderRadius: "50%", background: "#E18739", display: "flex", alignItems: "center", justifyContent: "center" }}><ArrowUp className="w-[5px] h-[5px] text-white" /></div>)}
     </div>
   );
 }
 
 /* ═══ ACTIVE PAGE RENDERER ═══ */
-function ActivePageRenderer({ activePage, checkedSites, tourDate, territory, franchisee, totalPages, coverPhoto, flashSections, onPreviewClick, onSiteImageUpload, instructionSections, mapTitle, mapNotes }: {
+function ActivePageRenderer({ activePage, checkedSites, tourDate, territory, franchisee, totalPages, coverPhoto, flashSections, onPreviewClick, onSiteImageUpload, instructionSections, mapTitle, mapNotes, resolvingMapCoordinates }: {
   activePage: number; checkedSites: SiteData[]; tourDate: string; territory: string; franchisee: string; totalPages: number;
   coverPhoto: string | null; flashSections: Set<string>; onPreviewClick: (target: string, siteId?: string) => void;
   onSiteImageUpload: (siteId: string, imageIdx: number, dataUrl: string) => void;
-  instructionSections: { title: string; items: string }[]; mapTitle: string; mapNotes: string;
+  instructionSections: { title: string; items: string }[]; mapTitle: string; mapNotes: string; resolvingMapCoordinates: boolean;
 }) {
   if (activePage === 0) return <PageCover tourDate={tourDate} territory={territory} franchisee={franchisee} coverPhoto={coverPhoto} flashSections={flashSections} onPreviewClick={onPreviewClick} />;
   if (activePage === 1) return <PageInstructions sections={instructionSections} />;
   if (activePage === 2) return <PageSchedule sites={checkedSites} tourDate={tourDate} flashSections={flashSections} />;
-  if (activePage === 3) return <PageMap sites={checkedSites} title={mapTitle} notes={mapNotes} />;
+  if (activePage === 3) return <PageMap sites={checkedSites} title={mapTitle} notes={mapNotes} resolvingCoordinates={resolvingMapCoordinates} />;
   const siteIdx = activePage - 4;
   if (siteIdx >= 0 && siteIdx < checkedSites.length) return <PageSiteCard site={checkedSites[siteIdx]} index={siteIdx + 1} pageNum={activePage + 1} totalPages={totalPages} flashSections={flashSections} onPreviewClick={onPreviewClick} onImageUpload={onSiteImageUpload} />;
   return null;
 }
 
 /* ═══ PAGE FRAME ═══ */
-function PageFrame({ children, pageNum, totalPages, rightLabel }: { children: React.ReactNode; pageNum?: number; totalPages?: number; rightLabel?: string }) {
+function PageFrame({
+  children,
+  pageNum,
+  totalPages,
+  rightLabel,
+}: {
+  children: React.ReactNode;
+  pageNum?: number;
+  totalPages?: number;
+  rightLabel?: string;
+}) {
   return (
-    <div style={{ width: 742, height: 960, display: "flex", flexDirection: "column", fontFamily: "Inter, sans-serif" }}>
-      <div className="flex items-center justify-between shrink-0" style={{ height: 40, padding: "0 32px", borderBottom: "1px solid rgba(36,60,81,0.10)" }}>
-        <div className="flex items-center" style={{ gap: 6 }}><span style={{ fontSize: 18, fontWeight: 700, color: "#243c51" }}>R</span><span style={{ fontSize: 12, color: "rgba(36,60,81,0.45)" }}>Property Tour Book</span></div>
-        {rightLabel && <span style={{ fontSize: 10, textTransform: "uppercase", color: "rgba(36,60,81,0.35)", letterSpacing: "0.08em" }}>{rightLabel}</span>}
+    <div
+      className="tour-book-page"
+      style={{
+        ...PDF_LIGHT_VARS,
+        width: 742,
+        height: 960,
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "Inter, system-ui, sans-serif",
+        background: "#ffffff",
+        color: "#0f172a",
+        colorScheme: "light",
+      }}
+    >
+      <div
+        className="flex shrink-0 items-center justify-between"
+        style={{
+          height: 40,
+          padding: "0 32px",
+          borderBottom: "1px solid #e2e8f0",
+          background: "#ffffff",
+        }}
+      >
+        <div className="flex items-center" style={{ gap: 6 }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: "#1f3a4d" }}>
+            R
+          </span>
+          <span style={{ fontSize: 12, color: "#64748b" }}>
+            Property Tour Book
+          </span>
+        </div>
+
+        {rightLabel && (
+          <span
+            style={{
+              fontSize: 10,
+              textTransform: "uppercase",
+              color: "#94a3b8",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {rightLabel}
+          </span>
+        )}
       </div>
-      <div className="flex-1" style={{ overflow: "hidden" }}>{children}</div>
-      <div className="flex items-center justify-between shrink-0" style={{ height: 32, padding: "0 32px", borderTop: "1px solid rgba(36,60,81,0.10)", marginTop: "auto" }}>
-        <div className="flex items-center" style={{ gap: 6 }}><span style={{ fontSize: 12, fontWeight: 700, color: "#243c51" }}>R</span><span style={{ fontSize: 10, color: "rgba(36,60,81,0.45)" }}>ReimagineCRE.com</span></div>
-        {pageNum && <span style={{ fontSize: 10, color: "rgba(36,60,81,0.40)" }}>Page {pageNum}</span>}
+
+      <div
+        className="flex-1"
+        style={{
+          overflow: "hidden",
+          background: "#ffffff",
+          color: "#0f172a",
+        }}
+      >
+        {children}
+      </div>
+
+      <div
+        className="flex shrink-0 items-center justify-between"
+        style={{
+          height: 32,
+          padding: "0 32px",
+          borderTop: "1px solid #e2e8f0",
+          marginTop: "auto",
+          background: "#ffffff",
+        }}
+      >
+        <div className="flex items-center" style={{ gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#1f3a4d" }}>
+            R
+          </span>
+          <span style={{ fontSize: 10, color: "#64748b" }}>
+            ReimagineCRE.com
+          </span>
+        </div>
+
+        {pageNum && (
+          <span style={{ fontSize: 10, color: "#64748b" }}>
+            Page {pageNum}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1157,24 +1559,24 @@ function PageFrame({ children, pageNum, totalPages, rightLabel }: { children: Re
 /* ═══ COVER PAGE ═══ */
 function PageCover({ tourDate, territory, franchisee, coverPhoto, flashSections, onPreviewClick }: { tourDate: string; territory: string; franchisee: string; coverPhoto: string | null; flashSections: Set<string>; onPreviewClick: (target: string) => void; }) {
   return (
-    <div style={{ width: 742, height: 960, display: "flex", flexDirection: "column", fontFamily: "Inter, sans-serif" }}>
+    <div style={{ ...PDF_LIGHT_VARS, width: 742, height: 960, display: "flex", flexDirection: "column", fontFamily: "Inter, system-ui, sans-serif", background: "#ffffff", color: "#0f172a" }}>
       <div style={{ height: "55%", background: "linear-gradient(160deg, #243c51 0%, #1a2e3d 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 48px 32px", position: "relative" }}>
         <span style={{ position: "absolute", top: 20, right: 24, fontSize: 24, fontWeight: 700, color: "white" }}>R</span>
         <span style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 16 }}>Property Tour Book</span>
-        <h1 style={{ fontSize: 52, fontWeight: 700, color: "white", letterSpacing: -1, margin: 0 }}>GOLFTRK</h1>
-        <p style={{ fontSize: 14, color: "rgba(255,255,255,0.60)", marginTop: 6 }}>Property Tour Book</p>
+        <h1 style={{ fontSize: 52, fontWeight: 700, color: "white", letterSpacing: -1, margin: 0, textAlign: "center" }}>{franchisee || "Tour Book"}</h1>
+        <p style={{ fontSize: 14, color: "rgba(255,255,255,0.78)", marginTop: 6 }}>Property Tour Book</p>
         <div style={{ width: 40, height: 1, background: "rgba(255,255,255,0.20)", margin: "20px auto" }} />
       </div>
-      <div style={{ flex: 1, background: "white", padding: "32px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div style={{ flex: 1, background: "var(--tourbook-preview-bg)", padding: "32px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div className={`preview-click-zone ${flashSections.has("coverPhoto") ? "update-flash" : ""}`} onClick={() => onPreviewClick("coverPhoto")}
-          style={{ height: 200, borderRadius: 8, overflow: "hidden", ...(coverPhoto ? {} : { background: "rgba(36,60,81,0.06)", border: "1px dashed rgba(36,60,81,0.18)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }) }}>
-          {coverPhoto ? <img src={coverPhoto} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (<><Camera className="w-6 h-6" style={{ color: "rgba(36,60,81,0.30)" }} /><span style={{ fontSize: 12, color: "rgba(36,60,81,0.40)" }}>Upload cover photo</span></>)}
+          style={{ height: 200, borderRadius: 8, overflow: "hidden", ...(coverPhoto ? {} : { background: "rgba(192,222,237,0.06)", border: "1px dashed rgba(192,222,237,0.18)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6 }) }}>
+          {coverPhoto ? <img src={coverPhoto} alt="Cover" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (<><Camera className="w-6 h-6" style={{ color: "rgba(192,222,237,0.30)" }} /><span style={{ fontSize: 12, color: "var(--tourbook-preview-faint)" }}>Upload cover photo</span></>)}
         </div>
         <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
           {[{ label: "Tour Date", value: tourDate, key: "tourDate" }, { label: "Territory", value: territory, key: "territory" }, { label: "Franchisee", value: franchisee, key: "franchisee" }].map(item => (
             <div key={item.label} className={`preview-click-zone ${flashSections.has(item.key) ? "update-flash" : ""}`} onClick={() => onPreviewClick(item.key)} style={{ padding: 6, borderRadius: 4 }}>
-              <span style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(36,60,81,0.45)" }}>{item.label}</span>
-              <p style={{ fontSize: 14, fontWeight: 600, color: "#1b2326", marginTop: 3 }}>{item.value}</p>
+              <span style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--tourbook-preview-faint)" }}>{item.label}</span>
+              <p style={{ fontSize: 14, fontWeight: 600, color: "var(--tourbook-preview-text)", marginTop: 3 }}>{item.value}</p>
             </div>
           ))}
         </div>
@@ -1188,13 +1590,13 @@ function PageInstructions({ sections }: { sections: { title: string; items: stri
   return (
     <PageFrame pageNum={2} rightLabel="GUIDE">
       <div style={{ padding: "24px 32px" }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", margin: 0 }}>Property Tour Instructions</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--tourbook-preview-text)", margin: 0 }}>Property Tour Instructions</h2>
         <div style={{ width: 36, height: 3, background: "#E18739", marginTop: 6, marginBottom: 20 }} />
         {sections.map(section => (
           <div key={section.title} style={{ marginBottom: 16 }}>
-            <h3 style={{ fontSize: 12, fontWeight: 600, color: "#1b2326", marginBottom: 8 }}>{section.title}</h3>
+            <h3 style={{ fontSize: 12, fontWeight: 600, color: "var(--tourbook-preview-text)", marginBottom: 8 }}>{section.title}</h3>
             {section.items.split("\n").filter(Boolean).map((item, i) => (
-              <p key={i} style={{ fontSize: 12, color: "#374151", lineHeight: 1.7, paddingLeft: 12, margin: 0 }}>· {item}</p>
+              <p key={i} style={{ fontSize: 12, color: "var(--tourbook-preview-muted)", lineHeight: 1.7, paddingLeft: 12, margin: 0 }}>· {item}</p>
             ))}
           </div>
         ))}
@@ -1208,23 +1610,23 @@ function PageSchedule({ sites, tourDate, flashSections }: { sites: SiteData[]; t
   return (
     <PageFrame pageNum={3} rightLabel="SCHEDULE">
       <div style={{ padding: "20px 32px" }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", margin: 0 }}>Property Tour Schedule</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--tourbook-preview-text)", margin: 0 }}>Property Tour Schedule</h2>
         <div style={{ width: 36, height: 3, background: "#E18739", marginTop: 6, marginBottom: 16 }} />
-        <div className={flashSections.has("tourDate") ? "update-flash" : ""} style={{ fontSize: 12, fontWeight: 600, color: "rgba(36,60,81,0.55)", background: "rgba(36,60,81,0.05)", borderRadius: 4, padding: "5px 10px", marginBottom: 8 }}>Tuesday, January 20th, 2026</div>
+        <div className={flashSections.has("tourDate") ? "update-flash" : ""} style={{ fontSize: 12, fontWeight: 600, color: "var(--tourbook-preview-faint)", background: "var(--tourbook-preview-soft-bg)", borderRadius: 4, padding: "5px 10px", marginBottom: 8 }}>{formatTourDate(tourDate)}</div>
         <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse", tableLayout: "fixed" }}>
           <colgroup><col style={{ width: 28 }} /><col style={{ width: 64 }} /><col style={{ width: 160 }} /><col style={{ width: 44 }} /><col style={{ width: 58 }} /><col style={{ width: 44 }} /><col style={{ width: 64 }} /><col style={{ width: 216 }} /></colgroup>
-          <thead><tr style={{ background: "#243c51" }}>{["#", "Time", "Property", "SF", "Base Rent", "NNN", "Gross/Mo", "Broker"].map(col => (<th key={col} style={{ padding: "7px 8px", color: "white", fontSize: 9, fontWeight: 600, textTransform: "uppercase", textAlign: "left" }}>{col}</th>))}</tr></thead>
+          <thead><tr style={{ background: "var(--brand-navy-color, #243c51)" }}>{["#", "Time", "Property", "SF", "Base Rent", "NNN", "Gross/Mo", "Broker"].map(col => (<th key={col} style={{ padding: "7px 8px", color: "white", fontSize: 9, fontWeight: 600, textTransform: "uppercase", textAlign: "left" }}>{col}</th>))}</tr></thead>
           <tbody>
             {sites.map((site, i) => (
-              <tr key={site.id} className={flashSections.has(`${site.id}-tourTime`) || flashSections.has(`${site.id}-tourType`) ? "update-flash" : ""} style={{ height: 44, background: i % 2 === 0 ? "white" : "rgba(36,60,81,0.025)", borderBottom: "1px solid rgba(36,60,81,0.07)" }}>
-                <td style={{ padding: "6px 8px", verticalAlign: "middle" }}><span style={{ width: 18, height: 18, borderRadius: "50%", background: "#243c51", color: "white", fontSize: 9, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span></td>
-                <td style={{ padding: "6px 8px", verticalAlign: "middle" }}>{site.tourType === "driveby" ? <span style={{ background: "rgba(225,135,57,0.10)", color: "#b85c1a", fontSize: 9, fontWeight: 600, borderRadius: 3, padding: "2px 6px", display: "inline-block" }}>Drive-by</span> : <span style={{ fontSize: 10, fontWeight: 600, color: "#1b2326" }}>{site.tourTime || "—"}</span>}</td>
-                <td style={{ padding: "6px 8px", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><div style={{ fontSize: 10, fontWeight: 600, color: "#1b2326", lineHeight: 1.3 }}>{site.name}</div><div style={{ fontSize: 9, color: "rgba(36,60,81,0.50)", lineHeight: 1.3 }}>{site.address}</div></td>
-                <td style={{ padding: "6px 8px", fontSize: 10, color: "#374151", verticalAlign: "middle" }}>{site.sf}</td>
-                <td style={{ padding: "6px 8px", fontSize: 10, color: "#1b2326", verticalAlign: "middle" }}>{site.baseRent}</td>
-                <td style={{ padding: "6px 8px", fontSize: 10, color: "#374151", verticalAlign: "middle" }}>{site.nnn}</td>
-                <td style={{ padding: "6px 8px", fontSize: 10, fontWeight: 600, color: "#1b2326", verticalAlign: "middle" }}>{site.grossMo}</td>
-                <td style={{ padding: "6px 8px", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><div style={{ fontSize: 10, color: "#1b2326" }}>{site.brokerName}</div><div style={{ fontSize: 9, color: "rgba(36,60,81,0.50)" }}>{site.brokerPhone}</div></td>
+              <tr key={site.id} className={flashSections.has(`${site.id}-tourTime`) || flashSections.has(`${site.id}-tourType`) ? "update-flash" : ""} style={{ height: 44, background: i % 2 === 0 ? "rgba(192,222,237,0.055)" : "rgba(192,222,237,0.025)", borderBottom: "1px solid var(--tourbook-preview-border)" }}>
+                <td style={{ padding: "6px 8px", verticalAlign: "middle" }}><span style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--brand-navy-color, #243c51)", color: "white", fontSize: 9, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span></td>
+                <td style={{ padding: "6px 8px", verticalAlign: "middle" }}>{site.tourType === "driveby" ? <span style={{ background: "rgba(225,135,57,0.10)", color: "#b85c1a", fontSize: 9, fontWeight: 600, borderRadius: 3, padding: "2px 6px", display: "inline-block" }}>Drive-by</span> : <span style={{ fontSize: 10, fontWeight: 600, color: "var(--tourbook-preview-text)" }}>{site.tourTime || "—"}</span>}</td>
+                <td style={{ padding: "6px 8px", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><div style={{ fontSize: 10, fontWeight: 600, color: "var(--tourbook-preview-text)", lineHeight: 1.3 }}>{site.name}</div><div style={{ fontSize: 9, color: "var(--tourbook-preview-faint)", lineHeight: 1.3 }}>{site.address}</div></td>
+                <td style={{ padding: "6px 8px", fontSize: 10, color: "var(--tourbook-preview-muted)", verticalAlign: "middle" }}>{site.sf}</td>
+                <td style={{ padding: "6px 8px", fontSize: 10, color: "var(--tourbook-preview-text)", verticalAlign: "middle" }}>{site.baseRent}</td>
+                <td style={{ padding: "6px 8px", fontSize: 10, color: "var(--tourbook-preview-muted)", verticalAlign: "middle" }}>{site.nnn}</td>
+                <td style={{ padding: "6px 8px", fontSize: 10, fontWeight: 600, color: "var(--tourbook-preview-text)", verticalAlign: "middle" }}>{site.grossMo}</td>
+                <td style={{ padding: "6px 8px", verticalAlign: "middle", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><div style={{ fontSize: 10, color: "var(--tourbook-preview-text)" }}>{site.brokerName}</div><div style={{ fontSize: 9, color: "var(--tourbook-preview-faint)" }}>{site.brokerPhone}</div></td>
               </tr>
             ))}
           </tbody>
@@ -1234,28 +1636,203 @@ function PageSchedule({ sites, tourDate, flashSections }: { sites: SiteData[]; t
   );
 }
 
+function formatTourDate(value: string): string {
+  if (!value.trim()) return "Tour date not set";
+  const parsed = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(parsed);
+}
+
+type MapCoordinate = {
+  id: string;
+  label: string;
+  city: string;
+  lat: number;
+  lng: number;
+};
+
+type TileDescriptor = {
+  key: string;
+  url: string;
+  left: number;
+  top: number;
+};
+
+const MAP_WIDTH = 678;
+const TILE_SIZE = 256;
+
+function isValidCoordinate(site: SiteData): boolean {
+  return Number.isFinite(site.lat) && Number.isFinite(site.lng) && Math.abs(site.lat) <= 85 && Math.abs(site.lng) <= 180 && !(Math.abs(site.lat) < 0.001 && Math.abs(site.lng) < 0.001);
+}
+
+function compactAddressCandidate(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/,\s*,/g, ",").trim();
+}
+
+function buildTourGeocodeCandidates(site: SiteData): string[] {
+  const fullAddress = compactAddressCandidate(site.address);
+  const withoutPostalCode = compactAddressCandidate(fullAddress.replace(/\b\d{5}(?:-?\d{3,4})?\b/g, ""));
+  const parts = fullAddress.split(",").map((part) => part.trim()).filter(Boolean);
+  const cityState = parts.length >= 3 ? compactAddressCandidate(parts.slice(1, 3).join(", ")) : "";
+
+  return Array.from(new Set([
+    fullAddress,
+    withoutPostalCode,
+    cityState,
+    fullAddress ? `${fullAddress}, Brazil` : "",
+    withoutPostalCode ? `${withoutPostalCode}, Brazil` : "",
+    cityState ? `${cityState}, Brazil` : "",
+  ].filter(Boolean)));
+}
+
+async function resolveTourSiteCoordinates(site: SiteData): Promise<GeocodeResult | null> {
+  if (isValidCoordinate(site)) return { lat: site.lat, lng: site.lng };
+
+  for (const candidate of buildTourGeocodeCandidates(site)) {
+    const result = await geocodeAddress(candidate);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+function clampLatitude(lat: number): number {
+  return Math.max(-85.05112878, Math.min(85.05112878, lat));
+}
+
+function lngToTileX(lng: number, zoom: number): number {
+  return ((lng + 180) / 360) * 2 ** zoom;
+}
+
+function latToTileY(lat: number, zoom: number): number {
+  const rad = clampLatitude(lat) * Math.PI / 180;
+  return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** zoom;
+}
+
+function chooseMapZoom(coords: MapCoordinate[], width: number, height: number): number {
+  if (coords.length <= 1) return 13;
+
+  for (let zoom = 13; zoom >= 4; zoom -= 1) {
+    const xs = coords.map((coord) => lngToTileX(coord.lng, zoom) * TILE_SIZE);
+    const ys = coords.map((coord) => latToTileY(coord.lat, zoom) * TILE_SIZE);
+    const spanX = Math.max(...xs) - Math.min(...xs);
+    const spanY = Math.max(...ys) - Math.min(...ys);
+
+    if (spanX <= width - 120 && spanY <= height - 90) return zoom;
+  }
+
+  return 4;
+}
+
+function buildTileDescriptors(centerLat: number, centerLng: number, zoom: number, width: number, height: number): TileDescriptor[] {
+  const centerX = lngToTileX(centerLng, zoom) * TILE_SIZE;
+  const centerY = latToTileY(centerLat, zoom) * TILE_SIZE;
+  const startX = Math.floor((centerX - width / 2) / TILE_SIZE);
+  const endX = Math.ceil((centerX + width / 2) / TILE_SIZE);
+  const startY = Math.floor((centerY - height / 2) / TILE_SIZE);
+  const endY = Math.ceil((centerY + height / 2) / TILE_SIZE);
+  const tileCount = 2 ** zoom;
+  const tiles: TileDescriptor[] = [];
+
+  for (let x = startX; x <= endX; x += 1) {
+    for (let y = startY; y <= endY; y += 1) {
+      if (y < 0 || y >= tileCount) continue;
+      const wrappedX = ((x % tileCount) + tileCount) % tileCount;
+      const server = ["a", "b", "c"][Math.abs(x + y) % 3];
+      tiles.push({
+        key: `${zoom}-${wrappedX}-${y}`,
+        url: `https://${server}.basemaps.cartocdn.com/light_all/${zoom}/${wrappedX}/${y}.png`,
+        left: x * TILE_SIZE - (centerX - width / 2),
+        top: y * TILE_SIZE - (centerY - height / 2),
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function getMarkerPosition(coord: MapCoordinate, centerLat: number, centerLng: number, zoom: number, width: number, height: number): { left: number; top: number } {
+  const centerX = lngToTileX(centerLng, zoom) * TILE_SIZE;
+  const centerY = latToTileY(centerLat, zoom) * TILE_SIZE;
+  return {
+    left: width / 2 + lngToTileX(coord.lng, zoom) * TILE_SIZE - centerX,
+    top: height / 2 + latToTileY(coord.lat, zoom) * TILE_SIZE - centerY,
+  };
+}
+
 /* ═══ MAP PAGE ═══ */
-function PageMap({ sites, title, notes }: { sites: SiteData[]; title: string; notes: string }) {
+function PageMap({ sites, title, notes, resolvingCoordinates }: { sites: SiteData[]; title: string; notes: string; resolvingCoordinates: boolean }) {
+  const mapHeight = notes ? 280 : 340;
+  const coordinates: MapCoordinate[] = sites
+    .filter(isValidCoordinate)
+    .map((site) => ({
+      id: site.id,
+      label: site.name,
+      city: site.address.split(",")[1]?.trim() || site.address,
+      lat: site.lat,
+      lng: site.lng,
+    }));
+
+  const centerLat = coordinates.length > 0 ? coordinates.reduce((sum, coord) => sum + coord.lat, 0) / coordinates.length : 39.8283;
+  const centerLng = coordinates.length > 0 ? coordinates.reduce((sum, coord) => sum + coord.lng, 0) / coordinates.length : -98.5795;
+  const zoom = chooseMapZoom(coordinates, MAP_WIDTH, mapHeight);
+  const tiles = coordinates.length > 0 ? buildTileDescriptors(centerLat, centerLng, zoom, MAP_WIDTH, mapHeight) : [];
+
   return (
     <PageFrame pageNum={4} rightLabel="MAP OVERVIEW">
       <div style={{ padding: "20px 32px" }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", margin: 0 }}>{title}</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--tourbook-preview-text)", margin: 0 }}>{title}</h2>
         <div style={{ width: 36, height: 3, background: "#E18739", marginTop: 6, marginBottom: 16 }} />
-        <div style={{ height: notes ? 280 : 340, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(36,60,81,0.10)", background: "rgba(36,60,81,0.04)", position: "relative" }}>
-          <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>{Array.from({ length: 20 }).map((_, i) => (<line key={`h${i}`} x1="0" y1={i * 18} x2="100%" y2={i * 18} stroke="rgba(36,60,81,0.08)" strokeWidth="1" />))}{Array.from({ length: 30 }).map((_, i) => (<line key={`v${i}`} x1={i * 24} y1="0" x2={i * 24} y2="100%" stroke="rgba(36,60,81,0.08)" strokeWidth="1" />))}</svg>
-          {sites.slice(0, 7).map((_, i) => {
-            const positions = [{ left: "18%", top: "25%" }, { left: "55%", top: "18%" }, { left: "40%", top: "50%" }, { left: "72%", top: "55%" }, { left: "25%", top: "68%" }, { left: "58%", top: "40%" }, { left: "78%", top: "32%" }];
-            return (<div key={i} style={{ position: "absolute", ...positions[i], transform: "translate(-50%,-50%)", width: 20, height: 20, borderRadius: "50%", background: "#E18739", color: "white", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.20)" }}>{i + 1}</div>);
-          })}
+        <div style={{ height: mapHeight, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(192,222,237,0.10)", background: "var(--tourbook-preview-soft-bg)", position: "relative" }}>
+          {coordinates.length > 0 ? (
+            <>
+              {tiles.map((tile) => (
+                <img
+                  key={tile.key}
+                  src={tile.url}
+                  alt=""
+                  draggable={false}
+                  style={{ position: "absolute", width: TILE_SIZE, height: TILE_SIZE, left: tile.left, top: tile.top, userSelect: "none" }}
+                />
+              ))}
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(36,60,81,0.08))", pointerEvents: "none" }} />
+              {coordinates.map((coord, i) => {
+                const pos = getMarkerPosition(coord, centerLat, centerLng, zoom, MAP_WIDTH, mapHeight);
+                return (
+                  <div key={coord.id} title={coord.label} style={{ position: "absolute", left: pos.left, top: pos.top, transform: "translate(-50%,-100%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: "50% 50% 50% 4px", background: "#E18739", transform: "rotate(-45deg)", boxShadow: "0 4px 10px rgba(0,0,0,0.25)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(245,252,255,0.90)" }}>
+                      <span style={{ transform: "rotate(45deg)", color: "white", fontSize: 9, fontWeight: 800 }}>{i + 1}</span>
+                    </span>
+                    <span style={{ width: 6, height: 3, borderRadius: "50%", background: "rgba(0,0,0,0.22)", marginTop: -2 }} />
+                  </div>
+                );
+              })}
+              <div style={{ position: "absolute", right: 8, bottom: 6, padding: "3px 6px", borderRadius: 4, background: "rgba(255,255,255,0.86)", color: "#374151", fontSize: 8 }}>© OpenStreetMap contributors</div>
+            </>
+          ) : (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "var(--tourbook-preview-faint)", textAlign: "center", padding: 24 }}>
+              <Navigation className="w-8 h-8" style={{ color: "rgba(192,222,237,0.28)" }} />
+              <strong style={{ fontSize: 13, color: "var(--tourbook-preview-muted)" }}>{resolvingCoordinates ? "Resolving map coordinates..." : "No mapped coordinates yet"}</strong>
+              <span style={{ fontSize: 11, maxWidth: 320, lineHeight: 1.5 }}>{resolvingCoordinates ? "The tour book is trying to locate the selected sites from their saved addresses." : "This map can use saved latitude/longitude or resolve a complete site address automatically."}</span>
+            </div>
+          )}
         </div>
         {notes && (
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 6, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)" }}>
-            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "rgba(36,60,81,0.40)", display: "block", marginBottom: 4 }}>Notes</span>
-            <p style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, margin: 0 }}>{notes}</p>
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 6, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)" }}>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--tourbook-preview-faint)", display: "block", marginBottom: 4 }}>Notes</span>
+            <p style={{ fontSize: 10, color: "var(--tourbook-preview-muted)", lineHeight: 1.6, margin: 0 }}>{notes}</p>
           </div>
         )}
         <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
-          {sites.map((site, i) => (<div key={site.id} className="flex items-center" style={{ gap: 6 }}><span style={{ width: 14, height: 14, borderRadius: "50%", background: "#E18739", color: "white", fontSize: 8, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span><div><span style={{ fontSize: 10, color: "#374151" }}>{site.name}</span><span style={{ fontSize: 9, color: "rgba(36,60,81,0.45)", display: "block" }}>{site.address.split(",")[1]?.trim() || site.address}</span></div></div>))}
+          {sites.map((site, i) => (
+            <div key={site.id} className="flex items-center" style={{ gap: 6 }}>
+              <span style={{ width: 14, height: 14, borderRadius: "50%", background: "#E18739", color: "white", fontSize: 8, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span>
+              <div>
+                <span style={{ fontSize: 10, color: "var(--tourbook-preview-muted)" }}>{site.name}</span>
+                <span style={{ fontSize: 9, color: "var(--tourbook-preview-faint)", display: "block" }}>{site.address.split(",")[1]?.trim() || site.address}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </PageFrame>
@@ -1290,11 +1867,11 @@ function PageSiteCard({ site, index, pageNum, totalPages, flashSections, onPrevi
           <div style={{ width: 3, height: 36, background: "#E18739", flexShrink: 0, borderRadius: 2 }} />
           <div style={{ flex: 1 }}>
             <div className="flex items-center" style={{ gap: 8, flexWrap: "wrap" }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#1b2326", margin: 0 }}>{site.name}</h2>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--tourbook-preview-text)", margin: 0 }}>{site.name}</h2>
               {site.tourType === "driveby" ? (
                 <span style={{ background: "rgba(225,135,57,0.12)", color: "#b85c1a", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "3px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Drive-by</span>
               ) : (
-                <span style={{ background: "rgba(36,60,81,0.10)", color: "#243c51", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "3px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{site.tourTime ? `Scheduled · ${site.tourTime}` : "Scheduled"}</span>
+                <span style={{ background: "rgba(192,222,237,0.10)", color: "#C0DEED", fontSize: 9, fontWeight: 700, borderRadius: 4, padding: "3px 7px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{site.tourTime ? `Scheduled · ${site.tourTime}` : "Scheduled"}</span>
               )}
               {(() => {
                 const statusMap: Record<string, { label: string; bg: string; color: string; dot: string }> = {
@@ -1310,12 +1887,12 @@ function PageSiteCard({ site, index, pageNum, totalPages, flashSections, onPrevi
                 );
               })()}
             </div>
-            <p style={{ fontSize: 12, color: "rgba(36,60,81,0.55)", marginTop: 3 }}>{site.address}</p>
+            <p style={{ fontSize: 12, color: "var(--tourbook-preview-faint)", marginTop: 3 }}>{site.address}</p>
           </div>
-          <span style={{ position: "absolute", right: 0, top: 0, fontSize: 36, fontWeight: 700, color: "rgba(36,60,81,0.06)" }}>SITE #{index}</span>
+          <span style={{ position: "absolute", right: 0, top: 0, fontSize: 36, fontWeight: 700, color: "rgba(192,222,237,0.06)" }}>SITE #{index}</span>
         </div>
         <div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>
-          {[`${site.sf} SF`, `${site.baseRent} Base Rent`, `${site.nnn} NNN`, `${site.grossMo}/Mo`].map(pill => (<span key={pill} style={{ fontSize: 10, fontWeight: 600, color: "#374151", background: "rgba(36,60,81,0.06)", borderRadius: 5, padding: "4px 10px" }}>{pill}</span>))}
+          {[`${site.sf} SF`, `${site.baseRent} Base Rent`, `${site.nnn} NNN`, `${site.grossMo}/Mo`].map(pill => (<span key={pill} style={{ fontSize: 10, fontWeight: 600, color: "var(--tourbook-preview-muted)", background: "rgba(192,222,237,0.06)", borderRadius: 5, padding: "4px 10px" }}>{pill}</span>))}
         </div>
         <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
           <div>
@@ -1323,7 +1900,7 @@ function PageSiteCard({ site, index, pageNum, totalPages, flashSections, onPrevi
               {(site.images || [null, null, null, null]).slice(0, 4).map((img, i) => (
                 <div key={i} onClick={() => handleImageClick(i)} style={{
                   borderRadius: 5, overflow: "hidden", cursor: "pointer", position: "relative",
-                  background: img ? "transparent" : "rgba(36,60,81,0.06)",
+                  background: img ? "transparent" : "rgba(192,222,237,0.06)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   aspectRatio: "4 / 3",
                   transition: "box-shadow 0.15s ease",
@@ -1335,41 +1912,41 @@ function PageSiteCard({ site, index, pageNum, totalPages, flashSections, onPrevi
                     <>
                       <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; if (e.currentTarget.nextElementSibling) (e.currentTarget.nextElementSibling as HTMLElement).style.display = "flex"; }} />
                       <div className="flex flex-col items-center" style={{ gap: 3, display: "none" }}>
-                        <Camera className="w-4 h-4" style={{ color: "rgba(36,60,81,0.25)" }} />
-                        <span style={{ fontSize: 8, color: "rgba(36,60,81,0.30)" }}>Click to upload</span>
+                        <Camera className="w-4 h-4" style={{ color: "rgba(192,222,237,0.25)" }} />
+                        <span style={{ fontSize: 8, color: "rgba(192,222,237,0.30)" }}>Click to upload</span>
                       </div>
                     </>
                   ) : (
                     <div className="flex flex-col items-center" style={{ gap: 3 }}>
-                      <Camera className="w-4 h-4" style={{ color: "rgba(36,60,81,0.25)" }} />
-                      <span style={{ fontSize: 8, color: "rgba(36,60,81,0.30)" }}>Click to upload</span>
+                      <Camera className="w-4 h-4" style={{ color: "rgba(192,222,237,0.25)" }} />
+                      <span style={{ fontSize: 8, color: "rgba(192,222,237,0.30)" }}>Click to upload</span>
                     </div>
                   )}
                 </div>
               ))}
             </div>
             {site.locationNotes && (
-              <div className={`preview-click-zone ${flashSections.has(`${site.id}-locationNotes`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("locationNotes", site.id)} style={{ marginTop: 12, padding: 12, borderRadius: 7, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)" }}>
-                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "rgba(36,60,81,0.40)", display: "block", marginBottom: 6 }}>Location Notes</span>
-                <p style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, margin: 0 }}>{site.locationNotes}</p>
+              <div className={`preview-click-zone ${flashSections.has(`${site.id}-locationNotes`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("locationNotes", site.id)} style={{ marginTop: 12, padding: 12, borderRadius: 7, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)" }}>
+                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--tourbook-preview-faint)", display: "block", marginBottom: 6 }}>Location Notes</span>
+                <p style={{ fontSize: 10, color: "var(--tourbook-preview-muted)", lineHeight: 1.6, margin: 0 }}>{site.locationNotes}</p>
               </div>
             )}
           </div>
           <div className="flex flex-col" style={{ gap: 10 }}>
-            <div style={{ padding: 12, borderRadius: 7, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)" }}>
-              <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "rgba(36,60,81,0.40)", display: "block", marginBottom: 8 }}>Property Details</span>
+            <div style={{ padding: 12, borderRadius: 7, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)" }}>
+              <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--tourbook-preview-faint)", display: "block", marginBottom: 8 }}>Property Details</span>
               {[{ label: "SF Available", value: site.sf }, { label: "Base Rent", value: site.baseRent }, { label: "NNN", value: site.nnn }, { label: "Gross Monthly", value: site.grossMo }].map(row => (
-                <div key={row.label} className="flex items-center justify-between" style={{ padding: "5px 0", borderBottom: "1px solid rgba(36,60,81,0.07)" }}><span style={{ fontSize: 10, color: "rgba(36,60,81,0.50)" }}>{row.label}</span><span style={{ fontSize: 10, fontWeight: 600, color: "#1b2326" }}>{row.value}</span></div>
+                <div key={row.label} className="flex items-center justify-between" style={{ padding: "5px 0", borderBottom: "1px solid var(--tourbook-preview-border)" }}><span style={{ fontSize: 10, color: "var(--tourbook-preview-faint)" }}>{row.label}</span><span style={{ fontSize: 10, fontWeight: 600, color: "var(--tourbook-preview-text)" }}>{row.value}</span></div>
               ))}
             </div>
-            <div className={`preview-click-zone ${flashSections.has(`${site.id}-brokerName`) || flashSections.has(`${site.id}-brokerPhone`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("brokerName", site.id)} style={{ padding: 12, borderRadius: 7, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)" }}>
-              <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "rgba(36,60,81,0.40)", display: "block", marginBottom: 6 }}>Broker Contact</span>
-              <div className="flex items-center" style={{ gap: 8, marginTop: 6 }}><span style={{ width: 28, height: 28, borderRadius: "50%", background: "#243c51", color: "white", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials}</span><div><span style={{ fontSize: 12, fontWeight: 700, color: "#1b2326", display: "block" }}>{site.brokerName}</span><span style={{ fontSize: 10, color: "rgba(36,60,81,0.55)", display: "block" }}>{site.brokerPhone}</span></div></div>
+            <div className={`preview-click-zone ${flashSections.has(`${site.id}-brokerName`) || flashSections.has(`${site.id}-brokerPhone`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("brokerName", site.id)} style={{ padding: 12, borderRadius: 7, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)" }}>
+              <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--tourbook-preview-faint)", display: "block", marginBottom: 6 }}>Broker Contact</span>
+              <div className="flex items-center" style={{ gap: 8, marginTop: 6 }}><span style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--brand-navy-color, #243c51)", color: "white", fontSize: 10, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials}</span><div><span style={{ fontSize: 12, fontWeight: 700, color: "var(--tourbook-preview-text)", display: "block" }}>{site.brokerName}</span><span style={{ fontSize: 10, color: "var(--tourbook-preview-faint)", display: "block" }}>{site.brokerPhone}</span></div></div>
             </div>
             {site.tourDirections && (
-              <div className={`preview-click-zone ${flashSections.has(`${site.id}-tourDirections`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("tourDirections", site.id)} style={{ padding: 12, borderRadius: 7, background: "rgba(36,60,81,0.03)", border: "1px solid rgba(36,60,81,0.08)" }}>
-                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "rgba(36,60,81,0.40)", display: "block", marginBottom: 4 }}>Tour Directions</span>
-                <div className="flex items-start" style={{ gap: 4 }}><span style={{ color: "#E18739", fontSize: 10 }}>→</span><p style={{ fontSize: 10, color: "#374151", lineHeight: 1.6, margin: 0 }}>{site.tourDirections}</p></div>
+              <div className={`preview-click-zone ${flashSections.has(`${site.id}-tourDirections`) ? "update-flash" : ""}`} onClick={() => onPreviewClick("tourDirections", site.id)} style={{ padding: 12, borderRadius: 7, background: "rgba(192,222,237,0.03)", border: "1px solid rgba(192,222,237,0.08)" }}>
+                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--tourbook-preview-faint)", display: "block", marginBottom: 4 }}>Tour Directions</span>
+                <div className="flex items-start" style={{ gap: 4 }}><span style={{ color: "#E18739", fontSize: 10 }}>→</span><p style={{ fontSize: 10, color: "var(--tourbook-preview-muted)", lineHeight: 1.6, margin: 0 }}>{site.tourDirections}</p></div>
               </div>
             )}
           </div>

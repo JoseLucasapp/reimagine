@@ -16,6 +16,8 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -39,6 +41,36 @@ const emptyRecord: Omit<BizDevRecord, "id"> = {
   reachOut1: "", reachOut2: "", reachOut3: "", reachOut4: "",
 };
 
+function normalizeCategory(value: string): BizDevCategory {
+  return bizDevCategories.includes(value as BizDevCategory) ? (value as BizDevCategory) : "Service";
+}
+
+function normalizeCsvCell(value: string | undefined): string {
+  return (value ?? "").trim();
+}
+
+function parseProspectCsv(csv: string): Omit<BizDevRecord, "id">[] {
+  const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((header) => header.trim().toLowerCase());
+  const get = (values: string[], name: string) => normalizeCsvCell(values[headers.indexOf(name)]);
+  return lines.slice(1).map((line) => {
+    const values = line.split(",").map((value) => value.trim());
+    return {
+      ...emptyRecord,
+      companyName: get(values, "company") || get(values, "company_name") || get(values, "name"),
+      website: get(values, "website") || "",
+      category: normalizeCategory(get(values, "category")),
+      subCategory: get(values, "sub_category") || get(values, "subcategory"),
+      owner: get(values, "owner"),
+      mainContact: get(values, "main_contact") || get(values, "contact"),
+      mainContactEmail: get(values, "email") || get(values, "main_contact_email"),
+      cell: get(values, "cell") || get(values, "phone"),
+      reachOutMethod: get(values, "method") || get(values, "reach_out_method"),
+    };
+  }).filter((record) => record.companyName.trim());
+}
+
 export default function BizDevPage() {
   const [tab, setTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
@@ -51,21 +83,39 @@ export default function BizDevPage() {
   const [savingRecord, setSavingRecord] = useState(false);
   const [sortCol, setSortCol] = useState<keyof BizDevRecord>("companyName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importCsv, setImportCsv] = useState("company,website,category,owner,main_contact,email,phone,method\n");
+  const [importing, setImporting] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("rcre_bizdev_banner_dismissed") === "1";
   });
-  const BIZDEV_IMPORT_URL =
-    "https://script.google.com/macros/s/AKfycby82LjrN3GcSAxkriizFrmnFqKADw5TFK0igBMXWLRNQFV0eKNyN5gtZDVlkClV7Hg7hQ/exec";
   const dismissBanner = () => {
     sessionStorage.setItem("rcre_bizdev_banner_dismissed", "1");
     setBannerDismissed(true);
   };
-  const handleImportFromBizDev = () => {
-    window.open(BIZDEV_IMPORT_URL, "_blank", "noopener,noreferrer");
-    toast("Biz Dev import coming soon", {
-      description: "Opening your existing Biz Dev workspace in a new tab.",
-    });
+  const handleImportFromBizDev = () => setImportOpen(true);
+
+  const handleImportCsv = async () => {
+    const rows = parseProspectCsv(importCsv);
+    if (rows.length === 0) {
+      toast.error("Paste at least one valid prospect row.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const created: BizDevRecord[] = [];
+      for (const row of rows) {
+        created.push(await createProspect(row));
+      }
+      setRecords((prev) => [...created, ...prev]);
+      toast.success(`${created.length} prospect${created.length === 1 ? "" : "s"} imported`);
+      setImportOpen(false);
+    } catch (error) {
+      toast.error("Unable to import prospects", { description: error instanceof Error ? error.message : "Check Supabase permissions." });
+    } finally {
+      setImporting(false);
+    }
   };
 
   const filtered = useMemo(() => {
@@ -204,7 +254,7 @@ export default function BizDevPage() {
                 Your existing Biz Dev contacts are being migrated into Prospects.
               </span>
               <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
-                Full integration coming soon.
+                Import CSV rows from the approved Biz Dev export and save them as real Supabase prospects.
               </span>
             </div>
           </div>
@@ -362,6 +412,20 @@ export default function BizDevPage() {
           </table>
         </div>
       </div>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Import Prospects</DialogTitle>
+            <DialogDescription>Paste CSV data from the Biz Dev export. Rows are saved into the Supabase prospects table.</DialogDescription>
+          </DialogHeader>
+          <Textarea value={importCsv} onChange={(event) => setImportCsv(event.target.value)} className="min-h-[240px] font-mono text-xs" />
+          <div className="flex items-center justify-between">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>{parseProspectCsv(importCsv).length} valid row{parseProspectCsv(importCsv).length === 1 ? "" : "s"} detected</span>
+            <button onClick={handleImportCsv} disabled={importing} className="cta-primary disabled:opacity-60">{importing ? "Importing..." : "Import Prospects"}</button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Drawer */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>

@@ -82,6 +82,17 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 
+const STATUS_PILL_GLOBAL: Record<string, { label: string; cls: string }> = {
+  "Signed": { label: "Signed", cls: "pill-signed" },
+  "Lease Negotiations": { label: "Lease", cls: "pill-lease" },
+  "LOI Negotiations": { label: "LOI", cls: "pill-loi" },
+  "First LOI(s) Submitted": { label: "First LOI", cls: "pill-first-loi" },
+  "Site Tours": { label: "Site Tours", cls: "pill-site-tours" },
+  "Market Study": { label: "Market Study", cls: "pill-market-study" },
+  "Kick Off": { label: "Kick Off", cls: "pill-intro-call" },
+  "On Hold": { label: "On Hold", cls: "pill-on-hold" },
+};
+
 const STATUS_BAR_COLORS: Record<string, string> = {
   "Signed": "#E18739", "Lease Negotiations": "#E18739", "First LOI(s) Submitted": "#E18739",
   "Market Study": "#E18739", "Site Tours": "#E18739", "LOI Negotiations": "#E18739",
@@ -145,7 +156,41 @@ export default function BrandsPage() {
   };
 
   const handleGenerateReport = () => {
-    toast.success("Report generation coming soon");
+    const selectedBrands = brandDetails.filter((brand) => reportBrands.includes(brand.id));
+    const selectedDeals = dealRecords.filter((deal) => reportBrands.includes(deal.brandId));
+    const rows = selectedBrands.map((brand) => {
+      const brandDeals = selectedDeals.filter((deal) => deal.brandId === brand.id);
+      return {
+        brand: brand.name,
+        category: brand.category,
+        activeDeals: brandDeals.filter((deal) => deal.status !== "Signed" && deal.status !== "On Hold").length,
+        signedDeals: brandDeals.filter((deal) => deal.status === "Signed").length,
+        totalDeals: brandDeals.length,
+        estimatedCommission: brandDeals.reduce((sum, deal) => sum + deal.estimatedCommission, 0),
+      };
+    });
+
+    const header = ["Brand", "Category", "Active Deals", "Signed Deals", "Total Deals", "Estimated Commission"];
+    const body = rows.map((row) => [row.brand, row.category, row.activeDeals, row.signedDeals, row.totalDeals, row.estimatedCommission]);
+    const csv = [
+      `Report Sections: ${reportSections.join(" | ")}`,
+      `Report Period: ${reportRange?.from ? format(reportRange.from, "yyyy-MM-dd") : "All time"}${reportRange?.to ? ` to ${format(reportRange.to, "yyyy-MM-dd")}` : ""}`,
+      "",
+      header.join(","),
+      ...body.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `reimagine-brand-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+
+    toast.success("Report generated", { description: `${rows.length} brand${rows.length === 1 ? "" : "s"} exported from Supabase data.` });
     setReportOpen(false);
   };
 
@@ -395,20 +440,59 @@ export default function BrandsPage() {
     );
   };
 
-  const renderKanbanPanel = () => (
-    <div className="flex flex-col items-center justify-center" style={{ minHeight: 400 }}>
-      <Columns3 className="w-12 h-12" style={{ color: "var(--text-muted)" }} />
-      <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 16 }}>Kanban & Map View</h2>
-      <p style={{ fontSize: 14, color: "var(--text-muted)", maxWidth: 360, textAlign: "center", marginTop: 8 }}>
-        Track brand deals on a live map and manage pipeline stages visually.
-      </p>
-      <span style={{
-        background: "rgba(225,135,57,0.10)", color: "#b85c1a",
-        border: "1px solid rgba(225,135,57,0.22)", borderRadius: 8,
-        padding: "8px 24px", fontSize: 14, fontWeight: 600, marginTop: 24,
-      }}>Coming Soon</span>
-    </div>
-  );
+  const renderKanbanPanel = () => {
+    const columns = [
+      { key: "active", title: "Active Pipeline", brands: filtered.filter((brand) => brand.activeDeals > 0) },
+      { key: "signed", title: "Signed", brands: filtered.filter((brand) => brand.signedDeals > 0) },
+      { key: "new", title: "No Active Deals", brands: filtered.filter((brand) => brand.activeDeals === 0 && brand.signedDeals === 0) },
+    ];
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {columns.map((column) => (
+          <div key={column.key} className="glass-card-static" style={{ borderRadius: 14, padding: 14, minHeight: 360 }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Columns3 className="w-4 h-4" style={{ color: "var(--text-orange-ui)" }} />
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{column.title}</h3>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>{column.brands.length}</span>
+            </div>
+            <div className="space-y-3">
+              {column.brands.map((brand) => {
+                const brandDeals = dealRecords.filter((deal) => deal.brandId === brand.id && !deal.isOneOff);
+                const statuses = Array.from(new Set(brandDeals.map((deal) => deal.status)));
+                return (
+                  <button key={brand.id} onClick={() => navigate(brand.internalLink)} className="w-full text-left transition-all hover:-translate-y-px" style={{ ...glassCard, borderRadius: 12, padding: 14 }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{brand.name}</p>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{brand.category}</p>
+                      </div>
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: brand.logoColor, flexShrink: 0 }} />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {statuses.length === 0 ? (
+                        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>No deals</span>
+                      ) : (
+                        statuses.map((status) => {
+                          const meta = STATUS_PILL_GLOBAL[status] || { label: status, cls: "pill-intro-call" };
+                          return <span key={status} className={`inline-flex items-center px-2 py-0.5 rounded-[20px] text-[11px] font-semibold ${meta.cls}`}>{meta.label}</span>;
+                        })
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+              {column.brands.length === 0 && (
+                <div className="rounded-[10px] p-8 text-center text-xs" style={{ border: "1px dashed var(--border-divider)", color: "var(--text-muted)" }}>No brands in this lane.</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const renderChartPanel = (chartView: "bar" | "line", inSplit = false) => {
     if (filtered.length === 0) {
@@ -616,14 +700,11 @@ export default function BrandsPage() {
         ]).map(v => (
           <button
             key={v.key}
-            onClick={() => {
-              if (v.key === "kanban") { toast("Kanban view coming soon"); return; }
-              setView(v.key);
-            }}
+            onClick={() => setView(v.key)}
             className="flex items-center gap-2 transition-all"
             style={{
               padding: "8px 16px", borderRadius: 8, fontSize: 14, fontWeight: 500,
-              cursor: v.key === "kanban" ? "default" : "pointer",
+              cursor: "pointer",
               ...(view === v.key
                 ? { background: "var(--view-toggle-active-bg)", color: "var(--view-toggle-active-color)", boxShadow: "0 2px 8px rgba(36,60,81,0.20)" }
                 : { background: "var(--bg-surface)", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }
@@ -632,12 +713,7 @@ export default function BrandsPage() {
           >
             <v.icon className="w-4 h-4" />
             {v.label}
-            {v.key === "kanban" && (
-              <span style={{
-                background: "rgba(225,135,57,0.12)", color: "#b85c1a",
-                borderRadius: 4, padding: "2px 8px", fontSize: 12, fontWeight: 600, marginLeft: 4,
-              }}>Soon</span>
-            )}
+
           </button>
         ))}
         {/* Charts dropdown tab */}
@@ -888,21 +964,8 @@ export default function BrandsPage() {
         </>
       )}
 
-      {/* ═══ KANBAN VIEW (Coming Soon) ═══ */}
-      {!customLayout && view === "kanban" && (
-        <div className="flex flex-col items-center justify-center" style={{ minHeight: 400 }}>
-          <Columns3 className="w-12 h-12" style={{ color: "var(--text-muted)" }} />
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 16 }}>Kanban & Map View</h2>
-          <p style={{ fontSize: 14, color: "var(--text-muted)", maxWidth: 360, textAlign: "center", marginTop: 8 }}>
-            Track brand deals on a live map and manage pipeline stages visually.
-          </p>
-          <span style={{
-            background: "rgba(225,135,57,0.10)", color: "#b85c1a",
-            border: "1px solid rgba(225,135,57,0.22)", borderRadius: 8,
-            padding: "8px 24px", fontSize: 14, fontWeight: 600, marginTop: 24,
-          }}>Coming Soon</span>
-        </div>
-      )}
+      {/* ═══ KANBAN VIEW ═══ */}
+      {!customLayout && view === "kanban" && renderKanbanPanel()}
     </div>
 
     <Sheet open={drawerOpen} onOpenChange={(o) => { setDrawerOpen(o); if (!o) resetForm(); }}>

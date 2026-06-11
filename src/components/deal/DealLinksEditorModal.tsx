@@ -54,7 +54,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
         aria-label="Edit deal links"
         style={{
           position: "relative",
-          background: "hsl(var(--background))",
+          background: "var(--bg-surface)",
           borderRadius: 16,
           width: "100%",
           maxWidth: 480,
@@ -88,7 +88,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
               placeholder="https://"
               value={marketStudyUrl}
               onChange={(e) => setMarketStudyUrl(e.target.value)}
-              className="glass-input"
+              className="app-input"
               style={{
                 width: "100%",
                 padding: "8px 12px",
@@ -96,7 +96,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
                 color: "var(--text-primary)",
                 borderRadius: 8,
                 border: `1px solid ${marketValid ? "var(--border-subtle)" : "#991b1b"}`,
-                background: "var(--bg-input, transparent)",
+                background: "var(--bg-input)",
               }}
             />
             {!marketValid && (
@@ -115,7 +115,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
               placeholder="https://"
               value={mapUrl}
               onChange={(e) => setMapUrl(e.target.value)}
-              className="glass-input"
+              className="app-input"
               style={{
                 width: "100%",
                 padding: "8px 12px",
@@ -123,7 +123,7 @@ export function DealLinksEditorModal({ initial, onClose, onSave }: DealLinksEdit
                 color: "var(--text-primary)",
                 borderRadius: 8,
                 border: `1px solid ${mapValid ? "var(--border-subtle)" : "#991b1b"}`,
-                background: "var(--bg-input, transparent)",
+                background: "var(--bg-input)",
               }}
             />
             {!mapValid && (

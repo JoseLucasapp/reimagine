@@ -24,6 +24,7 @@ import {
   type SecondFloor,
   type SpaceRequirement,
 } from "@/data/spaceReqData";
+import { getSitesByDeal, replaceMapDealRuntime, replaceSiteRuntime, type Deal as MapDeal, type DealStage, type Site, type SiteFile, type SiteLoiTerms } from "@/data/mapRuntimeData";
 import type { TakeActionAudience, TakeActionStatus } from "@/domain/entities";
 import { supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
 import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
@@ -132,6 +133,42 @@ type SpaceRequirementRow = {
   parking: string;
 };
 
+type SiteRow = {
+  id: string;
+  deal_id: string;
+  property_name: string | null;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string | null;
+  lat: number | null;
+  lng: number | null;
+  stage: DealStage;
+  status_label: string | null;
+  notes: string | null;
+  square_footage: string | null;
+  space_type: string | null;
+  property_type: string | null;
+  landlord: string | null;
+  landlord_contact: string | null;
+  lease_term: string | null;
+  possession_date: string | null;
+  tour_time: string | null;
+  broker_name: string | null;
+  broker_phone: string | null;
+  photo_urls: string[] | null;
+  brochure_url: string | null;
+  floor_plan_url: string | null;
+  loi_url: string | null;
+  lease_url: string | null;
+  base_rent: string | null;
+  nnn: string | null;
+  gross_monthly_rent: string | null;
+  commencement_date: string | null;
+  ti_allowance: string | null;
+  loi_notes: string | null;
+};
+
 export type BrandMutationInput = {
   name: string;
   category: string;
@@ -177,6 +214,48 @@ export type DealActionMutationInput = {
 };
 
 export type SpaceRequirementMutationInput = Omit<SpaceRequirement, "id">;
+
+export type TourBookMutationInput = {
+  dealId: string;
+  title: string;
+  status: "draft" | "generated" | "sent";
+  generatedUrl: string;
+};
+
+export type SiteMutationInput = {
+  dealId: string;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  lat: number;
+  lng: number;
+  stage: DealStage;
+  statusLabel: string;
+  notes: string;
+  squareFootage: string;
+  spaceType: string;
+  propertyType: string;
+  landlord: string;
+  landlordContact: string;
+  leaseTerm: string;
+  possessionDate: string;
+  tourTime: string;
+  brokerName: string;
+  brokerPhone: string;
+  photoUrls: string[];
+  brochureUrl: string;
+  floorPlanUrl: string;
+  loiUrl: string;
+  leaseUrl: string;
+  baseRent: string;
+  nnn: string;
+  grossMonthlyRent: string;
+  commencementDate: string;
+  tiAllowance: string;
+  loiNotes: string;
+};
 
 const prospectStatusToDb: Record<BizDevStatus, ProspectStatusRow> = {
   "0 - Active Client": "active_client",
@@ -371,6 +450,30 @@ function mapNote(row: DealNoteRow): DealNote {
   };
 }
 
+function statusToMapStage(status: DealStatusNew): DealStage {
+  if (status === "Signed") return "Open";
+  if (status === "Lease Negotiations") return "Lease";
+  if (status === "LOI Negotiations" || status === "First LOI(s) Submitted") return "LOI";
+  if (status === "On Hold") return "Closed";
+  return "Prospecting";
+}
+
+function dealRecordToMapDeal(record: DealRecord, sites: Site[] = getSitesByDeal(record.id)): MapDeal {
+  const brand = dealBrands.find((item) => item.id === record.brandId);
+  return {
+    id: record.id,
+    name: `${brand?.name ?? "Brand"} — ${record.city}, ${record.state}`,
+    brandId: record.brandId,
+    market: `${record.city}, ${record.state}`,
+    stage: statusToMapStage(record.status),
+    assignedBroker: record.broker,
+    franchiseeName: record.franchisee,
+    sites,
+    notes: record.notes[0]?.text ?? "",
+    createdAt: record.dateIntroCall ?? new Date().toISOString().slice(0, 10),
+  };
+}
+
 function upsertDealRuntime(record: DealRecord): void {
   const exists = dealRecords.some((current) => current.id === record.id);
   const next = exists
@@ -378,6 +481,7 @@ function upsertDealRuntime(record: DealRecord): void {
     : [record, ...dealRecords];
   dealRecords.splice(0, dealRecords.length, ...next);
   rebuildBrandRuntimeData();
+  replaceMapDealRuntime(dealRecordToMapDeal(record));
   notifyRuntimeDataChanged();
 }
 
@@ -409,6 +513,68 @@ function upsertSpaceRequirementRuntime(record: SpaceRequirement): void {
     ? spaceRequirements.map((current) => (current.id === record.id ? record : current))
     : [...spaceRequirements, record];
   replaceSpaceRequirementsRuntimeData(next);
+  notifyRuntimeDataChanged();
+}
+
+function buildSiteFiles(row: SiteRow): SiteFile[] {
+  const files: SiteFile[] = [];
+  if (row.brochure_url) files.push({ name: "Brochure", type: "brochure", url: row.brochure_url });
+  if (row.floor_plan_url) files.push({ name: "Floor Plan", type: "floor_plan", url: row.floor_plan_url });
+  if (row.loi_url) files.push({ name: "LOI", type: "loi", url: row.loi_url });
+  if (row.lease_url) files.push({ name: "Lease", type: "lease", url: row.lease_url });
+  return files;
+}
+
+function mapSite(row: SiteRow): Site {
+  const loiTerms: SiteLoiTerms = {
+    baseRent: row.base_rent ?? "",
+    nnn: row.nnn ?? "",
+    grossMonthlyRent: row.gross_monthly_rent ?? "",
+    leaseTerm: row.lease_term ?? "",
+    commencementDate: dateOnly(row.commencement_date) ?? "",
+    tiAllowance: row.ti_allowance ?? "",
+    notes: row.loi_notes ?? "",
+  };
+
+  return {
+    id: row.id,
+    dealId: row.deal_id,
+    name: row.property_name ?? row.address,
+    address: row.address,
+    city: row.city,
+    state: row.state,
+    zipCode: row.zip_code ?? "",
+    lat: row.lat ?? 0,
+    lng: row.lng ?? 0,
+    stage: row.stage,
+    statusLabel: row.status_label ?? row.stage,
+    notes: row.notes ?? "",
+    squareFootage: row.square_footage ?? "",
+    spaceType: row.space_type ?? "",
+    propertyType: row.property_type ?? "",
+    landlord: row.landlord ?? "",
+    landlordContact: row.landlord_contact ?? "",
+    leaseTerm: row.lease_term ?? "",
+    possessionDate: dateOnly(row.possession_date) ?? "",
+    tourTime: row.tour_time ?? "",
+    brokerName: row.broker_name ?? "",
+    brokerPhone: row.broker_phone ?? "",
+    photoUrls: row.photo_urls ?? [],
+    brochureUrl: row.brochure_url ?? "",
+    floorPlanUrl: row.floor_plan_url ?? "",
+    loiUrl: row.loi_url ?? "",
+    leaseUrl: row.lease_url ?? "",
+    files: buildSiteFiles(row),
+    loiTerms,
+  };
+}
+
+function upsertSiteRuntime(record: Site): void {
+  const attached = replaceSiteRuntime(record);
+  if (!attached) {
+    const parentDeal = dealRecords.find((deal) => deal.id === record.dealId);
+    if (parentDeal) replaceMapDealRuntime(dealRecordToMapDeal(parentDeal, [record]));
+  }
   notifyRuntimeDataChanged();
 }
 
@@ -488,6 +654,43 @@ function spaceRequirementBody(input: SpaceRequirementMutationInput): JsonObject 
     grease_trap: input.greaseTrap,
     second_floor: input.secondFloor,
     parking: input.parking.trim(),
+  };
+}
+
+function siteBody(input: SiteMutationInput): JsonObject {
+  return {
+    deal_id: input.dealId,
+    property_name: blankToNull(input.name),
+    address: input.address.trim(),
+    city: input.city.trim(),
+    state: input.state.trim(),
+    zip_code: blankToNull(input.zipCode),
+    lat: cleanNumber(input.lat),
+    lng: cleanNumber(input.lng),
+    stage: input.stage,
+    status_label: blankToNull(input.statusLabel),
+    notes: blankToNull(input.notes),
+    square_footage: blankToNull(input.squareFootage),
+    space_type: blankToNull(input.spaceType),
+    property_type: blankToNull(input.propertyType),
+    landlord: blankToNull(input.landlord),
+    landlord_contact: blankToNull(input.landlordContact),
+    lease_term: blankToNull(input.leaseTerm),
+    possession_date: dateToNull(input.possessionDate),
+    tour_time: blankToNull(input.tourTime),
+    broker_name: blankToNull(input.brokerName),
+    broker_phone: blankToNull(input.brokerPhone),
+    photo_urls: input.photoUrls.map((url) => url.trim()).filter(Boolean),
+    brochure_url: linkToNull(input.brochureUrl),
+    floor_plan_url: linkToNull(input.floorPlanUrl),
+    loi_url: linkToNull(input.loiUrl),
+    lease_url: linkToNull(input.leaseUrl),
+    base_rent: blankToNull(input.baseRent),
+    nnn: blankToNull(input.nnn),
+    gross_monthly_rent: blankToNull(input.grossMonthlyRent),
+    commencement_date: dateToNull(input.commencementDate),
+    ti_allowance: blankToNull(input.tiAllowance),
+    loi_notes: blankToNull(input.loiNotes),
   };
 }
 
@@ -586,6 +789,17 @@ export async function updateDeal(id: string, input: DealMutationInput): Promise<
   return record;
 }
 
+
+export async function createTourBook(input: TourBookMutationInput): Promise<void> {
+  await insertReturning<{ id: string }>("tour_books", {
+    deal_id: input.dealId,
+    title: input.title.trim(),
+    status: input.status,
+    generated_url: blankToNull(input.generatedUrl),
+  });
+  notifyRuntimeDataChanged();
+}
+
 export async function createDealActionItem(input: DealActionMutationInput): Promise<void> {
   await insertReturning<TakeActionRow>("take_action_items", {
     deal_id: input.dealId,
@@ -609,3 +823,68 @@ export async function updateSpaceRequirement(id: string, input: SpaceRequirement
   upsertSpaceRequirementRuntime(record);
   return record;
 }
+
+export function siteToMutationInput(site: Site): SiteMutationInput {
+  return {
+    dealId: site.dealId,
+    name: site.name,
+    address: site.address,
+    city: site.city,
+    state: site.state,
+    zipCode: site.zipCode,
+    lat: site.lat,
+    lng: site.lng,
+    stage: site.stage,
+    statusLabel: site.statusLabel,
+    notes: site.notes,
+    squareFootage: site.squareFootage,
+    spaceType: site.spaceType,
+    propertyType: site.propertyType,
+    landlord: site.landlord,
+    landlordContact: site.landlordContact,
+    leaseTerm: site.leaseTerm,
+    possessionDate: site.possessionDate,
+    tourTime: site.tourTime,
+    brokerName: site.brokerName,
+    brokerPhone: site.brokerPhone,
+    photoUrls: site.photoUrls,
+    brochureUrl: site.brochureUrl,
+    floorPlanUrl: site.floorPlanUrl,
+    loiUrl: site.loiUrl,
+    leaseUrl: site.leaseUrl,
+    baseRent: site.loiTerms.baseRent,
+    nnn: site.loiTerms.nnn,
+    grossMonthlyRent: site.loiTerms.grossMonthlyRent,
+    commencementDate: site.loiTerms.commencementDate,
+    tiAllowance: site.loiTerms.tiAllowance,
+    loiNotes: site.loiTerms.notes,
+  };
+}
+
+export async function createSite(input: SiteMutationInput): Promise<Site> {
+  const row = await insertReturning<SiteRow>("sites", siteBody(input));
+  const record = mapSite(row);
+  upsertSiteRuntime(record);
+  return record;
+}
+
+export async function updateSite(id: string, input: SiteMutationInput): Promise<Site> {
+  const row = await patchReturning<SiteRow>("sites", id, siteBody(input));
+  const record = mapSite(row);
+  upsertSiteRuntime(record);
+  return record;
+}
+
+export async function createSites(inputs: SiteMutationInput[]): Promise<Site[]> {
+  if (inputs.length === 0) return [];
+  const rows = await supabaseRequest<SiteRow[]>("/rest/v1/sites", {
+    method: "POST",
+    body: inputs.map(siteBody),
+    accessToken: accessToken(),
+    prefer: "return=representation",
+  });
+  const records = rows.map(mapSite);
+  records.forEach(upsertSiteRuntime);
+  return records;
+}
+

@@ -11,6 +11,10 @@ export interface TakeActionSubmission {
   recipients: string[]; // member names
   message: string;
   urgency: string;
+  siteIds: string[];
+  tourDate: string;
+  reportFormat: "pdf" | "csv";
+  reportSections: string[];
 }
 
 interface TakeActionDrawerProps {
@@ -18,6 +22,7 @@ interface TakeActionDrawerProps {
   onClose: () => void;
   dealName: string;
   broker: string;
+  dealId?: string;
   sites?: ActionSite[];
   onSubmit?: (data: TakeActionSubmission) => void | Promise<void>;
 }
@@ -60,7 +65,7 @@ const MAX_CHARS = 500;
 const MIN_TA_HEIGHT = 80;
 const MAX_TA_HEIGHT = 160;
 
-export function TakeActionDrawer({ open, onClose, dealName, sites = [], onSubmit }: TakeActionDrawerProps) {
+export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], onSubmit }: TakeActionDrawerProps) {
   const [actionType, setActionType] = useState<ActionKey | null>(null);
   const [customLabel, setCustomLabel] = useState("");
   const [selectedTeam, setSelectedTeam] = useState<string[]>([]);
@@ -155,6 +160,10 @@ export function TakeActionDrawer({ open, onClose, dealName, sites = [], onSubmit
         recipients: recipientNames,
         message: message.trim(),
         urgency: "normal",
+        siteIds: actionType === "tour" ? tourSites : [],
+        tourDate,
+        reportFormat,
+        reportSections: actionType === "report" ? reportSelected : [],
       });
     } catch {
       return;
@@ -237,7 +246,7 @@ export function TakeActionDrawer({ open, onClose, dealName, sites = [], onSubmit
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto" style={{ padding: "16px 24px 24px" }}>
+        <div className="themed-scrollbar flex-1 overflow-y-auto" style={{ padding: "16px 24px 24px", background: "var(--bg-main)" }}>
           {/* Action type — segmented control */}
           <div style={{ marginBottom: 24 }}>
             <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
@@ -462,7 +471,7 @@ export function TakeActionDrawer({ open, onClose, dealName, sites = [], onSubmit
                   This will generate a tour book PDF using the selected sites and send it to the chosen recipients. Full customization available in the{" "}
                   <button
                     type="button"
-                    onClick={() => { reset(); onClose(); navigate("/tour-book-generator"); }}
+                    onClick={() => { reset(); onClose(); navigate(`/tour-book-generator${dealId ? `?deal=${dealId}` : ""}`); }}
                     style={{ background: "none", border: "none", padding: 0, color: "#E18739", fontWeight: 600, cursor: "pointer", fontSize: 11 }}
                   >
                     Tour Book Generator

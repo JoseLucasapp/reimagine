@@ -57,7 +57,7 @@ export function AppDataProvider({ children }: AppDataProviderProps) {
           {status === "loading" ? "Loading workspace" : "Workspace unavailable"}
         </p>
         <h1 className="mt-3 text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
-          {status === "loading" ? "Syncing Supabase data..." : "Could not load real data"}
+          {status === "loading" ? "Syncing data..." : "Could not load real data"}
         </h1>
         {status === "error" && <p className="mt-3 text-sm leading-6" style={{ color: "var(--text-secondary)" }}>{error}</p>}
       </div>

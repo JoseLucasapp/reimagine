@@ -19,7 +19,8 @@ import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
 import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
-import { createDealActionItem, updateDeal, type DealMutationInput } from "@/application/data/runtimeMutations";
+import { createDealActionItem, createTourBook, updateDeal, type DealMutationInput } from "@/application/data/runtimeMutations";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
 
@@ -271,7 +272,7 @@ function DocCompletionWidget({ deal, onViewAll }: { deal: DealRecord; onViewAll?
           <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)" }}>Deal Documents</span>
         </div>
         <span style={{
-          fontSize: 12, fontWeight: 700, color: pct === 100 ? "#065f46" : "#243c51",
+          fontSize: 12, fontWeight: 700, color:"#065f46",
           background: pct === 100 ? "rgba(5,150,105,0.08)" : "rgba(36,60,81,0.06)",
           borderRadius: 9999, padding: "4px 10px",
         }}>{filed} of {total} filed</span>
@@ -463,6 +464,7 @@ export default function DealDetail() {
   const [showTakeAction, setShowTakeAction] = useState(false);
   const [showLinksEditor, setShowLinksEditor] = useState(false);
   const role = useUserRole();
+  useRuntimeDataVersion();
   const takeActionLabel = role === "franchisee" ? "Request from Reimagine" : "Take Action";
   type ActionRequest = {
     typeKey: string;
@@ -553,6 +555,14 @@ export default function DealDetail() {
         title: data.actionTypeLabel,
         body: noteBody,
       });
+      if (data.actionTypeKey === "tour") {
+        await createTourBook({
+          dealId: deal.id,
+          title: `${deal.franchisee} Tour Book${data.tourDate ? ` - ${data.tourDate}` : ""}`,
+          status: "generated",
+          generatedUrl: `${window.location.origin}/tour-book-generator?deal=${deal.id}`,
+        });
+      }
       await persistDealChanges({ initialNote: noteBody });
     } catch (error) {
       toast.error("Unable to save action", {
@@ -609,11 +619,13 @@ export default function DealDetail() {
   const effectiveMapUrl =
     userMapUrl ?? (dealAddress ? `https://maps.google.com?q=${encodeURIComponent(dealAddress)}` : undefined);
 
+  const tourBookUrl = cleanUrl(deal.tourBookLink) ?? `/tour-book-generator?deal=${deal.id}`;
+
   const links = [
     { key: "territory",    label: "Territory Map", url: cleanUrl(deal.territoryMapLink), icon: Map,         missingTip: "No link added yet" },
     { key: "marketStudy",  label: "Market Study",  url: effectiveMarketStudyUrl,         icon: BarChart3,   missingTip: "No link added yet — edit deal to add" },
     { key: "map",          label: "Map",           url: effectiveMapUrl,                 icon: MapPin,      missingTip: "No link added yet — edit deal to add" },
-    { key: "tourBook",     label: "Tour Book",     url: cleanUrl(deal.tourBookLink),     icon: BookOpen,    missingTip: "No link added yet" },
+    { key: "tourBook",     label: "Tour Book",     url: tourBookUrl,                     icon: BookOpen,    missingTip: "Generate a tour book for this deal" },
   ];
 
   const tabs: { key: DealTab; label: string }[] = [
@@ -787,7 +799,7 @@ export default function DealDetail() {
                 const trigger = link.url ? (
                   <a
                     href={link.url}
-                    target="_blank"
+                    target={link.key === "tourBook" ? "_self" : "_blank"}
                     rel="noopener"
                     className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
                     style={triggerStyle}
@@ -1095,7 +1107,7 @@ export default function DealDetail() {
       {activeTab === "topsites" && <TopSitesTab deal={deal} />}
 
       {/* ═══ LOI COMPARISON TAB ═══ */}
-      {activeTab === "loi" && <LOIComparisonTab />}
+      {activeTab === "loi" && <LOIComparisonTab deal={deal} />}
 
       {/* ═══ DEAL SUMMARY TAB ═══ */}
       {activeTab === "summary" && <DealSummaryTab deal={deal} />}
@@ -1107,6 +1119,7 @@ export default function DealDetail() {
         dealName={deal.franchisee}
         broker={deal.broker}
         sites={actionSites}
+        dealId={deal.id}
         onSubmit={handleTakeActionSubmit}
       />
     </div>
