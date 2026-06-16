@@ -31,14 +31,13 @@ const statCardConfig: {
   key: keyof ReturnType<typeof getDashboardStats>;
   label: string;
   icon: React.ElementType;
-  trend: string;
   isCurrency?: boolean;
 }[] = [
-  { key: "totalActiveBrands", label: "Active Brands", icon: Building2, trend: "↑ 2 this mo" },
-  { key: "totalDeals", label: "Total Deals", icon: Handshake, trend: "↑ 5 this mo" },
-  { key: "dealsSigned", label: "Deals Signed", icon: CheckCircle2, trend: "↑ 3 this mo" },
-  { key: "dealsInProgress", label: "In Progress", icon: Clock, trend: "↑ 200 this mo" },
-  { key: "dealsOnHold", label: "On Hold", icon: PauseCircle, trend: "↓ 1 this mo" },
+  { key: "totalActiveBrands", label: "Active Brands", icon: Building2 },
+  { key: "totalDeals", label: "Total Deals", icon: Handshake },
+  { key: "dealsSigned", label: "Deals Signed", icon: CheckCircle2 },
+  { key: "dealsInProgress", label: "In Progress", icon: Clock },
+  { key: "dealsOnHold", label: "On Hold", icon: PauseCircle },
 ];
 
 const STATUS_BAR_COLORS: Record<string, string> = {
@@ -109,6 +108,69 @@ function getDaysInStage(deal: DealRecord): number {
   const lastNote = deal.notes[0];
   if (!lastNote) return 0;
   return Math.max(0, Math.round((Date.now() - new Date(lastNote.date).getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function parseDashboardDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDealActivityDate(deal: DealRecord): Date | null {
+  return (
+    parseDashboardDate(deal.notes[0]?.date)
+    ?? parseDashboardDate(deal.dateLeaseSigned)
+    ?? parseDashboardDate(deal.dateIntroCall)
+  );
+}
+
+function isSameMonth(date: Date | null, reference = new Date()): boolean {
+  if (!date) return false;
+  return date.getFullYear() === reference.getFullYear() && date.getMonth() === reference.getMonth();
+}
+
+function isSameWeek(date: Date | null, reference = new Date()): boolean {
+  if (!date) return false;
+
+  const start = new Date(reference);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+
+  return date >= start && date < end;
+}
+
+type DashboardMonthlyStats = Record<keyof ReturnType<typeof getDashboardStats>, number>;
+
+function getMonthlyDashboardStats(deals: DealRecord[]): DashboardMonthlyStats {
+  const activeDeals = deals.filter((deal) => !deal.isOneOff);
+  const dealsOpenedThisMonth = activeDeals.filter((deal) => isSameMonth(parseDashboardDate(deal.dateIntroCall)));
+  const signedThisMonth = activeDeals.filter((deal) => deal.status === "Signed" && isSameMonth(parseDashboardDate(deal.dateLeaseSigned)));
+  const inProgressThisMonth = activeDeals.filter((deal) => {
+    if (deal.status === "Signed" || deal.status === "On Hold") return false;
+    return isSameMonth(getDealActivityDate(deal));
+  });
+  const onHoldThisMonth = activeDeals.filter((deal) => deal.status === "On Hold" && isSameMonth(getDealActivityDate(deal)));
+  const activeBrandIdsThisMonth = new Set(
+    activeDeals
+      .filter((deal) => isSameMonth(getDealActivityDate(deal)))
+      .map((deal) => deal.brandId),
+  );
+
+  return {
+    totalActiveBrands: activeBrandIdsThisMonth.size,
+    totalDeals: dealsOpenedThisMonth.length,
+    dealsSigned: signedThisMonth.length,
+    dealsInProgress: inProgressThisMonth.length,
+    dealsOnHold: onHoldThisMonth.length,
+    totalCommission: signedThisMonth.reduce((sum, deal) => sum + deal.estimatedCommission, 0),
+  };
+}
+
+function formatMonthlyStatTrend(value: number): string {
+  return value > 0 ? `↑ ${value} this mo` : "0 this mo";
 }
 
 /* ── Section Label ── */
@@ -192,6 +254,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const runtimeDataVersion = useRuntimeDataVersion();
   const stats = useMemo(() => { void runtimeDataVersion; return getDashboardStats(); }, [runtimeDataVersion]);
+  const monthlyStats = useMemo(() => { void runtimeDataVersion; return getMonthlyDashboardStats(dealRecords); }, [runtimeDataVersion]);
   const recentActivity = useMemo(() => { void runtimeDataVersion; return getRecentActivity(); }, [runtimeDataVersion]);
   const statusCounts = useMemo(() => { void runtimeDataVersion; return getDealsByStatusCounts(); }, [runtimeDataVersion]);
   const brandSummaries = useMemo(() => { void runtimeDataVersion; return getBrandSummaries(); }, [runtimeDataVersion]);
@@ -303,11 +366,28 @@ export default function Dashboard() {
 
   const forecast = useMemo(() => {
     void runtimeDataVersion;
-    const active = dealRecords.filter((d) => !d.isOneOff);
-    const confirmed = active.filter((d) => d.status === "Signed").reduce((a, d) => a + d.estimatedCommission, 0);
-    const projected = active.filter((d) => d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations").reduce((a, d) => a + d.estimatedCommission, 0) * 0.65;
-    const pipelineCount = active.filter((d) => d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations").length;
-    return { confirmed, projected: Math.round(projected), pipelineCount };
+    const active = dealRecords.filter((deal) => !deal.isOneOff);
+    const signedDeals = active.filter((deal) => deal.status === "Signed");
+    const onHoldDeals = active.filter((deal) => deal.status === "On Hold");
+    const pipelineDeals = active.filter((deal) =>
+      ["First LOI(s) Submitted", "LOI Negotiations", "Lease Negotiations"].includes(deal.status),
+    );
+
+    const closedOutcomeCount = signedDeals.length + onHoldDeals.length;
+    const closeRate = closedOutcomeCount > 0 ? Math.round((signedDeals.length / closedOutcomeCount) * 100) : 0;
+    const confirmed = signedDeals.reduce((sum, deal) => sum + deal.estimatedCommission, 0);
+    const confirmedThisWeek = signedDeals
+      .filter((deal) => isSameWeek(parseDashboardDate(deal.dateLeaseSigned)))
+      .reduce((sum, deal) => sum + deal.estimatedCommission, 0);
+    const projected = pipelineDeals.reduce((sum, deal) => sum + deal.estimatedCommission, 0) * (closeRate / 100);
+
+    return {
+      confirmed,
+      confirmedThisWeek,
+      closeRate,
+      projected: Math.round(projected),
+      pipelineCount: pipelineDeals.length,
+    };
   }, [runtimeDataVersion]);
 
   const fcTotal = forecast.confirmed + forecast.projected;
@@ -454,7 +534,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div style={{ color: "#E18739" }}><Icon className="w-4 h-4" /></div>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "var(--stat-value-color)", whiteSpace: "nowrap" }}>
-                  {cfg.trend}
+                  {formatMonthlyStatTrend(monthlyStats[cfg.key])}
                 </span>
               </div>
               <p style={{ fontSize: 32, fontWeight: 800, color: "var(--stat-value-color)", letterSpacing: "-0.03em", lineHeight: 1, marginTop: 8 }}>
@@ -600,7 +680,7 @@ export default function Dashboard() {
                 <p style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
                   ${formatCurrency(forecast.confirmed).replace("$", "")}
                 </p>
-                <p style={{ fontSize: 12, fontWeight: 500, color: "var(--status-signed-text)", marginTop: 3 }}>+$48K this week</p>
+                <p style={{ fontSize: 12, fontWeight: 500, color: "var(--status-signed-text)", marginTop: 3 }}>+${formatCurrency(forecast.confirmedThisWeek)} this week</p>
               </div>
               <div style={{ width: 1, background: "var(--border-divider)", margin: "0 16px 0 0" }} />
               <div className="flex-1">
@@ -608,7 +688,7 @@ export default function Dashboard() {
                 <p style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}>
                   ${formatCurrency(forecast.projected).replace("$", "")}
                 </p>
-                <p style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>at 65% close rate</p>
+                <p style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)", marginTop: 3 }}>at {forecast.closeRate}% close rate</p>
               </div>
             </div>
             <div className="flex overflow-hidden" style={{ height: 6, background: "var(--border-divider)", borderRadius: 6, marginTop: 12 }}>
