@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
 import { useNavigate } from "react-router-dom";
 import {
   Building2, Handshake, CheckCircle2, Clock, PauseCircle,
-  ArrowRight, Plus,
+  ArrowRight, Plus, RefreshCw,
 } from "lucide-react";
 import {
   getDashboardStats, getRecentActivity, getDealsByStatusCounts,
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { calculateDealHealth, getDealNudges } from "@/lib/dealIntelligence";
 import { getFollowUpQueue } from "@/lib/dealIntelligence";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
+import { generateAiInsight, getLatestAiInsight } from "@/application/ai/aiService";
 
 /* ── GLASS CARD STYLE ── */
 const glassCard: React.CSSProperties = {
@@ -133,6 +134,60 @@ const PIPELINE_STAGE_LABELS: Record<string, string> = {
   "On Hold": "On-Hold",
 };
 
+const DASHBOARD_AI_ENTITY_ID = "00000000-0000-0000-0000-000000000001";
+
+type DashboardNudgeCard = {
+  id: string;
+  brand: string;
+  location: string;
+  suggestion: string;
+  action: string;
+  url: string;
+  urgency?: "low" | "normal" | "high";
+  source: "ai" | "fallback";
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function urgencyValue(value: unknown): "low" | "normal" | "high" | undefined {
+  if (value === "low" || value === "normal" || value === "high") return value;
+  return undefined;
+}
+
+function normalizeAiDashboardNudges(output: unknown): DashboardNudgeCard[] {
+  if (!isRecord(output) || !Array.isArray(output.nudges)) return [];
+
+  return output.nudges
+    .filter(isRecord)
+    .map((nudge, index) => {
+      const dealId = textValue(nudge.dealId) || textValue(nudge.deal_id);
+      const title = textValue(nudge.title);
+      const brand = textValue(nudge.brand) || title.split(" — ")[0] || "Deal";
+      const suggestion = textValue(nudge.suggestion) || textValue(nudge.summary);
+      const action = textValue(nudge.action) || "Review Deal →";
+      const rawUrl = textValue(nudge.actionUrl) || textValue(nudge.action_url) || textValue(nudge.url);
+
+      return {
+        id: `ai-dashboard-nudge-${dealId || index}`,
+        brand,
+        location: textValue(nudge.location),
+        suggestion,
+        action,
+        url: rawUrl || (dealId ? `/deals/${dealId}` : "/deals"),
+        urgency: urgencyValue(nudge.urgency),
+        source: "ai" as const,
+      };
+    })
+    .filter((nudge) => nudge.suggestion.length > 0)
+    .slice(0, 4);
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const runtimeDataVersion = useRuntimeDataVersion();
@@ -188,20 +243,63 @@ export default function Dashboard() {
 
   const pipelineTotal = pipelineStages.reduce((total, stage) => total + stage.count, 0);
 
-  const dashboardNudges = useMemo(() => {
+  const fallbackDashboardNudges = useMemo<DashboardNudgeCard[]>(() => {
     void runtimeDataVersion;
     return getDealNudges().slice(0, 4).map((item) => {
-    const deal = dealRecords.find((record) => record.id === item.id);
-    return {
-      id: `nudge-${item.id}`,
-      brand: item.title.split(" — ")[0] ?? "Deal",
-      location: deal ? `${deal.city}, ${deal.state}` : "",
-      suggestion: item.suggestion,
-      action: item.action,
-      url: item.actionUrl,
-    };
-  });
+      const deal = dealRecords.find((record) => record.id === item.id);
+      return {
+        id: `fallback-nudge-${item.id}`,
+        brand: item.title.split(" — ")[0] ?? "Deal",
+        location: deal ? `${deal.city}, ${deal.state}` : "",
+        suggestion: item.suggestion,
+        action: item.action,
+        url: item.actionUrl,
+        source: "fallback",
+      };
+    });
   }, [runtimeDataVersion]);
+
+  const [aiDashboardNudges, setAiDashboardNudges] = useState<DashboardNudgeCard[] | null>(null);
+  const [dashboardAiLoading, setDashboardAiLoading] = useState(false);
+  const [dashboardAiError, setDashboardAiError] = useState<string | null>(null);
+
+  const loadDashboardAiNudges = useCallback(async (force = false) => {
+    setDashboardAiLoading(true);
+    setDashboardAiError(null);
+
+    try {
+      const insight = force
+        ? await generateAiInsight({
+          type: "dashboard_nudge",
+          entityType: "dashboard",
+          entityId: DASHBOARD_AI_ENTITY_ID,
+          force: true,
+        })
+        : (await getLatestAiInsight("dashboard_nudge", DASHBOARD_AI_ENTITY_ID, "dashboard"))
+          ?? await generateAiInsight({
+            type: "dashboard_nudge",
+            entityType: "dashboard",
+            entityId: DASHBOARD_AI_ENTITY_ID,
+          });
+
+      const cards = normalizeAiDashboardNudges(insight.output);
+      if (!cards.length) throw new Error("AI returned no dashboard nudges.");
+      setAiDashboardNudges(cards);
+    } catch (error) {
+      console.error("Dashboard AI nudges failed", error);
+      setAiDashboardNudges(null);
+      setDashboardAiError("Using rules fallback until AI is available.");
+    } finally {
+      setDashboardAiLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void runtimeDataVersion;
+    void loadDashboardAiNudges(false);
+  }, [loadDashboardAiNudges, runtimeDataVersion]);
+
+  const dashboardNudges = aiDashboardNudges?.length ? aiDashboardNudges : fallbackDashboardNudges;
 
   const forecast = useMemo(() => {
     void runtimeDataVersion;
@@ -269,7 +367,22 @@ export default function Dashboard() {
 
       {/* ═══ 1. AI FOLLOW-UP QUEUE ═══ */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <SectionLabel>⚡ AI Follow-Up Queue</SectionLabel>
+        <div className="flex items-center justify-between gap-3" style={{ marginBottom: 14 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+            ⚡ AI Follow-Up Queue
+            {dashboardAiError ? <span style={{ marginLeft: 8, letterSpacing: "0", textTransform: "none", color: "var(--text-tertiary)" }}>{dashboardAiError}</span> : null}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadDashboardAiNudges(true)}
+            disabled={dashboardAiLoading}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ borderColor: "var(--border-subtle)", color: "var(--text-primary)", background: "var(--bg-surface)" }}
+          >
+            <RefreshCw className={cn("h-3 w-3", dashboardAiLoading && "animate-spin")} />
+            {dashboardAiLoading ? "Generating" : "Regenerate AI"}
+          </button>
+        </div>
         <div
           className="flex overflow-x-auto ai-nudge-row"
           style={{ gap: 12, paddingBottom: 12, paddingTop: 4, marginBottom: -8, scrollbarWidth: "none", msOverflowStyle: "none" }}
@@ -297,7 +410,7 @@ export default function Dashboard() {
                    borderRadius: 20, padding: "2px 10px",
                    display: "inline-flex", alignItems: "center", gap: 4,
                  }}>
-                   <img src={aiNudgeIcon} alt="" style={{ width: 12, height: 12 }} /> AI Nudge
+                   <img src={aiNudgeIcon} alt="" style={{ width: 12, height: 12 }} /> {card.source === "ai" ? "AI Nudge" : "AI Fallback"}
                  </span>
               </div>
               <div>

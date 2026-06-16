@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 type InsightType = "deal_summary" | "suggested_action" | "property_insight" | "dashboard_nudge" | "bizdev_follow_up" | "tour_book_draft";
-type EntityType = "brand" | "deal" | "site";
+type EntityType = "brand" | "deal" | "site" | "dashboard";
 type JsonObject = Record<string, unknown>;
 
 type RequestPayload = {
@@ -74,6 +74,20 @@ function encodeEq(value: string): string {
   return encodeURIComponent(`eq.${value}`);
 }
 
+async function loadAuthenticatedUserId(authHeader: string): Promise<string | null> {
+  const response = await fetch(`${env("SUPABASE_URL")}/auth/v1/user`, {
+    headers: {
+      apikey: env("SUPABASE_SERVICE_ROLE_KEY"),
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) return null;
+  const payload = await response.json();
+  return typeof payload?.id === "string" ? payload.id : null;
+}
+
 async function loadDealContext(dealId: string, siteId?: string): Promise<JsonObject> {
   const [deal] = await supabaseGet<JsonObject[]>(`deals?id=${encodeEq(dealId)}&select=*`);
   if (!deal) throw new Error("Deal not found");
@@ -91,6 +105,28 @@ async function loadDealContext(dealId: string, siteId?: string): Promise<JsonObj
   return { deal, brand, notes, documents, sites, requirements };
 }
 
+async function loadDashboardContext(): Promise<JsonObject> {
+  const [brands, deals, documents, notes, sites] = await Promise.all([
+    supabaseGet<JsonObject[]>("brands?select=id,name,category,created_at&order=name.asc"),
+    supabaseGet<JsonObject[]>(
+      "deals?select=id,brand_id,franchisee,broker,associate,city,state,stage,store_count,stores_bought,estimated_commission,intro_call_date,lease_signed_date,is_one_off,created_at,updated_at&order=updated_at.desc&limit=60",
+    ),
+    supabaseGet<JsonObject[]>("deal_documents?select=deal_id,document_key,file_path,created_at"),
+    supabaseGet<JsonObject[]>("deal_notes?select=deal_id,body,author_name,created_at&order=created_at.desc&limit=120"),
+    supabaseGet<JsonObject[]>("sites?select=id,deal_id,property_name,address,city,state,stage,status_label,updated_at&order=updated_at.desc&limit=120"),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    instruction: "Prioritize the four active deals that most need attention today. Ignore signed and one-off deals unless there is a clear post-signing risk.",
+    brands,
+    deals,
+    documents,
+    notes,
+    sites,
+  };
+}
+
 function fallbackOutput(type: InsightType, context: JsonObject): JsonObject {
   const deal = context.deal as JsonObject | undefined;
   const brand = context.brand as JsonObject | undefined;
@@ -98,6 +134,44 @@ function fallbackOutput(type: InsightType, context: JsonObject): JsonObject {
   const franchisee = String(deal?.franchisee ?? "this franchisee");
   const brandName = String(brand?.name ?? "this brand");
   const cityState = `${String(deal?.city ?? "")}, ${String(deal?.state ?? "")}`.replace(/^,\s*/, "").replace(/,\s*$/, "");
+
+  if (type === "dashboard_nudge") {
+    const deals = ((context.deals as JsonObject[] | undefined) ?? []).filter((deal) => deal.stage !== "Signed" && deal.is_one_off !== true);
+    const brands = (context.brands as JsonObject[] | undefined) ?? [];
+    const documents = (context.documents as JsonObject[] | undefined) ?? [];
+    const notes = (context.notes as JsonObject[] | undefined) ?? [];
+    const brandNameFor = (brandId: unknown) => String(brands.find((brand) => brand.id === brandId)?.name ?? "Deal");
+
+    const nudges = deals.slice(0, 4).map((deal) => {
+      const dealId = String(deal.id ?? "");
+      const hasEngagementLetter = documents.some((document) => document.deal_id === deal.id && document.document_key === "engagementLetter");
+      const lastNote = notes.find((note) => note.deal_id === deal.id);
+      const action = hasEngagementLetter ? "Log Update →" : "Upload Document →";
+      const reason = hasEngagementLetter
+        ? `Last logged note: ${String(lastNote?.body ?? "no recent note found")}`
+        : "Engagement letter is missing.";
+
+      return {
+        dealId,
+        title: `${brandNameFor(deal.brand_id)} — ${String(deal.franchisee ?? "Franchisee")}`,
+        brand: brandNameFor(deal.brand_id),
+        location: `${String(deal.city ?? "")}, ${String(deal.state ?? "")}`.replace(/^,\s*/, "").replace(/,\s*$/, ""),
+        suggestion: hasEngagementLetter
+          ? `Review ${String(deal.franchisee ?? "this deal")} in ${String(deal.stage ?? "the current stage")} and log the next client-facing update.`
+          : `Upload the engagement letter before advancing ${String(deal.franchisee ?? "this deal")} beyond ${String(deal.stage ?? "the current stage")}.`,
+        action,
+        actionUrl: `/deals/${dealId}`,
+        urgency: hasEngagementLetter ? "normal" : "high",
+        reason,
+      };
+    });
+
+    return {
+      summary: "Fallback dashboard nudges generated without the AI provider.",
+      confidence: "low",
+      nudges,
+    };
+  }
 
   if (type === "suggested_action") {
     return {
@@ -136,7 +210,7 @@ function buildPrompt(type: InsightType, context: JsonObject): string {
     deal_summary: "Create a concise executive summary of this commercial real estate deal.",
     suggested_action: "Recommend the single most useful next action for the Reimagine team.",
     property_insight: "Evaluate the selected site against the brand requirements and current deal status.",
-    dashboard_nudge: "Create short dashboard nudges for deals that need attention.",
+    dashboard_nudge: "Create exactly four concise dashboard follow-up nudges for the deals that most need attention today.",
     bizdev_follow_up: "Recommend follow-up prioritization for business development prospects.",
     tour_book_draft: "Draft concise tour book copy from the selected deal and sites.",
   };
@@ -145,8 +219,9 @@ function buildPrompt(type: InsightType, context: JsonObject): string {
     "You are an assistant for Reimagine Commercial Real Estate.",
     "Return JSON only. Do not include markdown.",
     "Use only the supplied data. If data is missing, say what is missing instead of inventing details.",
-    "Allowed JSON keys: summary, action, urgency, risks, nextActions, missingData, fitScore, matches, recommendedNextAction, confidence.",
+    "Allowed JSON keys: summary, action, urgency, risks, nextActions, missingData, fitScore, matches, recommendedNextAction, confidence, nudges.",
     instructionByType[type],
+    type === "dashboard_nudge" ? "For dashboard_nudge return this shape exactly: {\"summary\": string, \"confidence\": \"low\"|\"medium\"|\"high\", \"nudges\": [{\"dealId\": string, \"title\": string, \"brand\": string, \"location\": string, \"suggestion\": string, \"action\": string, \"actionUrl\": string, \"urgency\": \"low\"|\"normal\"|\"high\", \"reason\": string}]}. The actionUrl must be /deals/<dealId>." : "",
     "Supabase context:",
     JSON.stringify(context, null, 2),
   ].join("\n");
@@ -204,23 +279,31 @@ serve(async (request) => {
     const entityType = payload.entityType ?? "deal";
 
     if (!type || !entityId) return json({ error: "type and entityId are required" }, 400);
-    if (entityType !== "deal" && entityType !== "site") return json({ error: "Only deal and site AI insights are implemented in v1" }, 400);
+    if (!["deal", "site", "dashboard"].includes(entityType)) return json({ error: "Unsupported entity type" }, 400);
+    if (entityType === "dashboard" && type !== "dashboard_nudge") return json({ error: "Dashboard entity is only supported for dashboard_nudge insights" }, 400);
 
-    let dealId = entityId;
-    let siteId = typeof payload.context?.siteId === "string" ? payload.context.siteId : undefined;
+    let context: JsonObject;
 
-    if (entityType === "site") {
-      siteId = entityId;
-      const [site] = await supabaseGet<JsonObject[]>(`sites?id=${encodeEq(siteId)}&select=id,deal_id`);
-      if (!site?.deal_id) return json({ error: "Site not found" }, 404);
-      dealId = String(site.deal_id);
+    if (entityType === "dashboard") {
+      context = await loadDashboardContext();
+    } else {
+      let dealId = entityId;
+      let siteId = typeof payload.context?.siteId === "string" ? payload.context.siteId : undefined;
+
+      if (entityType === "site") {
+        siteId = entityId;
+        const [site] = await supabaseGet<JsonObject[]>(`sites?id=${encodeEq(siteId)}&select=id,deal_id`);
+        if (!site?.deal_id) return json({ error: "Site not found" }, 404);
+        dealId = String(site.deal_id);
+      }
+
+      if (typeof payload.context?.dealId === "string") {
+        dealId = payload.context.dealId;
+      }
+
+      context = await loadDealContext(dealId, siteId);
     }
 
-    if (typeof payload.context?.dealId === "string") {
-      dealId = payload.context.dealId;
-    }
-
-    const context = await loadDealContext(dealId, siteId);
     const inputHash = await sha256({ type, entityType, entityId, context, promptVersion: PROMPT_VERSION });
 
     if (!payload.force) {
@@ -231,7 +314,8 @@ serve(async (request) => {
     }
 
     const { output, model } = await callAiProvider(type, context);
-    const rows = await supabasePost<JsonObject[]>("ai_insights", {
+    const userId = await loadAuthenticatedUserId(authHeader);
+    const insightBody: JsonObject = {
       insight_type: type,
       entity_type: entityType,
       entity_id: entityId,
@@ -240,7 +324,10 @@ serve(async (request) => {
       output,
       model,
       status: "completed",
-    });
+    };
+    if (userId) insightBody.created_by = userId;
+
+    const rows = await supabasePost<JsonObject[]>("ai_insights", insightBody);
 
     return json({ insight: rows[0], cached: false });
   } catch (error) {

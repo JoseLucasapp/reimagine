@@ -47,7 +47,7 @@ export default function BrandDeals() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [, setDealVersion] = useState(0);
   const role = useUserRole();
-  const takeActionLabel = role === "franchisee" ? "Request from Reimagine" : "Take Action";
+  const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
 
   useEffect(() => {
     if (!brandId) return;

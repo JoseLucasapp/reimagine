@@ -1,7 +1,8 @@
 import { DealRecord } from "@/data/dealsData";
 import { generateDealSummary } from "@/lib/dealIntelligence";
-import { getLatestAiInsight, generateAiInsight, submitAiFeedback } from "@/application/ai/aiService";
-import type { AiInsight } from "@/application/ai/types";
+import { getLatestAiFeedbackRating, getLatestAiInsight, generateAiInsight, submitAiFeedback } from "@/application/ai/aiService";
+import type { AiFeedbackRating, AiInsight } from "@/application/ai/types";
+import { AIInsightFeedback } from "@/components/AIInsightFeedback";
 import { RefreshCw, Clock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
@@ -40,21 +41,32 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
   const fallbackSummary = useMemo(() => generateDealSummary(deal), [deal]);
   const [insight, setInsight] = useState<AiInsight | null>(null);
   const [loading, setLoading] = useState(false);
-  const [spinning, setSpinning] = useState(false);
-  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+  const [feedback, setFeedback] = useState<AiFeedbackRating | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setInsight(null);
     setFeedback(null);
 
-    getLatestAiInsight("deal_summary", deal.id)
-      .then((result) => {
-        if (!cancelled) setInsight(result);
-      })
-      .catch(() => {
+    async function loadInsight() {
+      try {
+        const result = await getLatestAiInsight("deal_summary", deal.id);
+        if (cancelled) return;
+        setInsight(result);
+        if (!result) return;
+
+        try {
+          const rating = await getLatestAiFeedbackRating(result.id);
+          if (!cancelled) setFeedback(rating);
+        } catch {
+          if (!cancelled) setFeedback(null);
+        }
+      } catch {
         if (!cancelled) setInsight(null);
-      });
+      }
+    }
+
+    void loadInsight();
 
     return () => {
       cancelled = true;
@@ -64,7 +76,6 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
   const summary = insight?.output.summary || fallbackSummary;
 
   const handleRefresh = async () => {
-    setSpinning(true);
     setLoading(true);
     try {
       const result = await generateAiInsight({ type: "deal_summary", entityId: deal.id, force: true });
@@ -74,11 +85,10 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
       setInsight(null);
     } finally {
       setLoading(false);
-      window.setTimeout(() => setSpinning(false), 600);
     }
   };
 
-  const handleFeedback = async (rating: "up" | "down") => {
+  const handleFeedback = async (rating: AiFeedbackRating) => {
     setFeedback(rating);
     if (!insight) return;
     try {
@@ -116,12 +126,18 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
           onClick={handleRefresh}
           disabled={loading}
           title="Regenerate summary"
+          aria-busy={loading}
           className="p-[4px] rounded-[8px] hover:bg-white/60 transition-colors disabled:opacity-60"
-          style={{ color: "var(--text-muted)" }}
+          style={{ color: "var(--text-muted)", display: "inline-flex", alignItems: "center", gap: 6 }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "#E18739"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
         >
-          <RefreshCw className="w-4 h-4" style={{ transition: "transform 0.6s ease", transform: spinning ? "rotate(360deg)" : "none" }} />
+          {loading && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+              Generating...
+            </span>
+          )}
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
@@ -144,8 +160,7 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
         </div>
         <div className="flex items-center gap-[4px]">
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Was this helpful?</span>
-          <button onClick={() => handleFeedback("up")} className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: feedback === "up" ? "#E18739" : "var(--text-muted)", padding: "0 4px" }}>👍</button>
-          <button onClick={() => handleFeedback("down")} className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: feedback === "down" ? "#E18739" : "var(--text-muted)", padding: "0 4px" }}>👎</button>
+          <AIInsightFeedback value={feedback} onChange={handleFeedback} />
         </div>
       </div>
     </div>

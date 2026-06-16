@@ -1,6 +1,6 @@
 import { getStoredSession } from "@/application/auth/session";
 import { createSelectQuery, supabaseFunctionRequest, supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
-import type { AiInsight, AiInsightEntityType, AiInsightOutput, AiInsightType, GenerateAiInsightInput } from "./types";
+import type { AiFeedbackRating, AiInsight, AiInsightEntityType, AiInsightOutput, AiInsightType, GenerateAiInsightInput } from "./types";
 
 type AiInsightRow = {
   id: string;
@@ -21,8 +21,27 @@ type GenerateAiInsightResponse = {
   cached?: boolean;
 };
 
+type AiFeedbackRow = {
+  rating: AiFeedbackRating;
+};
+
 function accessToken(): string | null {
   return getStoredSession()?.accessToken ?? null;
+}
+
+function currentUserId(): string | null {
+  const token = accessToken();
+  const payload = token?.split(".")[1];
+  if (!payload) return null;
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const decoded = JSON.parse(globalThis.atob(padded)) as { sub?: unknown };
+    return typeof decoded.sub === "string" ? decoded.sub : null;
+  } catch {
+    return null;
+  }
 }
 
 function mapInsight(row: AiInsightRow): AiInsight {
@@ -74,7 +93,25 @@ export async function generateAiInsight(input: GenerateAiInsightInput): Promise<
   return mapInsight(result.insight);
 }
 
-export async function submitAiFeedback(insightId: string, rating: "up" | "down", comment?: string): Promise<void> {
+export async function getLatestAiFeedbackRating(insightId: string): Promise<AiFeedbackRating | null> {
+  const userId = currentUserId();
+  if (!userId) return null;
+
+  const query = createSelectQuery("rating");
+  query.set("insight_id", `eq.${insightId}`);
+  query.set("user_id", `eq.${userId}`);
+  query.set("order", "created_at.desc");
+  query.set("limit", "1");
+
+  const rows = await supabaseRequest<AiFeedbackRow[]>("/rest/v1/ai_feedback", {
+    query,
+    accessToken: accessToken(),
+  });
+
+  return rows[0]?.rating ?? null;
+}
+
+export async function submitAiFeedback(insightId: string, rating: AiFeedbackRating, comment?: string): Promise<void> {
   await supabaseRequest("/rest/v1/ai_feedback", {
     method: "POST",
     body: {

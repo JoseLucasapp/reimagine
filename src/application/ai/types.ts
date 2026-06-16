@@ -8,7 +8,8 @@ export type AiInsightType =
   | "bizdev_follow_up"
   | "tour_book_draft";
 
-export type AiInsightEntityType = "brand" | "deal" | "site";
+export type AiInsightEntityType = "brand" | "deal" | "site" | "dashboard";
+export type AiFeedbackRating = "up" | "down";
 
 export type AiInsightOutput = {
   summary?: string;
@@ -20,6 +21,7 @@ export type AiInsightOutput = {
   fitScore?: number;
   matches?: string[];
   recommendedNextAction?: string;
+  nudges?: JsonObject[];
   confidence?: "low" | "medium" | "high";
   [key: string]: JsonValue | undefined;
 };

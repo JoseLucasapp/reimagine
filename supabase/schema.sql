@@ -274,7 +274,7 @@ create table public.brand_action_items (
 create table public.ai_insights (
   id uuid primary key default gen_random_uuid(),
   insight_type public.ai_insight_type not null,
-  entity_type text not null check (entity_type in ('brand', 'deal', 'site')),
+  entity_type text not null check (entity_type in ('brand', 'deal', 'site', 'dashboard')),
   entity_id uuid not null,
   prompt_version text not null,
   input_hash text not null,
@@ -530,6 +530,7 @@ create policy "ai insights select by entity scope" on public.ai_insights for sel
   or (entity_type = 'brand' and public.current_user_can_access_brand(entity_id))
   or (entity_type = 'deal' and public.current_user_can_access_deal(entity_id))
   or (entity_type = 'site' and public.current_user_can_access_site(entity_id))
+  or (entity_type = 'dashboard' and (created_by = auth.uid() or public.current_user_role() = 'admin'))
 );
 create policy "service or admin manages ai insights" on public.ai_insights for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 

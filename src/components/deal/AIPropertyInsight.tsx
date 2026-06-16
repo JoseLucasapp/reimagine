@@ -4,8 +4,9 @@ import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
 import type { DealRecord } from "@/data/dealsData";
 import { spaceRequirements } from "@/data/spaceReqData";
 import type { Site } from "@/data/mapRuntimeData";
-import { generateAiInsight, getLatestAiInsight, submitAiFeedback } from "@/application/ai/aiService";
-import type { AiInsight } from "@/application/ai/types";
+import { generateAiInsight, getLatestAiFeedbackRating, getLatestAiInsight, submitAiFeedback } from "@/application/ai/aiService";
+import type { AiFeedbackRating, AiInsight } from "@/application/ai/types";
+import { AIInsightFeedback } from "@/components/AIInsightFeedback";
 
 function extractNumber(value: string): number | null {
   const match = value.replace(/,/g, "").match(/\d+(?:\.\d+)?/);
@@ -20,9 +21,8 @@ function fitLabel(match: boolean | null) {
 }
 
 export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site }) {
-  const [spinning, setSpinning] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+  const [feedback, setFeedback] = useState<AiFeedbackRating | null>(null);
   const [insight, setInsight] = useState<AiInsight | null>(null);
 
   const requirement = useMemo(() => spaceRequirements.find((item) => item.brandId === deal.brandId), [deal.brandId]);
@@ -36,13 +36,25 @@ export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site
     setInsight(null);
     setFeedback(null);
 
-    getLatestAiInsight("property_insight", site.id, "site")
-      .then((result) => {
-        if (!cancelled) setInsight(result);
-      })
-      .catch(() => {
+    async function loadInsight() {
+      try {
+        const result = await getLatestAiInsight("property_insight", site.id, "site");
+        if (cancelled) return;
+        setInsight(result);
+        if (!result) return;
+
+        try {
+          const rating = await getLatestAiFeedbackRating(result.id);
+          if (!cancelled) setFeedback(rating);
+        } catch {
+          if (!cancelled) setFeedback(null);
+        }
+      } catch {
         if (!cancelled) setInsight(null);
-      });
+      }
+    }
+
+    void loadInsight();
 
     return () => {
       cancelled = true;
@@ -65,7 +77,6 @@ export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site
   ];
 
   const handleRegenerate = async () => {
-    setSpinning(true);
     setLoading(true);
     try {
       const result = await generateAiInsight({
@@ -81,11 +92,10 @@ export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site
       setInsight(null);
     } finally {
       setLoading(false);
-      window.setTimeout(() => setSpinning(false), 800);
     }
   };
 
-  const handleFeedback = async (rating: "up" | "down") => {
+  const handleFeedback = async (rating: AiFeedbackRating) => {
     setFeedback(rating);
     if (!insight) return;
     try {
@@ -104,10 +114,16 @@ export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site
         <button
           onClick={handleRegenerate}
           disabled={loading}
+          aria-busy={loading}
           className="transition-colors disabled:opacity-60"
-          style={{ color: "var(--text-muted)" }}
+          style={{ color: "var(--text-muted)", display: "inline-flex", alignItems: "center", gap: 6 }}
         >
-          <RefreshCw className="w-4 h-4" style={{ transition: "transform 0.6s ease", transform: spinning ? "rotate(360deg)" : "none" }} />
+          {loading && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
+              Generating...
+            </span>
+          )}
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
       <div style={{ padding: "12px 16px 0" }}>
@@ -133,10 +149,7 @@ export function AIPropertyInsight({ deal, site }: { deal: DealRecord; site: Site
           <Clock className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{insight ? `Generated ${new Date(insight.createdAt).toLocaleDateString()}` : "Generated from Supabase data"}</span>
         </div>
-        <div className="flex items-center" style={{ gap: 8 }}>
-          <button onClick={() => handleFeedback("up")} style={{ opacity: feedback === "up" ? 1 : 0.5, fontSize: 16, transition: "opacity 0.15s" }}>👍</button>
-          <button onClick={() => handleFeedback("down")} style={{ opacity: feedback === "down" ? 1 : 0.5, fontSize: 16, transition: "opacity 0.15s" }}>👎</button>
-        </div>
+        <AIInsightFeedback value={feedback} onChange={handleFeedback} size="md" />
       </div>
     </div>
   );
