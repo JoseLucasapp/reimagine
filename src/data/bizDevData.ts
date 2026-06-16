@@ -37,6 +37,7 @@ export const bizDevStatuses: BizDevStatus[] = [
 export interface BizDevRecord {
   id: string;
   status: BizDevStatus;
+  sourceStatusLabel?: string | null;
   owner: string;
   dateAdded: string;
   companyName: string;
@@ -47,12 +48,33 @@ export interface BizDevRecord {
   reachOutMethod: string;
   mainContact: string;
   cell: string;
+  officePhone?: string;
+  linkedin?: string;
   mainContactPosition: string;
   mainContactEmail: string;
+  secondaryContact?: string;
+  secondaryPosition?: string;
+  secondaryEmail?: string;
+  secondaryCell?: string;
+  secondaryOffice?: string;
+  secondaryLinkedin?: string;
+  leadSource?: string;
+  brickAndMortar?: string;
+  estimatedLocationCount?: number | null;
+  franchiseOrCorporate?: string;
   reachOut1: string;
   reachOut2: string;
   reachOut3: string;
   reachOut4: string;
+  reachOut5?: string;
+  finalReachOut?: string;
+  lastReachOutDate?: string;
+  nextFollowUpDate?: string;
+  overdue?: string;
+  updateNotes?: string;
+  sourceKey?: string | null;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
 }
 
 export const bizDevRecords: BizDevRecord[] = [];

@@ -712,7 +712,7 @@ export default function DealDetail() {
       if (data.actionTypeKey === "tour") {
         await createTourBook({
           dealId: deal.id,
-          title: `${deal.franchisee} Tour Book${data.tourDate ? ` - ${data.tourDate}` : ""}`,
+          title: `${dealDisplayName} Tour Book${data.tourDate ? ` - ${data.tourDate}` : ""}`,
           status: "generated",
           generatedUrl: `${window.location.origin}/tour-book-generator?deal=${deal.id}`,
         });
@@ -747,6 +747,7 @@ export default function DealDetail() {
   }
 
   const brand = getDealBrandById(deal.brandId);
+  const dealDisplayName = deal.name || deal.franchisee;
   const dealSites = getSitesByDeal(deal.id);
   const signedSiteOptions = dealSites.map((site) => ({
     id: site.id,
@@ -850,7 +851,7 @@ export default function DealDetail() {
             <BrandAvatar name={brand?.name || "?"} size={28} />
             <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>{brand?.name}</span>
           </div>
-          <h1 className="text-[24px] md:text-[32px]" style={{ fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.2, marginTop: 2 }}>{deal.franchisee}</h1>
+          <h1 className="text-[24px] md:text-[32px]" style={{ fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.2, marginTop: 2 }}>{dealDisplayName}</h1>
           <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
             <MapPin className="w-3 h-3" style={{ color: "#E18739" }} />
             <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{deal.city}, {deal.state}</span>
@@ -1249,7 +1250,7 @@ export default function DealDetail() {
       <TakeActionDrawer
         open={showTakeAction}
         onClose={() => setShowTakeAction(false)}
-        dealName={deal.franchisee}
+        dealName={dealDisplayName}
         broker={deal.broker}
         sites={actionSites}
         dealId={deal.id}

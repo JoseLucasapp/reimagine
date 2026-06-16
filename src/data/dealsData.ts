@@ -55,6 +55,13 @@ export interface DealDocuments {
 export interface DealRecord {
   id: string;
   brandId: string;
+  /** Exact deal name imported from the source spreadsheet, when available. */
+  name?: string | null;
+  /** Original spreadsheet status before enum normalization. */
+  sourceStatusLabel?: string | null;
+  sourceKey?: string | null;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
   broker: string;
   associate: string;
   franchisee: string;
@@ -86,6 +93,12 @@ export interface DealBrand {
   logoColor: string;
   category: string;
   corporateLink: string;
+  internalLink?: string | null;
+  franchisorLink?: string | null;
+  franchisorMapLink?: string | null;
+  sourceKey?: string | null;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
 }
 
 export const emptyDealDocuments: DealDocuments = {

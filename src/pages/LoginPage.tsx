@@ -1,15 +1,13 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import reimagineLogo from "@/assets/reimagine-logo-full.png";
 import type { AuthSession } from "@/application/auth/session";
 import { getRuntimeConfig } from "@/config/env";
-import { signInWithSupabase, signUpWithSupabase } from "@/infrastructure/supabase/auth";
+import { signInWithSupabase } from "@/infrastructure/supabase/auth";
 
 interface LoginPageProps {
   onLogin: (session: AuthSession) => void;
 }
-
-type AuthMode = "login" | "signup";
 
 type FieldProps = {
   label: string;
@@ -56,24 +54,12 @@ function AuthField({ label, value, placeholder, type = "text", autoComplete, onC
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
-  const [mode, setMode] = useState<AuthMode>("login");
   const [credential, setCredential] = useState("");
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const title = mode === "login" ? "Welcome back" : "Create account";
-  const subtitle = mode === "login" ? "Enter your details to access your account" : "Create your Reimagine IQ client portal account";
-  const buttonLabel = useMemo(() => {
-    if (isSubmitting) return mode === "login" ? "LOGGING IN..." : "CREATING ACCOUNT...";
-    return mode === "login" ? "LOGIN" : "SIGN UP";
-  }, [isSubmitting, mode]);
 
   const resetFeedback = () => {
     setError("");
@@ -94,53 +80,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setError(result.message);
   };
 
-  const handleSignup = async () => {
-    if (!getRuntimeConfig().isSupabaseConfigured) {
-      setError("Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
-      return;
-    }
-    if (!fullName.trim()) {
-      setError("Full name is required.");
-      return;
-    }
-    if (!email.includes("@")) {
-      setError("Use a valid email address.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must have at least 8 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    const result = await signUpWithSupabase({ fullName, email, password, username });
-    if (result.ok) {
-      onLogin({ accessToken: result.session.accessToken, refreshToken: result.session.refreshToken, role: result.session.role });
-      return;
-    }
-
-    if (result.message.includes("confirmation")) {
-      setMessage(result.message);
-      setMode("login");
-      return;
-    }
-    setError(result.message);
-  };
-
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     resetFeedback();
     setIsSubmitting(true);
-    const action = mode === "login" ? handleLogin() : handleSignup();
-    void action.finally(() => setIsSubmitting(false));
-  };
-
-  const switchMode = () => {
-    resetFeedback();
-    setMode((current) => (current === "login" ? "signup" : "login"));
+    void handleLogin().finally(() => setIsSubmitting(false));
   };
 
   return (
@@ -186,26 +130,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
 
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6, lineHeight: 1.2 }}>
-            {title}
+            Welcome back
           </h1>
-          <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 28 }}>{subtitle}</p>
+          <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 28 }}>Enter your details to access your account</p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
-            {mode === "login" ? (
-              <AuthField
-                label="Username"
-                value={credential}
-                onChange={setCredential}
-                placeholder="Username"
-                autoComplete="username"
-              />
-            ) : (
-              <>
-                <AuthField label="Full name" value={fullName} onChange={setFullName} placeholder="Full name" autoComplete="name" />
-                <AuthField label="Email" value={email} onChange={setEmail} placeholder="email@company.com" type="email" autoComplete="email" />
-                <AuthField label="Username" value={username} onChange={setUsername} placeholder="Optional username" autoComplete="username" />
-              </>
-            )}
+            <AuthField
+              label="Username"
+              value={credential}
+              onChange={setCredential}
+              placeholder="Username"
+              autoComplete="username"
+            />
 
             <div className="flex flex-col gap-1.5">
               <label style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>Password</label>
@@ -215,7 +151,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="••••••••"
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  autoComplete="current-password"
                   style={{ ...fieldStyle, padding: "11px 40px 11px 14px" }}
                   onFocus={(event) => {
                     event.currentTarget.style.borderColor = "rgba(36,60,81,0.40)";
@@ -234,34 +170,22 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              {mode === "login" && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    style={{ fontSize: 14, color: "#6B7280", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}
-                    onMouseEnter={(event) => {
-                      event.currentTarget.style.color = "#243c51";
-                    }}
-                    onMouseLeave={(event) => {
-                      event.currentTarget.style.color = "#6B7280";
-                    }}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  style={{ fontSize: 14, color: "#6B7280", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}
+                  onClick={() => setMessage("Password reset is managed by the Reimagine admin team.")}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.color = "#243c51";
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.color = "#6B7280";
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
             </div>
-
-            {mode === "signup" && (
-              <AuthField
-                label="Confirm password"
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-                placeholder="••••••••"
-                type="password"
-                autoComplete="new-password"
-              />
-            )}
 
             {error && (
               <div
@@ -321,41 +245,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 event.currentTarget.style.background = "#243c51";
               }}
             >
-              {buttonLabel}
+              {isSubmitting ? "LOGGING IN..." : "LOGIN"}
             </button>
           </form>
 
-          {mode === "login" && (
-            <>
-              <div className="flex items-center" style={{ gap: 12, margin: "22px 0" }}>
-                <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
-                <span style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
-                <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
-              </div>
+          <div className="flex items-center" style={{ gap: 12, margin: "22px 0" }}>
+            <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
+            <span style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
+            <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
+          </div>
 
-              <div className="flex flex-col gap-2.5">
-                <SocialButton label="Continue with Google" provider="google" onClick={() => setError("Google SSO is not configured yet.")} />
-                <SocialButton label="Continue with Microsoft" provider="microsoft" onClick={() => setError("Microsoft SSO is not configured yet.")} />
-              </div>
-            </>
-          )}
-
-          <p className="text-center" style={{ fontSize: 14, color: "#6B7280", marginTop: 22 }}>
-            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              type="button"
-              onClick={switchMode}
-              style={{ fontWeight: 600, color: "var(--text-primary)", background: "none", border: "none", cursor: "pointer" }}
-              onMouseEnter={(event) => {
-                event.currentTarget.style.color = "#E18739";
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.color = "var(--text-primary)";
-              }}
-            >
-              {mode === "login" ? "Sign up" : "Log in"}
-            </button>
-          </p>
+          <div className="flex flex-col gap-2.5">
+            <SocialButton label="Continue with Google" provider="google" onClick={() => setError("Google SSO is not configured yet.")} />
+            <SocialButton label="Continue with Microsoft" provider="microsoft" onClick={() => setError("Microsoft SSO is not configured yet.")} />
+          </div>
         </div>
       </div>
     </div>

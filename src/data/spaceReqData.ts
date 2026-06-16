@@ -9,6 +9,15 @@ export interface SpaceRequirement {
   minSF: number;
   maxSF: number;
   idealSF: number;
+  minSFRaw?: string | null;
+  maxSFRaw?: string | null;
+  idealSFRaw?: string | null;
+  landlordDeckLink?: string | null;
+  loiTemplateLink?: string | null;
+  otherSpecialRequirements?: string | null;
+  sourceKey?: string | null;
+  sourceSheet?: string | null;
+  sourceRow?: number | null;
   minStorefrontWidth: string;
   power: string;
   hvac: string;

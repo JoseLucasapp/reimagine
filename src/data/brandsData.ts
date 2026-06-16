@@ -25,9 +25,9 @@ export function rebuildBrandRuntimeData(): void {
       category: b.category,
       activeDeals: deals.filter((d) => d.status !== "Signed").length,
       signedDeals: deals.filter((d) => d.status === "Signed").length,
-      internalLink: `/brands/${b.id}/deals`,
-      franchisorLink: b.corporateLink,
-      mapLink: `/map?brand=${b.id}`,
+      internalLink: b.internalLink || `/brands/${b.id}/deals`,
+      franchisorLink: b.franchisorLink || b.corporateLink,
+      mapLink: b.franchisorMapLink || `/map?brand=${b.id}`,
     } satisfies BrandDetail;
   });
 

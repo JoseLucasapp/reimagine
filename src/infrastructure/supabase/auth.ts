@@ -73,37 +73,3 @@ export async function signInWithSupabase(credential: string, password: string): 
     return { ok: false, message: "Invalid username or password" };
   }
 }
-
-export async function signUpWithSupabase(input: {
-  fullName: string;
-  email: string;
-  password: string;
-  username?: string;
-}): Promise<AuthResult> {
-  try {
-    const payload = await supabaseRequest<unknown>("/auth/v1/signup", {
-      method: "POST",
-      body: {
-        email: input.email.trim().toLowerCase(),
-        password: input.password,
-        data: {
-          full_name: input.fullName.trim(),
-          username: input.username?.trim() ?? null,
-          role: "deal",
-        },
-      } satisfies JsonObject,
-    });
-
-    const session = normalizeAuthResponse(payload);
-    if (!session) {
-      return {
-        ok: false,
-        message: "Account created, but email confirmation is required before login.",
-      };
-    }
-
-    return { ok: true, session, message: "Account created successfully." };
-  } catch {
-    return { ok: false, message: "Unable to create account. Check the email and password, then try again." };
-  }
-}

@@ -81,6 +81,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
     if (search) {
       const q = search.toLowerCase();
       d = d.filter((x) =>
+        (x.name ?? x.franchisee).toLowerCase().includes(q) ||
         x.franchisee.toLowerCase().includes(q) ||
         x.city.toLowerCase().includes(q) ||
         x.broker.toLowerCase().includes(q) ||
@@ -221,7 +222,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
                           <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{brand?.name}</span>
                           <ChevronRight className="w-3.5 h-3.5 transition-colors" style={{ color: "var(--text-faint)" }} />
                         </div>
-                        <p className="text-sm font-bold mb-1" style={{ color: "var(--text-primary)" }}>{deal.franchisee}</p>
+                        <p className="text-sm font-bold mb-1" style={{ color: "var(--text-primary)" }}>{deal.name ?? deal.franchisee}</p>
                         <p className="text-xs mb-2" style={{ color: "var(--text-tertiary)" }}>{deal.city}, {deal.state}</p>
                         <div className="flex items-center justify-between mb-1.5">
                           <span className="text-xs font-semibold" style={{ color: "var(--text-orange-ui)" }}>{deal.broker}</span>
@@ -363,7 +364,7 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer }: {
                   </td>
                   {/* Franchisee */}
                   <td className="px-4 py-3 font-semibold" style={{ color: "var(--text-primary)", borderBottom: "1px solid var(--border-divider)", whiteSpace: "nowrap" }}>
-                    {deal.franchisee}
+                    {deal.name ?? deal.franchisee}
                   </td>
                   {/* City, State */}
                   <td className="px-4 py-3" style={{ color: "var(--text-tertiary)", borderBottom: "1px solid var(--border-divider)", whiteSpace: "nowrap" }}>

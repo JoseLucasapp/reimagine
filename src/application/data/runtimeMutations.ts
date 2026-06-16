@@ -35,6 +35,12 @@ type BrandRow = {
   category: string;
   logo_color: string | null;
   corporate_link: string | null;
+  internal_link: string | null;
+  franchisor_link: string | null;
+  franchisor_map_link: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
 };
 
 type ProspectStatusRow = "active_client" | "inactive_client" | "prospect" | "dead";
@@ -45,24 +51,52 @@ type ProspectRow = {
   category: string;
   sub_category: string | null;
   status: ProspectStatusRow;
+  source_status_label: string | null;
   owner: string | null;
   website: string | null;
   is_franchise: boolean | null;
+  date_added: string | null;
+  brick_and_mortar: string | null;
+  estimated_location_count: number | null;
+  franchise_or_corporate: string | null;
   reach_out_method: string | null;
   main_contact: string | null;
   cell: string | null;
+  office_phone: string | null;
+  linkedin: string | null;
   main_contact_position: string | null;
   main_contact_email: string | null;
+  secondary_contact: string | null;
+  secondary_position: string | null;
+  secondary_email: string | null;
+  secondary_cell: string | null;
+  secondary_office: string | null;
+  secondary_linkedin: string | null;
+  lead_source: string | null;
   reach_out_1: string | null;
   reach_out_2: string | null;
   reach_out_3: string | null;
   reach_out_4: string | null;
+  reach_out_5: string | null;
+  final_reach_out: string | null;
+  last_reach_out_date: string | null;
+  next_follow_up_date: string | null;
+  overdue: string | null;
+  update_notes: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   created_at: string;
 };
 
 type DealRow = {
   id: string;
   brand_id: string;
+  name: string | null;
+  source_status_label: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   franchisee: string;
   broker: string;
   associate: string | null;
@@ -121,6 +155,15 @@ type SpaceRequirementRow = {
   min_sf: number;
   max_sf: number;
   ideal_sf: number;
+  min_sf_raw: string | null;
+  max_sf_raw: string | null;
+  ideal_sf_raw: string | null;
+  landlord_deck_link: string | null;
+  loi_template_link: string | null;
+  other_special_requirements: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   min_storefront_width: string;
   power: string;
   hvac: string;
@@ -370,6 +413,12 @@ function mapBrand(row: BrandRow): DealBrand {
     category: row.category,
     logoColor: row.logo_color ?? "#E18739",
     corporateLink: row.corporate_link ?? "#",
+    internalLink: row.internal_link,
+    franchisorLink: row.franchisor_link,
+    franchisorMapLink: row.franchisor_map_link,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
   };
 }
 
@@ -384,8 +433,9 @@ function mapProspect(row: ProspectRow): BizDevRecord {
   return {
     id: row.id,
     status: prospectStatusFromDb[row.status],
+    sourceStatusLabel: row.source_status_label,
     owner: row.owner ?? "",
-    dateAdded: dateOnly(row.created_at) ?? "",
+    dateAdded: dateOnly(row.date_added) ?? dateOnly(row.created_at) ?? "",
     companyName: row.company_name,
     website: row.website ?? "",
     category: row.category as BizDevCategory,
@@ -394,12 +444,33 @@ function mapProspect(row: ProspectRow): BizDevRecord {
     reachOutMethod: row.reach_out_method ?? "",
     mainContact: row.main_contact ?? "",
     cell: row.cell ?? "",
+    officePhone: row.office_phone ?? "",
+    linkedin: row.linkedin ?? "",
     mainContactPosition: row.main_contact_position ?? "",
     mainContactEmail: row.main_contact_email ?? "",
+    secondaryContact: row.secondary_contact ?? "",
+    secondaryPosition: row.secondary_position ?? "",
+    secondaryEmail: row.secondary_email ?? "",
+    secondaryCell: row.secondary_cell ?? "",
+    secondaryOffice: row.secondary_office ?? "",
+    secondaryLinkedin: row.secondary_linkedin ?? "",
+    leadSource: row.lead_source ?? "",
+    brickAndMortar: row.brick_and_mortar ?? "",
+    estimatedLocationCount: row.estimated_location_count,
+    franchiseOrCorporate: row.franchise_or_corporate ?? "",
     reachOut1: dateOnly(row.reach_out_1) ?? "",
     reachOut2: dateOnly(row.reach_out_2) ?? "",
     reachOut3: dateOnly(row.reach_out_3) ?? "",
     reachOut4: dateOnly(row.reach_out_4) ?? "",
+    reachOut5: dateOnly(row.reach_out_5) ?? "",
+    finalReachOut: dateOnly(row.final_reach_out) ?? "",
+    lastReachOutDate: dateOnly(row.last_reach_out_date) ?? "",
+    nextFollowUpDate: dateOnly(row.next_follow_up_date) ?? "",
+    overdue: row.overdue ?? "",
+    updateNotes: row.update_notes ?? "",
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
   };
 }
 
@@ -416,6 +487,11 @@ function mapDeal(row: DealRow, existing?: DealRecord): DealRecord {
   return {
     id: row.id,
     brandId: row.brand_id,
+    name: row.name,
+    sourceStatusLabel: row.source_status_label,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
     broker: row.broker,
     associate: row.associate ?? "",
     franchisee: row.franchisee,
@@ -462,7 +538,7 @@ function dealRecordToMapDeal(record: DealRecord, sites: Site[] = getSitesByDeal(
   const brand = dealBrands.find((item) => item.id === record.brandId);
   return {
     id: record.id,
-    name: `${brand?.name ?? "Brand"} — ${record.city}, ${record.state}`,
+    name: record.name ?? `${brand?.name ?? "Brand"} — ${record.city}, ${record.state}`,
     brandId: record.brandId,
     market: `${record.city}, ${record.state}`,
     stage: statusToMapStage(record.status),
@@ -494,6 +570,15 @@ function mapSpaceRequirement(row: SpaceRequirementRow): SpaceRequirement {
     minSF: row.min_sf,
     maxSF: row.max_sf,
     idealSF: row.ideal_sf,
+    minSFRaw: row.min_sf_raw,
+    maxSFRaw: row.max_sf_raw,
+    idealSFRaw: row.ideal_sf_raw,
+    landlordDeckLink: row.landlord_deck_link,
+    loiTemplateLink: row.loi_template_link,
+    otherSpecialRequirements: row.other_special_requirements,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
     minStorefrontWidth: row.min_storefront_width,
     power: row.power,
     hvac: row.hvac,
@@ -606,6 +691,26 @@ function prospectBody(input: ProspectMutationInput): JsonObject {
     reach_out_2: dateToNull(input.reachOut2),
     reach_out_3: dateToNull(input.reachOut3),
     reach_out_4: dateToNull(input.reachOut4),
+    reach_out_5: dateToNull(input.reachOut5 ?? ""),
+    final_reach_out: dateToNull(input.finalReachOut ?? ""),
+    last_reach_out_date: dateToNull(input.lastReachOutDate ?? ""),
+    next_follow_up_date: dateToNull(input.nextFollowUpDate ?? ""),
+    source_status_label: input.sourceStatusLabel ?? null,
+    date_added: dateToNull(input.dateAdded),
+    brick_and_mortar: blankToNull(input.brickAndMortar ?? ""),
+    estimated_location_count: input.estimatedLocationCount ?? null,
+    franchise_or_corporate: blankToNull(input.franchiseOrCorporate ?? ""),
+    office_phone: blankToNull(input.officePhone ?? ""),
+    linkedin: linkToNull(input.linkedin ?? ""),
+    secondary_contact: blankToNull(input.secondaryContact ?? ""),
+    secondary_position: blankToNull(input.secondaryPosition ?? ""),
+    secondary_email: blankToNull(input.secondaryEmail ?? ""),
+    secondary_cell: blankToNull(input.secondaryCell ?? ""),
+    secondary_office: blankToNull(input.secondaryOffice ?? ""),
+    secondary_linkedin: linkToNull(input.secondaryLinkedin ?? ""),
+    lead_source: blankToNull(input.leadSource ?? ""),
+    overdue: blankToNull(input.overdue ?? ""),
+    update_notes: blankToNull(input.updateNotes ?? ""),
   };
 }
 
@@ -654,6 +759,12 @@ function spaceRequirementBody(input: SpaceRequirementMutationInput): JsonObject 
     grease_trap: input.greaseTrap,
     second_floor: input.secondFloor,
     parking: input.parking.trim(),
+    min_sf_raw: input.minSFRaw ?? null,
+    max_sf_raw: input.maxSFRaw ?? null,
+    ideal_sf_raw: input.idealSFRaw ?? null,
+    landlord_deck_link: linkToNull(input.landlordDeckLink ?? ""),
+    loi_template_link: linkToNull(input.loiTemplateLink ?? ""),
+    other_special_requirements: blankToNull(input.otherSpecialRequirements ?? ""),
   };
 }
 

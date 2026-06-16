@@ -52,7 +52,7 @@ function useBreadcrumbs(): Crumb[] {
         brandId: brand.id,
         currentDealId: deal.id,
       });
-      crumbs.push({ label: deal.franchisee });
+      crumbs.push({ label: deal.name ?? deal.franchisee });
     } else {
       crumbs.push({ label: segments[1] });
     }
@@ -142,7 +142,7 @@ function BrandCrumbWithRecents({ crumb }: { crumb: Crumb }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
                 <span className="truncate" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                  {d.franchisee}
+                  {d.name ?? d.franchisee}
                 </span>
                 <DealStatusBadge status={d.status} />
               </button>

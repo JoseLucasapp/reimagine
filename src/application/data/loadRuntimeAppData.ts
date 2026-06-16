@@ -26,6 +26,12 @@ type BrandRow = {
   category: string;
   logo_color: string | null;
   corporate_link: string | null;
+  internal_link: string | null;
+  franchisor_link: string | null;
+  franchisor_map_link: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
 };
 
 type ProfileRow = {
@@ -38,6 +44,11 @@ type ProfileRow = {
 type DealRow = {
   id: string;
   brand_id: string;
+  name: string | null;
+  source_status_label: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   franchisee: string;
   broker: string;
   associate: string | null;
@@ -84,10 +95,24 @@ type ProspectRow = {
   company_name: string;
   category: string;
   status: ProspectStatusRow;
+  source_status_label: string | null;
   owner: string | null;
   website: string | null;
   main_contact: string | null;
   main_contact_email: string | null;
+  date_added: string | null;
+  brick_and_mortar: string | null;
+  estimated_location_count: number | null;
+  franchise_or_corporate: string | null;
+  office_phone: string | null;
+  linkedin: string | null;
+  secondary_contact: string | null;
+  secondary_position: string | null;
+  secondary_email: string | null;
+  secondary_cell: string | null;
+  secondary_office: string | null;
+  secondary_linkedin: string | null;
+  lead_source: string | null;
   sub_category: string | null;
   is_franchise: boolean | null;
   reach_out_method: string | null;
@@ -97,6 +122,15 @@ type ProspectRow = {
   reach_out_2: string | null;
   reach_out_3: string | null;
   reach_out_4: string | null;
+  reach_out_5: string | null;
+  final_reach_out: string | null;
+  last_reach_out_date: string | null;
+  next_follow_up_date: string | null;
+  overdue: string | null;
+  update_notes: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   created_at: string;
 };
 
@@ -144,6 +178,15 @@ type SpaceRequirementRow = {
   min_sf: number;
   max_sf: number;
   ideal_sf: number;
+  min_sf_raw: string | null;
+  max_sf_raw: string | null;
+  ideal_sf_raw: string | null;
+  landlord_deck_link: string | null;
+  loi_template_link: string | null;
+  other_special_requirements: string | null;
+  source_key: string | null;
+  source_sheet: string | null;
+  source_row: number | null;
   min_storefront_width: string;
   power: string;
   hvac: string;
@@ -184,6 +227,12 @@ function mapBrand(row: BrandRow): DealBrand {
     category: row.category,
     logoColor: row.logo_color ?? "#E18739",
     corporateLink: row.corporate_link ?? "#",
+    internalLink: row.internal_link,
+    franchisorLink: row.franchisor_link,
+    franchisorMapLink: row.franchisor_map_link,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
   };
 }
 
@@ -219,6 +268,11 @@ function mapDeal(row: DealRow, notes: Map<string, DealNote[]>, documents: Map<st
   return {
     id: row.id,
     brandId: row.brand_id,
+    name: row.name,
+    sourceStatusLabel: row.source_status_label,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
     broker: row.broker,
     associate: row.associate ?? "",
     franchisee: row.franchisee,
@@ -266,8 +320,9 @@ function mapProspect(row: ProspectRow): BizDevRecord {
   return {
     id: row.id,
     status: prospectStatusMap[row.status],
+    sourceStatusLabel: row.source_status_label,
     owner: row.owner ?? "",
-    dateAdded: dateOnly(row.created_at) ?? "",
+    dateAdded: dateOnly(row.date_added) ?? dateOnly(row.created_at) ?? "",
     companyName: row.company_name,
     website: row.website ?? "",
     category: normalizeCategory(row.category),
@@ -276,12 +331,33 @@ function mapProspect(row: ProspectRow): BizDevRecord {
     reachOutMethod: row.reach_out_method ?? "",
     mainContact: row.main_contact ?? "",
     cell: row.cell ?? "",
+    officePhone: row.office_phone ?? "",
+    linkedin: row.linkedin ?? "",
     mainContactPosition: row.main_contact_position ?? "",
     mainContactEmail: row.main_contact_email ?? "",
-    reachOut1: row.reach_out_1 ?? "",
-    reachOut2: row.reach_out_2 ?? "",
-    reachOut3: row.reach_out_3 ?? "",
-    reachOut4: row.reach_out_4 ?? "",
+    secondaryContact: row.secondary_contact ?? "",
+    secondaryPosition: row.secondary_position ?? "",
+    secondaryEmail: row.secondary_email ?? "",
+    secondaryCell: row.secondary_cell ?? "",
+    secondaryOffice: row.secondary_office ?? "",
+    secondaryLinkedin: row.secondary_linkedin ?? "",
+    leadSource: row.lead_source ?? "",
+    brickAndMortar: row.brick_and_mortar ?? "",
+    estimatedLocationCount: row.estimated_location_count,
+    franchiseOrCorporate: row.franchise_or_corporate ?? "",
+    reachOut1: dateOnly(row.reach_out_1) ?? "",
+    reachOut2: dateOnly(row.reach_out_2) ?? "",
+    reachOut3: dateOnly(row.reach_out_3) ?? "",
+    reachOut4: dateOnly(row.reach_out_4) ?? "",
+    reachOut5: dateOnly(row.reach_out_5) ?? "",
+    finalReachOut: dateOnly(row.final_reach_out) ?? "",
+    lastReachOutDate: dateOnly(row.last_reach_out_date) ?? "",
+    nextFollowUpDate: dateOnly(row.next_follow_up_date) ?? "",
+    overdue: row.overdue ?? "",
+    updateNotes: row.update_notes ?? "",
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
   };
 }
 
@@ -294,6 +370,15 @@ function mapSpaceRequirement(row: SpaceRequirementRow): SpaceRequirement {
     minSF: row.min_sf,
     maxSF: row.max_sf,
     idealSF: row.ideal_sf,
+    minSFRaw: row.min_sf_raw,
+    maxSFRaw: row.max_sf_raw,
+    idealSFRaw: row.ideal_sf_raw,
+    landlordDeckLink: row.landlord_deck_link,
+    loiTemplateLink: row.loi_template_link,
+    otherSpecialRequirements: row.other_special_requirements,
+    sourceKey: row.source_key,
+    sourceSheet: row.source_sheet,
+    sourceRow: row.source_row,
     minStorefrontWidth: row.min_storefront_width,
     power: row.power,
     hvac: row.hvac,
@@ -416,7 +501,7 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
     brands: brands.map((brand) => ({ id: brand.id, name: brand.name, logoColor: brand.logoColor })),
     deals: deals.map((deal) => ({
       id: deal.id,
-      name: `${brands.find((brand) => brand.id === deal.brandId)?.name ?? "Brand"} — ${deal.city}, ${deal.state}`,
+      name: deal.name ?? `${brands.find((brand) => brand.id === deal.brandId)?.name ?? "Brand"} — ${deal.city}, ${deal.state}`,
       brandId: deal.brandId,
       market: `${deal.city}, ${deal.state}`,
       stage: mapStatusToLegacyStage(deal.status),
