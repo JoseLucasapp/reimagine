@@ -5,9 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import Dashboard from "./pages/Dashboard";
+import PlatformHome from "./pages/PlatformHome";
 import MapView from "./pages/MapView";
 import DealsPage from "./pages/Deals";
 import DealDetail from "./pages/DealDetail";
@@ -21,6 +21,8 @@ import NotFound from "./pages/NotFound";
 import TourBookPage from "./pages/TourBookPage";
 import LoginPage from "./pages/LoginPage";
 import { RouteGuard } from "@/components/access/RouteGuard";
+import FranchisorDashboard from "./pages/FranchisorDashboard";
+import FranchiseeDashboard from "./pages/FranchiseeDashboard";
 import { AppDataProvider } from "@/application/data/AppDataProvider";
 
 const queryClient = new QueryClient();
@@ -29,7 +31,11 @@ function MainAppRoutes() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<PlatformHome />} />
+        <Route path="/brand" element={<FranchisorDashboard />} />
+        <Route path="/deal" element={<FranchiseeDashboard />} />
+        <Route path="/franchisor" element={<Navigate to="/brand" replace />} />
+        <Route path="/franchisee" element={<Navigate to="/deal" replace />} />
         <Route path="/brands" element={<BrandsPage />} />
         <Route path="/brands/:brandId/deals" element={<BrandDeals />} />
         <Route path="/bizdev" element={<BizDevPage />} />
@@ -49,9 +55,9 @@ const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getStoredSession() !== null);
 
   const handleLogin = (session: AuthSession) => {
-    // The app should open in Admin preview by default after login. Users can
-    // still switch to Brand Level or Deal Level from Settings.
-    persistSession({ ...session, role: "admin" });
+    // Persist the authenticated platform role. The default seeded account is Admin,
+    // while real Brand Level and Deal Level accounts now open their own platforms.
+    persistSession(session);
     setIsLoggedIn(true);
   };
 

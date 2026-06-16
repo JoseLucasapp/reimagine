@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { recordDealVisit } from "@/hooks/useRecentDeals";
-import { getDealRecordById, getDealBrandById, daysToSign, daysActive, DealStatusNew, dealRecords, type DealRecord, type DealDocuments } from "@/data/dealsData";
-import { DealStatusBadge } from "@/components/DealStatusBadge";
+import { getDealRecordById, getDealBrandById, daysToSign, daysActive, DealStatusNew, type DealRecord, type DealDocuments } from "@/data/dealsData";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
 import { AIDealSummary } from "@/components/AIDealSummary";
 import { TopSitesTab } from "@/components/deal/TopSitesTab";
@@ -10,7 +9,7 @@ import { LOIComparisonTab } from "@/components/deal/LOIComparisonTab";
 import { DealSummaryTab } from "@/components/deal/DealSummaryTab";
 // BrokerFilesCard is now rendered inside DealSummaryTab via modal
 import { BrandAvatar } from "@/components/BrandAvatar";
-import { ArrowLeft, ArrowRight, MapPin, Clock, ExternalLink, FileText, Check, Minus, Plus, Map, BookOpen, BarChart3, Zap, Store, Layers, FolderOpen, Building2, Lock, X, Send, RefreshCw, ClipboardList, MessageSquare, CheckCircle2 } from "lucide-react";
+import { ArrowRight, MapPin, Clock, FileText, Check, Plus, Map, BookOpen, BarChart3, Zap, Store, Layers, FolderOpen, X, Send, RefreshCw, ClipboardList, MessageSquare, CheckCircle2, Link2, Loader2, Upload } from "lucide-react";
 import { TakeActionDrawer, TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,50 +18,20 @@ import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
 import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
-import { createDealActionItem, createTourBook, updateDeal, type DealMutationInput } from "@/application/data/runtimeMutations";
+import { createDealActionItem, createTourBook, siteToMutationInput, updateDeal, updateSite, type DealMutationInput } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
+import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
+import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
 
 const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
 
-type DealDocumentKey = keyof DealDocuments;
 
 type DealDocumentDescriptor = {
   key: DealDocumentKey;
   label: string;
 };
 
-type DealDocumentGroup = {
-  label: string;
-  docs: DealDocumentDescriptor[];
-};
-
-const DOC_GROUPS: DealDocumentGroup[] = [
-  {
-    label: "AGREEMENTS",
-    docs: [
-      { key: "engagementLetter", label: "Engagement Letter" },
-      { key: "cobrokerAgreement", label: "Co-Broker Agreement" },
-    ],
-  },
-  {
-    label: "MARKETING",
-    docs: [
-      { key: "flyer", label: "Flyer" },
-      { key: "demo", label: "Demo" },
-    ],
-  },
-  {
-    label: "TRANSACTION",
-    docs: [
-      { key: "signedLOI", label: "Signed LOI" },
-      { key: "floorPlan", label: "Floor Plan" },
-      { key: "approvalPackage", label: "Approval Package" },
-      { key: "signedLease", label: "Signed Lease" },
-    ],
-  },
-];
-
-const ALL_DOC_KEYS: DealDocumentDescriptor[] = DOC_GROUPS.flatMap((g) => g.docs);
+const ALL_DOC_KEYS = ALL_DEAL_DOCUMENTS;
 const hiddenScrollbarStyle: React.CSSProperties = { scrollbarWidth: "none", msOverflowStyle: "none" };
 
 type DealTab = "project" | "topsites" | "loi" | "summary";
@@ -313,7 +282,7 @@ function DocCompletionWidget({ deal, onViewAll }: { deal: DealRecord; onViewAll?
         </div>
 
         {/* Expand link */}
-        <button style={{
+        <button onClick={onViewAll} style={{
           fontSize: 12, color: "var(--text-muted)", marginTop: 10, padding: 0, background: "none", border: "none", cursor: "pointer",
         }}>+ {total - criticalDocs.length} more documents</button>
       </div>
@@ -337,113 +306,258 @@ type SignedSiteOption = {
   label: string;
 };
 
+type SignedCompletionValues = {
+  selectedProperty: string;
+  signedLOI: string;
+  signedLease: string;
+  leaseTerm: string;
+  commencementDate: string;
+  rent: string;
+  tiAllowance: string;
+};
+
+function normalizeCompletionDocument(value: string): string {
+  return value.trim();
+}
+
 // ===== SIGNED COMPLETION MODAL =====
-function SignedCompletionModal({ onClose, onConfirm, sites }: { onClose: () => void; onConfirm: () => void | Promise<void>; sites: SignedSiteOption[] }) {
+function SignedCompletionModal({
+  deal,
+  onClose,
+  onConfirm,
+  sites,
+}: {
+  deal: DealRecord;
+  onClose: () => void;
+  onConfirm: (values: SignedCompletionValues) => void | Promise<void>;
+  sites: SignedSiteOption[];
+}) {
   const [leaseTerm, setLeaseTerm] = useState("");
   const [commencementDate, setCommencementDate] = useState("");
   const [rent, setRent] = useState("");
   const [tiAllowance, setTiAllowance] = useState("");
-  const [selectedProperty, setSelectedProperty] = useState("");
-  const [loiUploaded, setLoiUploaded] = useState(false);
-  const [leaseUploaded, setLeaseUploaded] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState(sites[0]?.id ?? "");
+  const [signedLOI, setSignedLOI] = useState(deal.documents.signedLOI ?? "");
+  const [signedLease, setSignedLease] = useState(deal.documents.signedLease ?? "");
+  const [saving, setSaving] = useState(false);
+  const [uploadingKey, setUploadingKey] = useState<DealDocumentKey | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const canSubmit = loiUploaded && leaseUploaded && (sites.length === 0 || !!selectedProperty);
+  const signedLOIValue = normalizeCompletionDocument(signedLOI);
+  const signedLeaseValue = normalizeCompletionDocument(signedLease);
+  const canSubmit = Boolean(signedLOIValue && signedLeaseValue && (sites.length === 0 || selectedProperty));
+
+  const handleRequiredDocUpload = async (key: DealDocumentKey, file: File | null) => {
+    if (!file) return;
+
+    setUploadingKey(key);
+    setUploadError(null);
+    try {
+      const publicUrl = await uploadDealDocumentFile({ dealId: deal.id, documentKey: key, file });
+      if (key === "signedLOI") setSignedLOI(publicUrl);
+      if (key === "signedLease") setSignedLease(publicUrl);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Unable to upload file. Please try again.");
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    try {
+      await onConfirm({
+        selectedProperty,
+        signedLOI: signedLOIValue,
+        signedLease: signedLeaseValue,
+        leaseTerm: leaseTerm.trim(),
+        commencementDate: commencementDate.trim(),
+        rent: rent.trim(),
+        tiAllowance: tiAllowance.trim(),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const requiredDocs: { key: DealDocumentKey; label: string; value: string; setValue: (value: string) => void; placeholder: string }[] = [
+    { key: "signedLOI", label: "Signed LOI", value: signedLOI, setValue: setSignedLOI, placeholder: "Paste Signed LOI file link or upload a file..." },
+    { key: "signedLease", label: "Signed Lease", value: signedLease, setValue: setSignedLease, placeholder: "Paste Signed Lease file link or upload a file..." },
+  ];
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center" style={{ background: "rgba(20,30,40,0.65)", backdropFilter: "blur(6px)" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="modal-bottom-sheet" style={{
-        width: 560, maxWidth: "90vw", borderRadius: 16,
-        background: "var(--bg-card-strong, var(--bg-card))", backdropFilter: "blur(20px)",
-        border: "1px solid var(--border-card)", boxShadow: "var(--shadow-card-hover, var(--shadow-card))",
-        padding: 0,
-      }}>
-        {/* Header */}
-        <div className="flex items-center gap-2" style={{ padding: "24px 24px 16px", borderBottom: "1px solid var(--border-divider)" }}>
-          <Check className="w-5 h-5" style={{ color: "#065f46" }} />
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Complete to Mark as Signed</h2>
-        </div>
-
-        <div style={{ padding: 24 }}>
-          <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 24 }}>
-            Before marking this deal as Signed, please complete the following requirements.
-          </p>
-
-          {/* Required Documents */}
-          <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 12 }}>
-            Required Documents
-          </span>
-          <div className="flex flex-col gap-3 mb-6">
-            {[
-              { label: "Signed LOI", uploaded: loiUploaded, toggle: () => setLoiUploaded(!loiUploaded) },
-              { label: "Signed Lease", uploaded: leaseUploaded, toggle: () => setLeaseUploaded(!leaseUploaded) },
-            ].map(doc => (
-              <div key={doc.label} className="flex items-center justify-between" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
-                <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{doc.label}</span>
-                <button onClick={doc.toggle} style={{
-                  fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 8, cursor: "pointer",
-                  background: doc.uploaded ? "rgba(5,150,105,0.08)" : "var(--bg-card)",
-                  color: doc.uploaded ? "#065f46" : "var(--text-orange-ui)",
-                  border: doc.uploaded ? "1px solid rgba(5,150,105,0.22)" : "1px solid var(--border-subtle)",
-                }}>
-                  {doc.uploaded ? "✓ Uploaded" : "Upload file"}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {/* Select Property */}
-          <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 8 }}>
-            Select Signed Property
-          </span>
-          {sites.length > 0 ? (
-            <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-              <SelectTrigger className="w-full glass-input mb-6"><SelectValue placeholder="Select a property..." /></SelectTrigger>
-              <SelectContent>
-                {sites.map((site) => (
-                  <SelectItem key={site.id} value={site.id}>{site.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <div className="glass-input mb-6 px-3 py-2 text-sm" style={{ color: "var(--text-muted)" }}>
-              No real sites are attached to this deal yet.
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center px-4" style={{ background: "rgba(15,23,42,0.52)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className="w-full overflow-hidden"
+        style={{
+          maxWidth: 680,
+          maxHeight: "88vh",
+          borderRadius: 18,
+          background: "hsl(var(--background))",
+          border: "1px solid var(--border-card)",
+          boxShadow: "0 24px 80px rgba(15,23,42,0.24)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div className="flex items-start justify-between gap-4" style={{ padding: "22px 24px 18px", borderBottom: "1px solid var(--border-divider)", background: "var(--bg-card)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center" style={{ width: 36, height: 36, borderRadius: 12, background: "rgba(5,150,105,0.12)", color: "#059669" }}>
+              <Check className="w-4 h-4" />
             </div>
-          )}
-
-          {/* Key Lease Terms */}
-          <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)", display: "block", marginBottom: 12 }}>
-            Key Lease Terms
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            {[
-              { label: "Lease Term", value: leaseTerm, set: setLeaseTerm, placeholder: "e.g. 10 years" },
-              { label: "Commencement Date", value: commencementDate, set: setCommencementDate, placeholder: "MM/DD/YYYY" },
-              { label: "Rent ($/SF or total)", value: rent, set: setRent, placeholder: "e.g. $28/SF" },
-              { label: "TI Allowance ($/SF)", value: tiAllowance, set: setTiAllowance, placeholder: "e.g. $45/SF" },
-            ].map(field => (
-              <div key={field.label}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>{field.label}</label>
-                <input value={field.value} onChange={e => field.set(e.target.value)} placeholder={field.placeholder}
-                  className="glass-input w-full px-3 py-2 text-sm" />
-              </div>
-            ))}
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 750, color: "var(--text-primary)", lineHeight: 1.25 }}>Complete to Mark as Signed</h2>
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, maxWidth: 500 }}>
+                Add the required signed documents, select the signed property, and capture the core lease terms before closing the deal.
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ width: 32, height: 32, border: "1px solid var(--border-subtle)", borderRadius: 10, background: "hsl(var(--background))", color: "var(--text-muted)", cursor: "pointer" }}
+          >
+            <X className="w-4 h-4 mx-auto" />
+          </button>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3" style={{ padding: "16px 24px", borderTop: "1px solid var(--border-divider)" }}>
-          <button onClick={onClose} style={{ fontSize: 14, fontWeight: 500, color: "var(--text-muted)", padding: "8px 16px", cursor: "pointer", background: "none", border: "none" }}>
+        <div className="themed-scrollbar overflow-y-auto" style={{ padding: 24 }}>
+          <section style={{ marginBottom: 22 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+              <span style={{ fontSize: 11, fontWeight: 750, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)" }}>Required Documents</span>
+              <span style={{ fontSize: 12, color: signedLOIValue && signedLeaseValue ? "#059669" : "var(--text-muted)", fontWeight: 650 }}>
+                {[signedLOIValue, signedLeaseValue].filter(Boolean).length} of 2 ready
+              </span>
+            </div>
+            {uploadError && (
+              <div style={{ marginBottom: 10, padding: "9px 11px", borderRadius: 10, background: "rgba(153,27,27,0.07)", border: "1px solid rgba(153,27,27,0.14)", color: "#991b1b", fontSize: 12 }}>
+                {uploadError}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              {requiredDocs.map((doc) => {
+                const filled = Boolean(doc.value.trim());
+                const uploading = uploadingKey === doc.key;
+                return (
+                  <div key={doc.label} className="grid gap-3 md:grid-cols-[150px_1fr] md:items-start" style={{ padding: 12, borderRadius: 12, border: "1px solid var(--border-subtle)", background: filled ? "rgba(5,150,105,0.035)" : "var(--bg-card)" }}>
+                    <div className="flex items-center gap-2" style={{ paddingTop: 9 }}>
+                      <div className="flex items-center justify-center" style={{ width: 22, height: 22, borderRadius: 999, background: filled ? "rgba(5,150,105,0.12)" : "rgba(100,116,139,0.10)", color: filled ? "#059669" : "var(--text-muted)" }}>
+                        {filled ? <Check className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text-primary)" }}>{doc.label}</span>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        value={doc.value}
+                        onChange={(event) => { doc.setValue(event.target.value); setUploadError(null); }}
+                        placeholder={doc.placeholder}
+                        className="glass-input w-full px-3 py-2 text-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <label
+                          className="inline-flex items-center gap-1.5"
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: 9,
+                            border: "1px dashed var(--border-subtle)",
+                            background: "hsl(var(--background))",
+                            color: uploading ? "var(--text-muted)" : "var(--text-secondary)",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: uploading ? "not-allowed" : "pointer",
+                            opacity: uploading ? 0.65 : 1,
+                          }}
+                        >
+                          {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                          {uploading ? "Uploading..." : filled ? "Replace file" : "Upload file"}
+                          <input
+                            type="file"
+                            className="sr-only"
+                            disabled={uploading}
+                            onChange={(event) => {
+                              const file = event.currentTarget.files?.[0] ?? null;
+                              void handleRequiredDocUpload(doc.key, file);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                        {filled && (
+                          <span style={{ minWidth: 0, fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {fileNameFromStorageValue(doc.value)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section style={{ marginBottom: 22 }}>
+            <span style={{ fontSize: 11, fontWeight: 750, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", display: "block", marginBottom: 8 }}>
+              Signed Property
+            </span>
+            {sites.length > 0 ? (
+              <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                <SelectTrigger className="w-full glass-input"><SelectValue placeholder="Select the property that was signed..." /></SelectTrigger>
+                <SelectContent>
+                  {sites.map((site) => (
+                    <SelectItem key={site.id} value={site.id}>{site.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="glass-input px-3 py-2 text-sm" style={{ color: "var(--text-muted)", borderStyle: "dashed" }}>
+                No sites are attached to this deal yet. The deal can be marked as signed, but add a site later to complete property reporting.
+              </div>
+            )}
+          </section>
+
+          <section>
+            <span style={{ fontSize: 11, fontWeight: 750, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", display: "block", marginBottom: 10 }}>
+              Key Lease Terms
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>Lease Term</label>
+                <input value={leaseTerm} onChange={(event) => setLeaseTerm(event.target.value)} placeholder="e.g. 10 years" className="glass-input w-full px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>Commencement Date</label>
+                <input value={commencementDate} onChange={(event) => setCommencementDate(event.target.value)} type="date" className="glass-input w-full px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>Rent ($/SF or total)</label>
+                <input value={rent} onChange={(event) => setRent(event.target.value)} placeholder="e.g. $28/SF" className="glass-input w-full px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>TI Allowance ($/SF)</label>
+                <input value={tiAllowance} onChange={(event) => setTiAllowance(event.target.value)} placeholder="e.g. $45/SF" className="glass-input w-full px-3 py-2 text-sm" />
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex items-center justify-end gap-3" style={{ padding: "16px 24px", borderTop: "1px solid var(--border-divider)", background: "var(--bg-card)" }}>
+          <button type="button" onClick={onClose} style={{ fontSize: 13, fontWeight: 650, color: "var(--text-muted)", padding: "9px 14px", cursor: "pointer", background: "none", border: "none" }}>
             Cancel
           </button>
           <button
-            onClick={() => { if (canSubmit) onConfirm(); }}
+            type="button"
+            disabled={!canSubmit || saving}
+            onClick={handleConfirm}
             className="cta-primary"
             style={{
-              opacity: canSubmit ? 1 : 0.6,
-              cursor: canSubmit ? "pointer" : "default",
+              minHeight: 38,
+              opacity: canSubmit && !saving ? 1 : 0.55,
+              cursor: canSubmit && !saving ? "pointer" : "not-allowed",
               ...(canSubmit ? {} : { background: "rgba(36,60,81,0.08)", color: "var(--text-muted)", boxShadow: "none" }),
-            }}>
-            Mark as Signed
+            }}
+          >
+            {saving ? "Saving..." : "Mark as Signed"}
           </button>
         </div>
       </div>
@@ -465,7 +579,7 @@ export default function DealDetail() {
   const [showLinksEditor, setShowLinksEditor] = useState(false);
   const role = useUserRole();
   useRuntimeDataVersion();
-  const takeActionLabel = role === "franchisee" ? "Request from Reimagine" : "Take Action";
+  const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
   type ActionRequest = {
     typeKey: string;
     typeLabel: string;
@@ -504,11 +618,11 @@ export default function DealDetail() {
     }
   };
 
-  const persistStatusChange = async (nextStatus: DealStatusNew) => {
+  const persistStatusChange = async (nextStatus: DealStatusNew, overrides: Partial<DealMutationInput> = {}) => {
     const previousStatus = status;
     setStatus(nextStatus);
     try {
-      await persistDealChanges({ status: nextStatus });
+      await persistDealChanges({ ...overrides, status: nextStatus });
     } catch (error) {
       setStatus(previousStatus);
       toast.error("Unable to save deal status", {
@@ -518,14 +632,54 @@ export default function DealDetail() {
     }
   };
 
-  const handleSignedConfirm = async () => {
-    if (!pendingStatus) return;
+  const handleSaveDealDocuments = async (documents: DealDocuments) => {
     try {
-      await persistStatusChange(pendingStatus);
+      await persistDealChanges({ documents });
+      toast.success("Deal documents updated");
+      setShowDocsModal(false);
+    } catch (error) {
+      toast.error("Unable to save deal documents", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      throw error;
+    }
+  };
+
+  const handleSignedConfirm = async (values: SignedCompletionValues) => {
+    if (!pendingStatus || !deal) return;
+
+    const nextDocuments: DealDocuments = {
+      ...deal.documents,
+      signedLOI: values.signedLOI,
+      signedLease: values.signedLease,
+    };
+
+    try {
+      const signedSite = dealSites.find((site) => site.id === values.selectedProperty);
+      if (signedSite) {
+        await updateSite(signedSite.id, {
+          ...siteToMutationInput(signedSite),
+          stage: "Closed",
+          loiUrl: values.signedLOI,
+          leaseUrl: values.signedLease,
+          leaseTerm: values.leaseTerm || signedSite.leaseTerm,
+          commencementDate: values.commencementDate || signedSite.loiTerms.commencementDate,
+          baseRent: values.rent || signedSite.loiTerms.baseRent,
+          tiAllowance: values.tiAllowance || signedSite.loiTerms.tiAllowance,
+        });
+      }
+
+      await persistStatusChange(pendingStatus, {
+        documents: nextDocuments,
+        dateLeaseSigned: deal.dateLeaseSigned ?? new Date().toISOString().slice(0, 10),
+      });
+      toast.success("Deal marked as signed");
       setShowSignedModal(false);
       setPendingStatus(null);
-    } catch {
-      // Toast is shown in persistStatusChange.
+    } catch (error) {
+      toast.error("Unable to mark deal as signed", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
     }
   };
 
@@ -551,7 +705,7 @@ export default function DealDetail() {
       if (!deal) throw new Error("Deal not found.");
       await createDealActionItem({
         dealId: deal.id,
-        audience: role === "franchisee" ? "internal" : "franchisee",
+        audience: role === "deal" ? "internal" : "franchisee",
         title: data.actionTypeLabel,
         body: noteBody,
       });
@@ -672,6 +826,7 @@ export default function DealDetail() {
       {/* Signed Modal */}
       {showSignedModal && (
         <SignedCompletionModal
+          deal={deal}
           onClose={() => { setShowSignedModal(false); setPendingStatus(null); }}
           onConfirm={handleSignedConfirm}
           sites={signedSiteOptions}
@@ -679,54 +834,14 @@ export default function DealDetail() {
       )}
 
       {/* Documents Modal */}
-      {showDocsModal && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowDocsModal(false)} />
-          <div style={{ position: "relative", background: "hsl(var(--background))", borderRadius: 16, padding: 0, width: "100%", maxWidth: 560, maxHeight: "80vh", overflow: "auto", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)" }}>
-            <div className="flex items-center justify-between" style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-divider)" }}>
-              <div className="flex items-center gap-2">
-                <FolderOpen className="w-4 h-4" style={{ color: "#E18739" }} />
-                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>Deal Documents</span>
-              </div>
-              <button onClick={() => setShowDocsModal(false)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                <X className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
-              </button>
-            </div>
-            <div style={{ padding: "16px 24px 24px" }}>
-              {DOC_GROUPS.map((group) => (
-                <div key={group.label} style={{ marginBottom: 20 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-muted)", textTransform: "uppercase" }}>{group.label}</span>
-                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {group.docs.map((doc) => {
-                      const has = !!deal.documents[doc.key];
-                      return (
-                        <div key={doc.key} className="flex items-center justify-between" style={{
-                          padding: "10px 14px", borderRadius: 10,
-                          background: has ? "rgba(5,150,105,0.04)" : "rgba(153,27,27,0.03)",
-                          border: has ? "1px solid rgba(5,150,105,0.12)" : "1px solid rgba(153,27,27,0.08)",
-                        }}>
-                          <div className="flex items-center gap-3">
-                            <div style={{
-                              width: 24, height: 24, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                              background: has ? "rgba(5,150,105,0.12)" : "rgba(153,27,27,0.08)",
-                            }}>
-                              {has ? <Check className="w-3 h-3" style={{ color: "#059669" }} /> : <X className="w-3 h-3" style={{ color: "#991b1b" }} />}
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>{doc.label}</span>
-                          </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: has ? "#059669" : "#991b1b" }}>
-                            {has ? "Uploaded" : "Missing"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <DealDocumentsManagerModal
+        open={showDocsModal}
+        onClose={() => setShowDocsModal(false)}
+        documents={deal.documents}
+        editable={role === "admin"}
+        onSave={handleSaveDealDocuments}
+        dealId={deal.id}
+      />
 
       {/* Header Band */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-3" style={{ marginBottom: 0 }}>
@@ -1057,11 +1172,29 @@ export default function DealDetail() {
                       Legal & Business
                     </span>
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#065f46" }}>
-                    {Object.values(deal.documents).filter(Boolean).length} of {ALL_DOC_KEYS.length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#065f46" }}>
+                      {Object.values(deal.documents).filter(Boolean).length} of {ALL_DOC_KEYS.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDocsModal(true)}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--text-orange-ui)",
+                        background: "rgba(225,135,57,0.08)",
+                        border: "1px solid rgba(225,135,57,0.16)",
+                        borderRadius: 999,
+                        padding: "5px 10px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {role === "admin" ? "Manage" : "View"}
+                    </button>
+                  </div>
                 </div>
-                {DOC_GROUPS.map((group) => (
+                {DEAL_DOCUMENT_GROUPS.map((group) => (
                   <div key={group.label}>
                     <div style={{ padding: "8px 20px 4px" }}>
                       <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-faint)" }}>{group.label}</span>

@@ -1,7 +1,9 @@
 import { DealRecord } from "@/data/dealsData";
 import { generateDealSummary } from "@/lib/dealIntelligence";
+import { getLatestAiInsight, generateAiInsight, submitAiFeedback } from "@/application/ai/aiService";
+import type { AiInsight } from "@/application/ai/types";
 import { RefreshCw, Clock } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
 
 function highlightEntities(text: string, deal: DealRecord): React.ReactNode[] {
@@ -35,17 +37,55 @@ function highlightEntities(text: string, deal: DealRecord): React.ReactNode[] {
 }
 
 export function AIDealSummary({ deal }: { deal: DealRecord }) {
-  const [refreshKey, setRefreshKey] = useState(0);
+  const fallbackSummary = useMemo(() => generateDealSummary(deal), [deal]);
+  const [insight, setInsight] = useState<AiInsight | null>(null);
+  const [loading, setLoading] = useState(false);
   const [spinning, setSpinning] = useState(false);
-  const summary = useMemo(() => {
-    void refreshKey;
-    return generateDealSummary(deal);
-  }, [deal, refreshKey]);
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
 
-  const handleRefresh = () => {
+  useEffect(() => {
+    let cancelled = false;
+    setInsight(null);
+    setFeedback(null);
+
+    getLatestAiInsight("deal_summary", deal.id)
+      .then((result) => {
+        if (!cancelled) setInsight(result);
+      })
+      .catch(() => {
+        if (!cancelled) setInsight(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deal.id]);
+
+  const summary = insight?.output.summary || fallbackSummary;
+
+  const handleRefresh = async () => {
     setSpinning(true);
-    setRefreshKey((k) => k + 1);
-    setTimeout(() => setSpinning(false), 600);
+    setLoading(true);
+    try {
+      const result = await generateAiInsight({ type: "deal_summary", entityId: deal.id, force: true });
+      setInsight(result);
+      setFeedback(null);
+    } catch {
+      setInsight(null);
+    } finally {
+      setLoading(false);
+      window.setTimeout(() => setSpinning(false), 600);
+    }
+  };
+
+  const handleFeedback = async (rating: "up" | "down") => {
+    setFeedback(rating);
+    if (!insight) return;
+    try {
+      await submitAiFeedback(insight.id, rating);
+    } catch {
+      // Feedback is non-blocking; keep the UI state even if persistence fails.
+    }
   };
 
   return (
@@ -68,11 +108,15 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
           }}>
             <img src={aiNudgeIcon} alt="" style={{ width: 12, height: 12 }} /> AI Summary
           </span>
+          {!insight && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>template fallback</span>
+          )}
         </div>
         <button
           onClick={handleRefresh}
+          disabled={loading}
           title="Regenerate summary"
-          className="p-[4px] rounded-[8px] hover:bg-white/60 transition-colors"
+          className="p-[4px] rounded-[8px] hover:bg-white/60 transition-colors disabled:opacity-60"
           style={{ color: "var(--text-muted)" }}
           onMouseEnter={(e) => { e.currentTarget.style.color = "#E18739"; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
@@ -94,12 +138,14 @@ export function AIDealSummary({ deal }: { deal: DealRecord }) {
       }}>
         <div className="flex items-center gap-[4px]">
           <Clock className="w-[12px] h-[12px]" style={{ color: "var(--text-muted)" }} />
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Updated {new Date().toLocaleDateString()}</span>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            {insight ? `Generated ${new Date(insight.createdAt).toLocaleDateString()}` : `Updated ${new Date().toLocaleDateString()}`}
+          </span>
         </div>
         <div className="flex items-center gap-[4px]">
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Was this helpful?</span>
-          <button className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: "var(--text-muted)", padding: "0 4px" }}>👍</button>
-          <button className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: "var(--text-muted)", padding: "0 4px" }}>👎</button>
+          <button onClick={() => handleFeedback("up")} className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: feedback === "up" ? "#E18739" : "var(--text-muted)", padding: "0 4px" }}>👍</button>
+          <button onClick={() => handleFeedback("down")} className="hover:text-[#E18739] transition-colors" style={{ fontSize: 12, color: feedback === "down" ? "#E18739" : "var(--text-muted)", padding: "0 4px" }}>👎</button>
         </div>
       </div>
     </div>

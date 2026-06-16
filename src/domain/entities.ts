@@ -1,4 +1,6 @@
-export type UserRole = "admin" | "franchisor" | "franchisee";
+export type UserRole = "admin" | "brand" | "deal";
+
+export type LegacyUserRole = "franchisor" | "franchisee";
 
 export type DealStage =
   | "Kick Off"

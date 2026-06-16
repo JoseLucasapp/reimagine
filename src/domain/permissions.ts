@@ -2,19 +2,27 @@ import type { UserRole } from "./entities";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
-  franchisor: "Brand Level",
-  franchisee: "Deal Level",
+  brand: "Brand Level",
+  deal: "Deal Level",
 };
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
-  admin: ["/", "/brands", "/bizdev", "/deals", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
-  franchisor: ["/brands", "/deals", "/settings", "/tour-book-generator"],
-  franchisee: ["/deals", "/settings"],
+  admin: ["/", "/brand", "/deal", "/brands", "/bizdev", "/deals", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
+  brand: ["/", "/brand", "/brands", "/deals", "/map", "/space-requirements", "/settings", "/tour-book-generator"],
+  deal: ["/", "/deal", "/deals", "/map", "/settings", "/tour-book-generator"],
 };
 
 export function parseUserRole(value: string | null | undefined): UserRole {
-  if (value === "admin" || value === "franchisor" || value === "franchisee") return value;
+  if (value === "admin" || value === "brand" || value === "deal") return value;
+  if (value === "franchisor") return "brand";
+  if (value === "franchisee") return "deal";
   return "admin";
+}
+
+export function roleToHomeRoute(role: UserRole): string {
+  if (role === "brand") return "/brand";
+  if (role === "deal") return "/deal";
+  return "/";
 }
 
 export function canSeeRoute(role: UserRole, path: string): boolean {
@@ -35,5 +43,5 @@ export function canEditDeal(role: UserRole): boolean {
 }
 
 export function canUseInternalTakeAction(role: UserRole): boolean {
-  return role !== "franchisee";
+  return role !== "deal";
 }

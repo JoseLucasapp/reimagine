@@ -57,8 +57,8 @@ interface ActionSite {
 
 const ROLE_COLORS: Record<TeamMember["role"], string> = {
   Admin: "#E18739",
-  Franchisor: "#3b82f6",
-  Franchisee: "#059669",
+  "Brand Level": "#3b82f6",
+  "Deal Level": "#059669",
 };
 
 const MAX_CHARS = 500;
@@ -79,7 +79,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const role = useUserRole();
   const navigate = useNavigate();
-  const isFranchisee = role === "franchisee";
+  const isDealLevel = role === "deal";
 
   const allSelected = teamMembers.length > 0 && selectedTeam.length === teamMembers.length;
   const allSitesSelected = sites.length > 0 && tourSites.length === sites.length;
@@ -127,7 +127,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
       ? customLabel.trim() || "Custom Action"
       : ACTION_TYPES.find((a) => a.key === actionType)?.label ?? "";
 
-  const hasRecipients = isFranchisee || selectedTeam.length > 0;
+  const hasRecipients = isDealLevel || selectedTeam.length > 0;
   const canSend =
     !!actionType &&
     hasRecipients &&
@@ -150,7 +150,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
       );
       return;
     }
-    const recipientNames = isFranchisee
+    const recipientNames = isDealLevel
       ? ["Reimagine Team"]
       : teamMembers.filter((m) => selectedTeam.includes(m.id)).map((m) => m.name);
     try {
@@ -484,7 +484,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
 
           {/* Recipients */}
           <div style={{ marginBottom: 24 }}>
-            {isFranchisee ? (
+            {isDealLevel ? (
               <>
                 <span className="section-label" style={{ display: "block", marginBottom: 8 }}>
                   Send to

@@ -3,8 +3,12 @@
 -- WARNING: this resets the application tables/types below before recreating them.
 -- It does not delete auth.users.
 
+create extension if not exists "pgcrypto";
+
 drop trigger if exists on_auth_user_created on auth.users;
 
+drop table if exists public.ai_feedback cascade;
+drop table if exists public.ai_insights cascade;
 drop table if exists public.brand_action_items cascade;
 drop table if exists public.take_action_items cascade;
 drop table if exists public.tour_books cascade;
@@ -19,8 +23,15 @@ drop table if exists public.brands cascade;
 
 drop function if exists public.handle_new_user() cascade;
 drop function if exists public.current_user_role() cascade;
+drop function if exists public.current_profile_brand_id() cascade;
+drop function if exists public.current_profile_deal_id() cascade;
+drop function if exists public.current_user_can_access_brand(uuid) cascade;
+drop function if exists public.current_user_can_access_deal(uuid) cascade;
+drop function if exists public.current_user_can_access_site(uuid) cascade;
+drop function if exists public.normalize_user_role(text) cascade;
 drop function if exists public.set_updated_at() cascade;
 
+drop type if exists public.ai_insight_type cascade;
 drop type if exists public.second_floor_requirement cascade;
 drop type if exists public.gas_requirement cascade;
 drop type if exists public.site_stage cascade;
@@ -31,9 +42,7 @@ drop type if exists public.prospect_status cascade;
 drop type if exists public.deal_stage cascade;
 drop type if exists public.user_role cascade;
 
-create extension if not exists "pgcrypto";
-
-create type public.user_role as enum ('admin', 'franchisor', 'franchisee');
+create type public.user_role as enum ('admin', 'brand', 'deal');
 create type public.deal_stage as enum (
   'Kick Off',
   'Market Study',
@@ -51,6 +60,20 @@ create type public.take_action_status as enum ('open', 'in_progress', 'resolved'
 create type public.site_stage as enum ('Prospecting', 'LOI', 'Lease', 'Open', 'Closed');
 create type public.gas_requirement as enum ('Yes', 'No', 'Preferred');
 create type public.second_floor_requirement as enum ('Allowed', 'Maybe', 'Not Allowed');
+create type public.ai_insight_type as enum ('deal_summary', 'suggested_action', 'property_insight', 'dashboard_nudge', 'bizdev_follow_up', 'tour_book_draft');
+
+create or replace function public.normalize_user_role(value text)
+returns public.user_role
+language sql
+immutable
+as $$
+  select case
+    when lower(coalesce(value, '')) in ('admin') then 'admin'::public.user_role
+    when lower(coalesce(value, '')) in ('brand', 'franchisor') then 'brand'::public.user_role
+    when lower(coalesce(value, '')) in ('deal', 'franchisee') then 'deal'::public.user_role
+    else 'deal'::public.user_role
+  end;
+$$;
 
 create table public.brands (
   id uuid primary key default gen_random_uuid(),
@@ -58,16 +81,6 @@ create table public.brands (
   category text not null,
   logo_color text not null default '#E18739',
   corporate_link text not null default '#',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  full_name text,
-  username text unique,
-  role public.user_role not null default 'franchisee',
-  brand_id uuid references public.brands(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -96,6 +109,17 @@ create table public.deals (
   is_one_off boolean not null default false,
   corporate boolean not null default false,
   corporate_comments text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  username text unique,
+  role public.user_role not null default 'deal',
+  brand_id uuid references public.brands(id) on delete set null,
+  deal_id uuid references public.deals(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -247,8 +271,34 @@ create table public.brand_action_items (
   updated_at timestamptz not null default now()
 );
 
+create table public.ai_insights (
+  id uuid primary key default gen_random_uuid(),
+  insight_type public.ai_insight_type not null,
+  entity_type text not null check (entity_type in ('brand', 'deal', 'site')),
+  entity_id uuid not null,
+  prompt_version text not null,
+  input_hash text not null,
+  output jsonb not null,
+  model text,
+  status text not null default 'completed' check (status in ('completed', 'failed')),
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table public.ai_feedback (
+  id uuid primary key default gen_random_uuid(),
+  insight_id uuid not null references public.ai_insights(id) on delete cascade,
+  user_id uuid references public.profiles(id) default auth.uid(),
+  rating text not null check (rating in ('up', 'down')),
+  comment text,
+  created_at timestamptz not null default now()
+);
+
 create index brands_name_idx on public.brands (name);
 create index profiles_role_idx on public.profiles (role);
+create index profiles_brand_id_idx on public.profiles (brand_id);
+create index profiles_deal_id_idx on public.profiles (deal_id);
 create index deals_brand_id_idx on public.deals (brand_id);
 create index deals_stage_idx on public.deals (stage);
 create index sites_deal_id_idx on public.sites (deal_id);
@@ -256,6 +306,7 @@ create index prospects_status_idx on public.prospects (status);
 create index space_requirements_brand_id_idx on public.space_requirements (brand_id);
 create index take_action_items_deal_id_idx on public.take_action_items (deal_id);
 create index brand_action_items_brand_id_idx on public.brand_action_items (brand_id);
+create index ai_insights_lookup_idx on public.ai_insights (insight_type, entity_type, entity_id, created_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -276,6 +327,7 @@ create trigger space_requirements_set_updated_at before update on public.space_r
 create trigger tour_books_set_updated_at before update on public.tour_books for each row execute function public.set_updated_at();
 create trigger take_action_items_set_updated_at before update on public.take_action_items for each row execute function public.set_updated_at();
 create trigger brand_action_items_set_updated_at before update on public.brand_action_items for each row execute function public.set_updated_at();
+create trigger ai_insights_set_updated_at before update on public.ai_insights for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -289,7 +341,7 @@ begin
     new.id,
     nullif(new.raw_user_meta_data ->> 'full_name', ''),
     nullif(new.raw_user_meta_data ->> 'username', ''),
-    coalesce(nullif(new.raw_user_meta_data ->> 'role', '')::public.user_role, 'franchisee'::public.user_role)
+    public.normalize_user_role(new.raw_user_meta_data ->> 'role')
   )
   on conflict (id) do update set
     full_name = excluded.full_name,
@@ -316,6 +368,34 @@ alter table public.space_requirements enable row level security;
 alter table public.tour_books enable row level security;
 alter table public.take_action_items enable row level security;
 alter table public.brand_action_items enable row level security;
+alter table public.ai_insights enable row level security;
+alter table public.ai_feedback enable row level security;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'deal-documents',
+  'deal-documents',
+  true,
+  26214400,
+  array[
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'text/plain',
+    'text/csv'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 create or replace function public.current_user_role()
 returns public.user_role
@@ -323,39 +403,135 @@ language sql
 security definer
 stable
 as $$
-  select coalesce((select role from public.profiles where id = auth.uid()), 'franchisee'::public.user_role);
+  select coalesce((select role from public.profiles where id = auth.uid()), 'deal'::public.user_role);
 $$;
 
-create policy "authenticated can read brands" on public.brands for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage brands" on public.brands for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create or replace function public.current_profile_brand_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select brand_id from public.profiles where id = auth.uid();
+$$;
 
-create policy "users can read own profile or admins can read all" on public.profiles for select using (id = auth.uid() or public.current_user_role() = 'admin');
-create policy "users can update own profile" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
-create policy "admins can manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create or replace function public.current_profile_deal_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select deal_id from public.profiles where id = auth.uid();
+$$;
 
-create policy "authenticated can read deals" on public.deals for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage deals" on public.deals for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create or replace function public.current_user_can_access_brand(brand_uuid uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select case
+    when auth.role() <> 'authenticated' then false
+    when public.current_user_role() = 'admin' then true
+    when public.current_user_role() = 'brand' then brand_uuid = public.current_profile_brand_id()
+    when public.current_user_role() = 'deal' then exists (
+      select 1 from public.deals d
+      where d.id = public.current_profile_deal_id()
+        and d.brand_id = brand_uuid
+    ) or brand_uuid = public.current_profile_brand_id()
+    else false
+  end;
+$$;
 
-create policy "authenticated can read sites" on public.sites for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage sites" on public.sites for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create or replace function public.current_user_can_access_deal(deal_uuid uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select case
+    when auth.role() <> 'authenticated' then false
+    when public.current_user_role() = 'admin' then true
+    when public.current_user_role() = 'brand' then exists (
+      select 1 from public.deals d
+      where d.id = deal_uuid
+        and d.brand_id = public.current_profile_brand_id()
+    )
+    when public.current_user_role() = 'deal' then deal_uuid = public.current_profile_deal_id()
+    else false
+  end;
+$$;
 
-create policy "authenticated can read deal documents" on public.deal_documents for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage deal documents" on public.deal_documents for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
-create policy "authenticated can read deal notes" on public.deal_notes for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage deal notes" on public.deal_notes for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
-create policy "authenticated can read prospects" on public.prospects for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage prospects" on public.prospects for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create or replace function public.current_user_can_access_site(site_uuid uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.sites s
+    where s.id = site_uuid
+      and public.current_user_can_access_deal(s.deal_id)
+  );
+$$;
 
-create policy "authenticated can read space requirements" on public.space_requirements for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage space requirements" on public.space_requirements for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "brands select by platform scope" on public.brands for select using (public.current_user_can_access_brand(id));
+create policy "admins manage brands" on public.brands for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
-create policy "authenticated can read tour books" on public.tour_books for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage tour books" on public.tour_books for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "profiles select own or admin" on public.profiles for select using (id = auth.uid() or public.current_user_role() = 'admin');
+create policy "profiles update own" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
+create policy "admins manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
-create policy "authenticated can read take action items" on public.take_action_items for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage take action items" on public.take_action_items for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "deals select by platform scope" on public.deals for select using (public.current_user_can_access_deal(id));
+create policy "admins manage deals" on public.deals for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
-create policy "authenticated can read brand action items" on public.brand_action_items for select using (auth.role() = 'authenticated');
-create policy "authenticated can manage brand action items" on public.brand_action_items for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "sites select by deal scope" on public.sites for select using (public.current_user_can_access_deal(deal_id));
+create policy "admins manage sites" on public.sites for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "deal documents select by deal scope" on public.deal_documents for select using (public.current_user_can_access_deal(deal_id));
+create policy "admins manage deal documents" on public.deal_documents for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+drop policy if exists "deal documents storage public read" on storage.objects;
+drop policy if exists "admins upload deal documents" on storage.objects;
+drop policy if exists "admins update deal documents" on storage.objects;
+drop policy if exists "admins delete deal documents" on storage.objects;
+create policy "deal documents storage public read" on storage.objects for select using (bucket_id = 'deal-documents');
+create policy "admins upload deal documents" on storage.objects for insert with check (bucket_id = 'deal-documents' and public.current_user_role() = 'admin');
+create policy "admins update deal documents" on storage.objects for update using (bucket_id = 'deal-documents' and public.current_user_role() = 'admin') with check (bucket_id = 'deal-documents' and public.current_user_role() = 'admin');
+create policy "admins delete deal documents" on storage.objects for delete using (bucket_id = 'deal-documents' and public.current_user_role() = 'admin');
+
+create policy "deal notes select by deal scope" on public.deal_notes for select using (public.current_user_can_access_deal(deal_id));
+create policy "deal notes insert by deal scope" on public.deal_notes for insert with check (public.current_user_can_access_deal(deal_id));
+create policy "admins manage deal notes" on public.deal_notes for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "prospects admin select" on public.prospects for select using (public.current_user_role() = 'admin');
+create policy "admins manage prospects" on public.prospects for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "space requirements select by brand scope" on public.space_requirements for select using (public.current_user_can_access_brand(brand_id));
+create policy "admins manage space requirements" on public.space_requirements for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "tour books select by deal scope" on public.tour_books for select using (public.current_user_can_access_deal(deal_id));
+create policy "tour books insert by deal scope" on public.tour_books for insert with check (public.current_user_can_access_deal(deal_id));
+create policy "admins manage tour books" on public.tour_books for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "take action select by deal scope" on public.take_action_items for select using (public.current_user_can_access_deal(deal_id));
+create policy "take action insert by deal scope" on public.take_action_items for insert with check (public.current_user_can_access_deal(deal_id));
+create policy "admins manage take action" on public.take_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "brand action select by brand scope" on public.brand_action_items for select using (public.current_user_can_access_brand(brand_id));
+create policy "brand action insert by brand scope" on public.brand_action_items for insert with check (public.current_user_can_access_brand(brand_id));
+create policy "admins manage brand action" on public.brand_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "ai insights select by entity scope" on public.ai_insights for select using (
+  created_by = auth.uid()
+  or public.current_user_role() = 'admin'
+  or (entity_type = 'brand' and public.current_user_can_access_brand(entity_id))
+  or (entity_type = 'deal' and public.current_user_can_access_deal(entity_id))
+  or (entity_type = 'site' and public.current_user_can_access_site(entity_id))
+);
+create policy "service or admin manages ai insights" on public.ai_insights for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+create policy "ai feedback select own or admin" on public.ai_feedback for select using (user_id = auth.uid() or public.current_user_role() = 'admin');
+create policy "ai feedback upsert own" on public.ai_feedback for all using (user_id = auth.uid()) with check (user_id = auth.uid());

@@ -89,7 +89,7 @@ export async function signUpWithSupabase(input: {
         data: {
           full_name: input.fullName.trim(),
           username: input.username?.trim() ?? null,
-          role: "franchisee",
+          role: "deal",
         },
       } satisfies JsonObject,
     });

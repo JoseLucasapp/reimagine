@@ -22,7 +22,7 @@ const DEFAULT_ROLE: UserRole = "admin";
 // browser sessions that were saved as Deal Level from locking the user out
 // after a deployment.
 const DEFAULT_ROLE_VERSION_KEY = "rcre_role_default_version";
-const DEFAULT_ROLE_VERSION = "admin-default-2026-06-11";
+const DEFAULT_ROLE_VERSION = "brand-deal-platforms-2026-06-15";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

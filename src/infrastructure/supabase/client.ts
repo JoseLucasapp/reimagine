@@ -126,6 +126,28 @@ export async function supabaseRequest<T>(path: string, options: SupabaseRequestO
   return payload as T;
 }
 
+
+export async function supabaseFunctionRequest<T>(functionName: string, body: JsonObject, accessToken?: string | null): Promise<T> {
+  const baseUrl = getBaseUrl();
+  const anonKey = getAnonKey();
+  const response = await fetch(`${baseUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken ?? anonKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await parseResponse(response);
+
+  if (!response.ok) {
+    throw new SupabaseHttpError(`Supabase function ${functionName} failed with status ${response.status}.`, response.status, payload);
+  }
+
+  return payload as T;
+}
+
 export function createSelectQuery(columns = "*"): URLSearchParams {
   const query = new URLSearchParams();
   query.set("select", columns);

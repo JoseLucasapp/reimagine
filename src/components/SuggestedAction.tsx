@@ -1,7 +1,8 @@
 import { DealRecord } from "@/data/dealsData";
 import { generateSuggestedAction } from "@/lib/dealIntelligence";
+import { getLatestAiInsight } from "@/application/ai/aiService";
 import { X } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import aiNudgeIcon from "@/assets/ai-nudge-icon.png";
 
 export function SuggestedAction({ deal }: { deal: DealRecord }) {
@@ -12,8 +13,28 @@ export function SuggestedAction({ deal }: { deal: DealRecord }) {
     const expiry = new Date(stored).getTime();
     return Date.now() < expiry;
   });
+  const [aiAction, setAiAction] = useState<string | null>(null);
 
-  const action = useMemo(() => generateSuggestedAction(deal), [deal]);
+  const fallbackAction = useMemo(() => generateSuggestedAction(deal), [deal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAiAction(null);
+
+    getLatestAiInsight("suggested_action", deal.id)
+      .then((insight) => {
+        if (!cancelled) setAiAction(insight?.output.action || insight?.output.summary || null);
+      })
+      .catch(() => {
+        if (!cancelled) setAiAction(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deal.id]);
+
+  const action = aiAction || fallbackAction;
 
   if (dismissed) return null;
 

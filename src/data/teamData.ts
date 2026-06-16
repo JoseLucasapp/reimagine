@@ -1,6 +1,6 @@
 import type { UserRole } from "@/domain/entities";
 
-export type TeamMemberRole = "Admin" | "Franchisor" | "Franchisee";
+export type TeamMemberRole = "Admin" | "Brand Level" | "Deal Level";
 
 export interface TeamMember {
   id: string;
@@ -13,8 +13,8 @@ export const teamMembers: TeamMember[] = [];
 
 const roleLabels: Record<UserRole, TeamMemberRole> = {
   admin: "Admin",
-  franchisor: "Franchisor",
-  franchisee: "Franchisee",
+  brand: "Brand Level",
+  deal: "Deal Level",
 };
 
 function initialsForName(name: string): string {

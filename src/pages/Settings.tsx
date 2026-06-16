@@ -18,14 +18,14 @@ const ROLE_OPTIONS: RoleOption[] = [
       "Full access to every brand, deal, and broker file. Can edit all fields, view commissions, and manage the team.",
   },
   {
-    key: "franchisor",
+    key: "brand",
     label: "Brand Level",
     icon: Building2,
     description:
       "Sees their own brand and its deals. Can request actions from Reimagine, upload files, and view (but not edit) most deal details. Financials hidden.",
   },
   {
-    key: "franchisee",
+    key: "deal",
     label: "Deal Level",
     icon: Store,
     description:
