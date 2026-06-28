@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, MoreHorizontal, ExternalLink, ChevronDown, X, Info, Download,
 } from "lucide-react";
@@ -22,6 +22,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { createProspect, updateProspect } from "@/application/data/runtimeMutations";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 type TabKey = "all" | "active" | "inactive" | "prospects";
 const LINK_DEFAULT = "https://";
@@ -72,6 +73,7 @@ function parseProspectCsv(csv: string): Omit<BizDevRecord, "id">[] {
 }
 
 export default function BizDevPage() {
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [tab, setTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
@@ -90,6 +92,11 @@ export default function BizDevPage() {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("rcre_bizdev_banner_dismissed") === "1";
   });
+
+  useEffect(() => {
+    setRecords([...bizDevRecords]);
+  }, [runtimeDataVersion]);
+
   const dismissBanner = () => {
     sessionStorage.setItem("rcre_bizdev_banner_dismissed", "1");
     setBannerDismissed(true);

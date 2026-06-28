@@ -1,15 +1,22 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { deals, brands, getAllSites, getBrandById, getDealById, DealStage } from "@/data/mapRuntimeData";
 import { MapComponent } from "@/components/MapComponent";
 import { SiteCard } from "@/components/SiteCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DealStageBadge } from "@/components/DealStageBadge";
 import { List, Map as MapIcon } from "lucide-react";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 export default function FranchisorDashboard() {
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [brandFilter, setBrandFilter] = useState(brands[0]?.id || "all");
   const [highlightedSite, setHighlightedSite] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"map" | "list">("map");
+
+  useEffect(() => {
+    const selectedBrandExists = brands.some((brand) => brand.id === brandFilter);
+    if ((!selectedBrandExists || brandFilter === "all") && brands[0]?.id) setBrandFilter(brands[0].id);
+  }, [brandFilter, runtimeDataVersion]);
 
   const sites = useMemo(() => {
     return getAllSites().filter((s) => {
@@ -18,9 +25,9 @@ export default function FranchisorDashboard() {
       if (brandFilter !== "all" && deal.brandId !== brandFilter) return false;
       return true;
     });
-  }, [brandFilter]);
+  }, [brandFilter, runtimeDataVersion]);
 
-  const brand = getBrandById(brandFilter);
+  const brand = useMemo(() => getBrandById(brandFilter), [brandFilter, runtimeDataVersion]);
 
   return (
     <div className="animate-fade-in">

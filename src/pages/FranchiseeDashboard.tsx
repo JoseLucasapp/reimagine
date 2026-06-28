@@ -1,16 +1,23 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { deals, getBrandById, getDealById } from "@/data/mapRuntimeData";
 import { MapComponent } from "@/components/MapComponent";
 import { SiteCard } from "@/components/SiteCard";
 import { DealStageBadge } from "@/components/DealStageBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 export default function FranchiseeDashboard() {
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [selectedDealId, setSelectedDealId] = useState(deals[0]?.id || "");
   const [highlightedSite, setHighlightedSite] = useState<string | null>(null);
 
-  const deal = getDealById(selectedDealId);
-  const brand = deal ? getBrandById(deal.brandId) : null;
+  useEffect(() => {
+    const selectedDealExists = deals.some((deal) => deal.id === selectedDealId);
+    if ((!selectedDealId || !selectedDealExists) && deals[0]?.id) setSelectedDealId(deals[0].id);
+  }, [selectedDealId, runtimeDataVersion]);
+
+  const deal = useMemo(() => getDealById(selectedDealId), [selectedDealId, runtimeDataVersion]);
+  const brand = useMemo(() => deal ? getBrandById(deal.brandId) : null, [deal, runtimeDataVersion]);
   const sites = deal?.sites ?? [];
 
   return (

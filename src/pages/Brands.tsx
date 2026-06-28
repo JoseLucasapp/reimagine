@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { brandDetails as baseBrandDetails, brandCategories as baseBrandCategories, type BrandDetail } from "@/data/brandsData";
-import { dealRecords, getDealBrandById, dealBrands } from "@/data/dealsData";
+import { dealRecords, dealBrands, type DealRecord } from "@/data/dealsData";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -100,6 +100,31 @@ const STATUS_BAR_COLORS: Record<string, string> = {
 };
 
 const LINK_DEFAULT = "https://";
+
+function parseDealDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function monthEnd(year: number, month: number): Date {
+  const end = new Date(year, month + 1, 0);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function wasDealActiveAtMonthEnd(deal: DealRecord, endOfMonth: Date): boolean {
+  if (deal.isOneOff || deal.status === "On Hold") return false;
+  const introDate = parseDealDate(deal.dateIntroCall);
+  if (introDate && introDate > endOfMonth) return false;
+  if (!introDate) {
+    const now = new Date();
+    if (endOfMonth.getFullYear() !== now.getFullYear() || endOfMonth.getMonth() !== now.getMonth()) return false;
+  }
+
+  const signedDate = parseDealDate(deal.dateLeaseSigned);
+  return !signedDate || signedDate > endOfMonth;
+}
 
 export default function BrandsPage() {
   const navigate = useNavigate();
@@ -280,28 +305,24 @@ export default function BrandsPage() {
       });
       return row;
     });
-  }, [filtered]);
+  }, [filtered, runtimeDataVersion]);
 
   // Chart data — line chart: deals active over last 6 months per brand
   const lineChartData = useMemo(() => {
     const now = new Date();
-    const months: { key: string; label: string }[] = [];
+    const months: { end: Date; label: string }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleString("en-US", { month: "short" }) });
+      months.push({ end: monthEnd(d.getFullYear(), d.getMonth()), label: d.toLocaleString("en-US", { month: "short" }) });
     }
-    return months.map((m, idx) => {
+    return months.map((m) => {
       const row: Record<string, string | number> = { month: m.label };
       filtered.forEach((b) => {
-        const baseDeals = dealRecords.filter((d) => d.brandId === b.id && !d.isOneOff).length;
-        // Deterministic pseudo-trend: baseline ramps up to current count
-        const factor = 0.4 + (idx / 5) * 0.6;
-        const jitter = ((b.id.charCodeAt(0) + idx) % 3) - 1;
-        row[b.name] = Math.max(0, Math.round(baseDeals * factor) + jitter);
+        row[b.name] = dealRecords.filter((deal) => deal.brandId === b.id && wasDealActiveAtMonthEnd(deal, m.end)).length;
       });
       return row;
     });
-  }, [filtered]);
+  }, [filtered, runtimeDataVersion]);
 
   const formatCurrency = (val: number) => {
     if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;

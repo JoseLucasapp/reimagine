@@ -8,6 +8,7 @@ import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
 import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 const STAGE_DOT_COLORS: Record<string, string> = {
   "Kick Off": "#E18739",
@@ -32,8 +33,12 @@ const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
 export default function BrandDeals() {
   const { brandId } = useParams();
   const navigate = useNavigate();
-  const brand = getDealBrandById(brandId || "");
-  const deals = getDealRecordsByBrand(brandId || "").filter((d) => !d.isOneOff);
+  const runtimeDataVersion = useRuntimeDataVersion();
+  const brand = useMemo(() => getDealBrandById(brandId || ""), [brandId, runtimeDataVersion]);
+  const deals = useMemo(
+    () => getDealRecordsByBrand(brandId || "").filter((d) => !d.isOneOff),
+    [brandId, runtimeDataVersion],
+  );
 
   // Subscribe to brand action store
   const items = useSyncExternalStore(

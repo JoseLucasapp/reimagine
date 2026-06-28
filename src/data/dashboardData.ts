@@ -33,10 +33,10 @@ export function getRecentActivity(): RecentActivity[] {
         location: `${deal.city}, ${deal.state}`,
         status: deal.status,
         lastNote: lastNote?.text || "",
-        date: lastNote?.date || deal.dateIntroCall || "2025-01-01",
+        date: lastNote?.date || deal.dateLeaseSigned || deal.dateIntroCall || "",
       };
     })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0))
     .slice(0, 10);
 }
 

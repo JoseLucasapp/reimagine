@@ -16,6 +16,7 @@ import { getAllSites, type Site } from "@/data/mapRuntimeData";
 import { getDealRecordById } from "@/data/dealsData";
 import { createSite as createRuntimeSite, createTourBook } from "@/application/data/runtimeMutations";
 import { buildAddressQuery, geocodeAddress, type GeocodeResult } from "@/lib/geocoding";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 /* ───────── TYPES ───────── */
 interface SiteData {
@@ -238,6 +239,7 @@ export function TourBookGenerator() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const dealIdParam = searchParams.get("deal");
+  const runtimeDataVersion = useRuntimeDataVersion();
   const selectedDeal = dealIdParam ? getDealRecordById(dealIdParam) : undefined;
   const [step, setStep] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(true);
@@ -268,6 +270,14 @@ export function TourBookGenerator() {
   const [mapNotes, setMapNotes] = useState("");
   const [flashSections, setFlashSections] = useState<Set<string>>(new Set());
   const [pulseField, setPulseField] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextSites = createInitialSites(dealIdParam);
+    setSites((currentSites) => {
+      const stillOnSelectedDeal = currentSites.every((site) => !dealIdParam || site.dealId === dealIdParam);
+      return currentSites.length === 0 || !stillOnSelectedDeal ? nextSites : currentSites;
+    });
+  }, [dealIdParam, runtimeDataVersion]);
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [zoomDropdownOpen, setZoomDropdownOpen] = useState(false);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);

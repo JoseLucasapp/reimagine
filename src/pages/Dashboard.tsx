@@ -624,7 +624,7 @@ export default function Dashboard() {
                       {activity.status}
                     </span>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      {new Date(activity.date).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
+                      {parseDashboardDate(activity.date)?.toLocaleDateString("en-US", { month: "numeric", day: "numeric" }) ?? "—"}
                     </span>
                   </div>
                 </div>

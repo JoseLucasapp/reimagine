@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   dealRecords, dealBrands, getDealBrandById, getUniqueBrokers, getUniqueStates,
@@ -21,7 +21,6 @@ import { useUserRole, canEditDeal, canViewFinancials } from "@/hooks/useUserRole
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
-import { MapComponent } from "@/components/MapComponent";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 type ViewMode = "table" | "kanban" | "map";
@@ -41,6 +40,7 @@ const DOCUMENT_FIELDS: { key: keyof DealDocuments; label: string }[] = [
 ];
 
 const LINK_DEFAULT = "https://";
+const LazyMapComponent = lazy(() => import("@/components/MapComponent").then((module) => ({ default: module.MapComponent })));
 
 interface DealsPageProps {
   brandFilter?: string;
@@ -290,14 +290,16 @@ function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (pa
 
   return (
     <div className="glass-card-static overflow-hidden" style={{ borderRadius: 14, padding: 0, height: 560 }}>
-      <MapComponent
-        sites={sites}
-        className="w-full h-full"
-        onSiteClick={(siteId) => {
-          const site = sites.find((item) => item.id === siteId);
-          if (site) navigate(`/deals/${site.dealId}`);
-        }}
-      />
+      <Suspense fallback={<div className="flex h-full items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>Loading map...</div>}>
+        <LazyMapComponent
+          sites={sites}
+          className="w-full h-full"
+          onSiteClick={(siteId) => {
+            const site = sites.find((item) => item.id === siteId);
+            if (site) navigate(`/deals/${site.dealId}`);
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

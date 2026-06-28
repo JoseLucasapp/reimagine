@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Download, Check, X, Pencil } from "lucide-react";
 import { spaceRequirements, SpaceRequirement } from "@/data/spaceReqData";
@@ -6,6 +6,7 @@ import { dealBrands } from "@/data/dealsData";
 import { cn } from "@/lib/utils";
 import { createSpaceRequirement, updateSpaceRequirement } from "@/application/data/runtimeMutations";
 import { toast } from "sonner";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 const columns: { key: keyof SpaceRequirement; label: string; width: string }[] = [
   { key: "spaceType", label: "Space Type", width: "w-28" },
@@ -26,10 +27,15 @@ const columns: { key: keyof SpaceRequirement; label: string; width: string }[] =
 
 export default function SpaceRequirementsPage() {
   const navigate = useNavigate();
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [data, setData] = useState<SpaceRequirement[]>(() => [...spaceRequirements]);
   const [editCell, setEditCell] = useState<{ rowId: string; col: keyof SpaceRequirement } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingAdd, setSavingAdd] = useState(false);
+
+  useEffect(() => {
+    setData([...spaceRequirements]);
+  }, [runtimeDataVersion]);
 
   const startEdit = (rowId: string, col: keyof SpaceRequirement, value: SpaceRequirement[keyof SpaceRequirement]) => { setEditCell({ rowId, col }); setEditValue(String(value)); };
   const saveEdit = useCallback(async () => {

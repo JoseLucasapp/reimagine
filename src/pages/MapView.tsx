@@ -6,10 +6,12 @@ import { SiteCard } from "@/components/SiteCard";
 import { DealStageBadge } from "@/components/DealStageBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { List, Map as MapIcon } from "lucide-react";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 const stages: DealStage[] = ["Prospecting", "LOI", "Lease", "Open", "Closed"];
 
 export default function MapView() {
+  const runtimeDataVersion = useRuntimeDataVersion();
   const [searchParams] = useSearchParams();
   const dealFilter = searchParams.get("deal") || "all";
   const [brandFilter, setBrandFilter] = useState("all");
@@ -26,7 +28,7 @@ export default function MapView() {
       if (stageFilter !== "all" && s.stage !== stageFilter) return false;
       return true;
     });
-  }, [brandFilter, stageFilter, dealFilter]);
+  }, [brandFilter, stageFilter, dealFilter, runtimeDataVersion]);
 
   return (
     <div className="h-[calc(100vh-4rem)] flex animate-fade-in">

@@ -1,6 +1,8 @@
 import { rebuildBrandRuntimeData } from "@/data/brandsData";
 import { replaceBizDevRuntimeData, type BizDevCategory, type BizDevRecord, type BizDevStatus } from "@/data/bizDevData";
 import {
+  dealBrands,
+  dealRecords,
   emptyDealDocuments,
   replaceDealRuntimeData,
   type DealBrand,
@@ -460,24 +462,17 @@ async function readTable<T>(table: string, accessToken: string | null): Promise<
   });
 }
 
-export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
-  const [brandRows, profileRows, dealRows, noteRows, documentRows, prospectRows, siteRows, spaceRows] = await Promise.all([
-    readTable<BrandRow>("brands", accessToken),
-    readTable<ProfileRow>("profiles", accessToken),
-    readTable<DealRow>("deals", accessToken),
-    readTable<DealNoteRow>("deal_notes", accessToken),
-    readTable<DealDocumentRow>("deal_documents", accessToken),
-    readTable<ProspectRow>("prospects", accessToken),
-    readTable<SiteRow>("sites", accessToken),
-    readTable<SpaceRequirementRow>("space_requirements", accessToken),
-  ]);
-
+function applyCoreRuntimeData(
+  brandRows: BrandRow[],
+  profileRows: ProfileRow[],
+  dealRows: DealRow[],
+  noteRows: DealNoteRow[],
+  documentRows: DealDocumentRow[],
+): void {
   const brands = brandRows.map(mapBrand);
   const notes = buildNotes(noteRows);
   const documents = buildDocuments(documentRows);
   const deals = dealRows.map((row) => mapDeal(row, notes, documents));
-  const prospects = prospectRows.map(mapProspect);
-  const spaceRequirements = spaceRows.map(mapSpaceRequirement);
 
   replaceDealRuntimeData({ brands, deals });
   rebuildBrandRuntimeData();
@@ -487,6 +482,16 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
     username: row.username,
     role: row.role,
   })));
+}
+
+function applySecondaryRuntimeData(
+  prospectRows: ProspectRow[],
+  siteRows: SiteRow[],
+  spaceRows: SpaceRequirementRow[],
+): void {
+  const prospects = prospectRows.map(mapProspect);
+  const spaceRequirements = spaceRows.map(mapSpaceRequirement);
+
   replaceBizDevRuntimeData(prospects);
   replaceSpaceRequirementsRuntimeData(spaceRequirements);
 
@@ -498,10 +503,10 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
   }
 
   replaceMapRuntimeData({
-    brands: brands.map((brand) => ({ id: brand.id, name: brand.name, logoColor: brand.logoColor })),
-    deals: deals.map((deal) => ({
+    brands: dealBrands.map((brand) => ({ id: brand.id, name: brand.name, logoColor: brand.logoColor })),
+    deals: dealRecords.map((deal) => ({
       id: deal.id,
-      name: deal.name ?? `${brands.find((brand) => brand.id === deal.brandId)?.name ?? "Brand"} — ${deal.city}, ${deal.state}`,
+      name: deal.name ?? `${dealBrands.find((brand) => brand.id === deal.brandId)?.name ?? "Brand"} — ${deal.city}, ${deal.state}`,
       brandId: deal.brandId,
       market: `${deal.city}, ${deal.state}`,
       stage: mapStatusToLegacyStage(deal.status),
@@ -512,6 +517,32 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
       createdAt: deal.dateIntroCall ?? new Date().toISOString().slice(0, 10),
     })),
   });
+}
 
+async function loadSecondaryRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
+  const [prospectRows, siteRows, spaceRows] = await Promise.all([
+    readTable<ProspectRow>("prospects", accessToken),
+    readTable<SiteRow>("sites", accessToken),
+    readTable<SpaceRequirementRow>("space_requirements", accessToken),
+  ]);
+
+  applySecondaryRuntimeData(prospectRows, siteRows, spaceRows);
   notifyRuntimeDataChanged();
+}
+
+export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
+  const [brandRows, profileRows, dealRows, noteRows, documentRows] = await Promise.all([
+    readTable<BrandRow>("brands", accessToken),
+    readTable<ProfileRow>("profiles", accessToken),
+    readTable<DealRow>("deals", accessToken),
+    readTable<DealNoteRow>("deal_notes", accessToken),
+    readTable<DealDocumentRow>("deal_documents", accessToken),
+  ]);
+
+  applyCoreRuntimeData(brandRows, profileRows, dealRows, noteRows, documentRows);
+  notifyRuntimeDataChanged();
+
+  void loadSecondaryRuntimeAppData({ accessToken }).catch((error) => {
+    console.error("Secondary Supabase data load failed", error);
+  });
 }
