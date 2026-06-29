@@ -25,6 +25,8 @@ drop function if exists public.handle_new_user() cascade;
 drop function if exists public.current_user_role() cascade;
 drop function if exists public.current_profile_brand_id() cascade;
 drop function if exists public.current_profile_deal_id() cascade;
+drop function if exists public.current_user_brand_id() cascade;
+drop function if exists public.current_user_deal_id() cascade;
 drop function if exists public.current_user_can_access_brand(uuid) cascade;
 drop function if exists public.current_user_can_access_deal(uuid) cascade;
 drop function if exists public.current_user_can_access_site(uuid) cascade;
@@ -349,10 +351,7 @@ begin
     full_name = excluded.full_name,
     username = excluded.username,
     email = excluded.email,
-    role = case
-      when new.raw_user_meta_data ? 'role' then excluded.role
-      else public.profiles.role
-    end,
+    role = public.profiles.role,
     updated_at = now();
   return new;
 end;
@@ -430,6 +429,24 @@ as $$
   select deal_id from public.profiles where id = auth.uid();
 $$;
 
+create or replace function public.current_user_brand_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select public.current_profile_brand_id();
+$$;
+
+create or replace function public.current_user_deal_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select public.current_profile_deal_id();
+$$;
+
 create or replace function public.current_user_can_access_brand(brand_uuid uuid)
 returns boolean
 language sql
@@ -491,7 +508,6 @@ create policy "profiles select own admin or reimagine team" on public.profiles f
   or public.current_user_role() = 'admin'
   or lower(coalesce(email, '')) like '%@reimagine.com'
 );
-create policy "profiles update own" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "admins manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "deals select by platform scope" on public.deals for select using (public.current_user_can_access_deal(id));

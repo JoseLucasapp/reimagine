@@ -11,14 +11,14 @@ import { DealSummaryTab } from "@/components/deal/DealSummaryTab";
 import { BrandAvatar } from "@/components/BrandAvatar";
 import { ArrowRight, MapPin, Clock, FileText, Check, Plus, Map, BookOpen, BarChart3, Zap, Store, Layers, FolderOpen, X, Send, RefreshCw, ClipboardList, MessageSquare, CheckCircle2, Link2, Loader2, Upload } from "lucide-react";
 import { TakeActionDrawer, TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
-import { canAccessDeal, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
+import { canAccessDeal, canEditDeal, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
 import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
-import { createDealActionItem, createTourBook, siteToMutationInput, updateDeal, updateSite, type DealMutationInput } from "@/application/data/runtimeMutations";
+import { createDealActionItem, createDealNote, createTourBook, siteToMutationInput, updateDeal, updateSite, type DealMutationInput } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
 import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
@@ -601,6 +601,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
     () => EMPTY_DEAL_ACTION_ITEMS,
   );
   const hasDealAccess = deal ? canAccessDeal(user ?? role, deal) : false;
+  const canEditCurrentDeal = canEditDeal(user ?? role);
 
   useEffect(() => {
     if (deal?.id && deal?.brandId) recordDealVisit(deal.brandId, deal.id);
@@ -633,8 +634,9 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
     const entry = { date: new Date().toISOString().slice(0, 10), text, author: "ME" };
     setNewNote("");
     try {
-      await persistDealChanges({ initialNote: text });
-      setLocalNotes((prev) => [entry, ...prev]);
+      if (!deal) throw new Error("Deal not found.");
+      const savedNote = await createDealNote(deal.id, text);
+      setLocalNotes((prev) => [savedNote ?? entry, ...prev]);
     } catch (error) {
       setNewNote(text);
       toast.error("Unable to save note", {
@@ -744,7 +746,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
           generatedUrl: `${window.location.origin}/tour-book-generator?deal=${deal.id}`,
         });
       }
-      await persistDealChanges({ initialNote: noteBody });
+      await createDealNote(deal.id, noteBody);
     } catch (error) {
       toast.error("Unable to save action", {
         description: error instanceof Error ? error.message : "Please try again.",
@@ -919,12 +921,18 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
             <span className="hidden sm:inline">{takeActionLabel}</span>
           </button>
           <DealHealthIndicator deal={deal} size="md" />
-          <Select value={status} onValueChange={handleStatusChange}>
-            <SelectTrigger className="w-auto min-w-[110px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "6px 12px", fontSize: 14, fontWeight: 600 }}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>{ALL_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-          </Select>
+          {canEditCurrentDeal ? (
+            <Select value={status} onValueChange={handleStatusChange}>
+              <SelectTrigger className="w-auto min-w-[110px]" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: 8, padding: "6px 12px", fontSize: 14, fontWeight: 600 }}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>{ALL_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : (
+            <span className="inline-flex items-center" style={{ minHeight: 34, borderRadius: 8, border: "1px solid var(--border-subtle)", background: "var(--bg-card)", padding: "6px 12px", fontSize: 13, fontWeight: 700, color: "var(--text-secondary)" }}>
+              {status}
+            </span>
+          )}
         </div>
       </div>
 

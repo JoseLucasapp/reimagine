@@ -48,10 +48,7 @@ begin
     email = excluded.email,
     full_name = coalesce(excluded.full_name, public.profiles.full_name),
     username = coalesce(excluded.username, public.profiles.username),
-    role = case
-      when new.raw_user_meta_data ? 'role' then excluded.role
-      else public.profiles.role
-    end,
+    role = public.profiles.role,
     updated_at = now();
   return new;
 end;
@@ -87,6 +84,24 @@ security definer
 stable
 as $$
   select deal_id from public.profiles where id = auth.uid();
+$$;
+
+create or replace function public.current_user_brand_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select public.current_profile_brand_id();
+$$;
+
+create or replace function public.current_user_deal_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select public.current_profile_deal_id();
 $$;
 
 create or replace function public.current_user_can_access_brand(brand_uuid uuid)
@@ -127,9 +142,41 @@ as $$
   end;
 $$;
 
+create or replace function public.current_user_can_access_site(site_uuid uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.sites s
+    where s.id = site_uuid
+      and public.current_user_can_access_deal(s.deal_id)
+  );
+$$;
+
 alter table public.profiles enable row level security;
+alter table public.brands enable row level security;
+alter table public.deals enable row level security;
+alter table public.sites enable row level security;
+alter table public.deal_documents enable row level security;
+alter table public.deal_notes enable row level security;
+alter table public.prospects enable row level security;
+alter table public.space_requirements enable row level security;
+alter table public.tour_books enable row level security;
 alter table public.take_action_items enable row level security;
 alter table public.brand_action_items enable row level security;
+
+drop policy if exists "authenticated can manage brands" on public.brands;
+drop policy if exists "authenticated can manage deals" on public.deals;
+drop policy if exists "authenticated can manage sites" on public.sites;
+drop policy if exists "authenticated can manage deal documents" on public.deal_documents;
+drop policy if exists "authenticated can manage deal notes" on public.deal_notes;
+drop policy if exists "authenticated can manage prospects" on public.prospects;
+drop policy if exists "authenticated can manage space requirements" on public.space_requirements;
+drop policy if exists "authenticated can manage tour books" on public.tour_books;
+drop policy if exists "authenticated can manage take action items" on public.take_action_items;
+drop policy if exists "authenticated can manage brand action items" on public.brand_action_items;
 
 drop policy if exists "profiles select own or admin" on public.profiles;
 drop policy if exists "profiles select own admin or reimagine team" on public.profiles;
@@ -143,15 +190,126 @@ using (
 );
 
 drop policy if exists "profiles update own" on public.profiles;
-create policy "profiles update own"
-on public.profiles
-for update
-using (id = auth.uid())
-with check (id = auth.uid());
 
 drop policy if exists "admins manage profiles" on public.profiles;
 create policy "admins manage profiles"
 on public.profiles
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "brands select by platform scope" on public.brands;
+create policy "brands select by platform scope"
+on public.brands
+for select
+using (public.current_user_can_access_brand(id));
+
+drop policy if exists "admins manage brands" on public.brands;
+create policy "admins manage brands"
+on public.brands
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "deals select by platform scope" on public.deals;
+create policy "deals select by platform scope"
+on public.deals
+for select
+using (public.current_user_can_access_deal(id));
+
+drop policy if exists "admins manage deals" on public.deals;
+create policy "admins manage deals"
+on public.deals
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "sites select by deal scope" on public.sites;
+create policy "sites select by deal scope"
+on public.sites
+for select
+using (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "admins manage sites" on public.sites;
+create policy "admins manage sites"
+on public.sites
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "deal documents select by deal scope" on public.deal_documents;
+create policy "deal documents select by deal scope"
+on public.deal_documents
+for select
+using (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "admins manage deal documents" on public.deal_documents;
+create policy "admins manage deal documents"
+on public.deal_documents
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "deal notes select by deal scope" on public.deal_notes;
+create policy "deal notes select by deal scope"
+on public.deal_notes
+for select
+using (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "deal notes insert by deal scope" on public.deal_notes;
+create policy "deal notes insert by deal scope"
+on public.deal_notes
+for insert
+with check (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "admins manage deal notes" on public.deal_notes;
+create policy "admins manage deal notes"
+on public.deal_notes
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "prospects admin select" on public.prospects;
+create policy "prospects admin select"
+on public.prospects
+for select
+using (public.current_user_role() = 'admin');
+
+drop policy if exists "admins manage prospects" on public.prospects;
+create policy "admins manage prospects"
+on public.prospects
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "space requirements select by brand scope" on public.space_requirements;
+create policy "space requirements select by brand scope"
+on public.space_requirements
+for select
+using (public.current_user_can_access_brand(brand_id));
+
+drop policy if exists "admins manage space requirements" on public.space_requirements;
+create policy "admins manage space requirements"
+on public.space_requirements
+for all
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists "tour books select by deal scope" on public.tour_books;
+create policy "tour books select by deal scope"
+on public.tour_books
+for select
+using (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "tour books insert by deal scope" on public.tour_books;
+create policy "tour books insert by deal scope"
+on public.tour_books
+for insert
+with check (public.current_user_can_access_deal(deal_id));
+
+drop policy if exists "admins manage tour books" on public.tour_books;
+create policy "admins manage tour books"
+on public.tour_books
 for all
 using (public.current_user_role() = 'admin')
 with check (public.current_user_role() = 'admin');

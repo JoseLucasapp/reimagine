@@ -30,6 +30,23 @@ const glassCard: React.CSSProperties = {
 };
 const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
 
+function parseMetricDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isCurrentMonth(value: string | null | undefined): boolean {
+  const date = parseMetricDate(value);
+  if (!date) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function dealActivityDate(deal: DealRecord): string | null {
+  return deal.notes[0]?.date ?? deal.dateLeaseSigned ?? deal.dateIntroCall ?? null;
+}
+
 export default function BrandDeals() {
   const { brandId } = useParams();
   const navigate = useNavigate();
@@ -205,7 +222,10 @@ function BrandMetricsSection({ deals }: { deals: DealRecord[] }) {
     const signed = deals.filter((d) => d.status === "Signed").length;
     const onHold = deals.filter((d) => d.status === "On Hold").length;
     const active = total - signed - onHold;
-    return { total, active, signed };
+    const totalThisMonth = deals.filter((d) => isCurrentMonth(dealActivityDate(d))).length;
+    const activeThisMonth = deals.filter((d) => d.status !== "Signed" && d.status !== "On Hold" && isCurrentMonth(dealActivityDate(d))).length;
+    const signedThisMonth = deals.filter((d) => d.status === "Signed" && isCurrentMonth(d.dateLeaseSigned)).length;
+    return { total, active, signed, totalThisMonth, activeThisMonth, signedThisMonth };
   }, [deals]);
 
   const pipeline = useMemo(() => {
@@ -235,9 +255,9 @@ function BrandMetricsSection({ deals }: { deals: DealRecord[] }) {
   }, [deals]);
 
   const kpis = [
-    { key: "total", label: "Total Deals", value: totals.total, trend: `↑ ${Math.max(1, Math.round(totals.total / 3))} this mo`, Icon: Briefcase },
-    { key: "active", label: "Active Deals", value: totals.active, trend: `↑ ${Math.max(1, Math.round(totals.active / 2))} this mo`, Icon: Handshake },
-    { key: "signed", label: "Deals Signed", value: totals.signed, trend: `↑ ${Math.max(0, totals.signed)} this mo`, Icon: CheckCircle2 },
+    { key: "total", label: "Total Deals", value: totals.total, trend: `${totals.totalThisMonth} this mo`, Icon: Briefcase },
+    { key: "active", label: "Active Deals", value: totals.active, trend: `${totals.activeThisMonth} this mo`, Icon: Handshake },
+    { key: "signed", label: "Deals Signed", value: totals.signed, trend: `${totals.signedThisMonth} this mo`, Icon: CheckCircle2 },
   ];
 
   return (

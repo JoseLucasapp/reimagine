@@ -1,6 +1,6 @@
 import { getStoredSession } from "@/application/auth/session";
 import { getRuntimeConfig } from "@/config/env";
-import { SupabaseHttpError } from "@/infrastructure/supabase/client";
+import { refreshStoredSession, SupabaseHttpError } from "@/infrastructure/supabase/client";
 
 export const DEAL_DOCUMENTS_BUCKET = "deal-documents";
 export const MAX_DEAL_DOCUMENT_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -97,17 +97,24 @@ export async function uploadDealDocumentFile({ dealId, documentKey, file }: Uplo
   const path = `${safeSegment(dealId)}/${safeSegment(documentKey)}/${Date.now()}-${safeFileName}`;
   const encodedPath = encodeStoragePath(path);
 
-  const response = await fetch(`${baseUrl}/storage/v1/object/${DEAL_DOCUMENTS_BUCKET}/${encodedPath}`, {
-    method: "POST",
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": file.type || "application/octet-stream",
-      "Cache-Control": "3600",
-      "x-upsert": "true",
-    },
-    body: file,
-  });
+  const uploadWithToken = (accessToken: string) =>
+    fetch(`${baseUrl}/storage/v1/object/${DEAL_DOCUMENTS_BUCKET}/${encodedPath}`, {
+      method: "POST",
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": file.type || "application/octet-stream",
+        "Cache-Control": "3600",
+        "x-upsert": "true",
+      },
+      body: file,
+    });
+
+  let response = await uploadWithToken(token);
+  if (response.status === 401) {
+    const refreshedToken = await refreshStoredSession();
+    if (refreshedToken) response = await uploadWithToken(refreshedToken);
+  }
 
   if (!response.ok) {
     throw new SupabaseHttpError(`Supabase storage upload failed with status ${response.status}.`, response.status, await readError(response));

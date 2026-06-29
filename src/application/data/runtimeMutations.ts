@@ -844,16 +844,20 @@ async function syncDealDocuments(
   return documents;
 }
 
-async function createDealNote(dealId: string, body: string): Promise<DealNote | null> {
+export async function createDealNote(dealId: string, body: string): Promise<DealNote | null> {
   const text = body.trim();
   if (!text) return null;
+  const profile = getStoredSession()?.profile;
 
   const row = await insertReturning<DealNoteRow>("deal_notes", {
     deal_id: dealId,
     body: text,
-    author_name: "Reimagine",
+    author_name: profile?.fullName || profile?.email || profile?.username || "Reimagine",
   });
-  return mapNote(row);
+  const note = mapNote(row);
+  const existing = dealRecords.find((record) => record.id === dealId);
+  if (existing) upsertDealRuntime({ ...existing, notes: [note, ...existing.notes] });
+  return note;
 }
 
 export async function createBrand(input: BrandMutationInput): Promise<DealBrand> {

@@ -37,7 +37,7 @@ export function parseUserRole(value: string | null | undefined): UserRole {
   if (value === "admin" || value === "brand" || value === "deal") return value;
   if (value === "franchisor") return "brand";
   if (value === "franchisee") return "deal";
-  return "admin";
+  return "deal";
 }
 
 export function roleToHomeRoute(role: UserRole): string {

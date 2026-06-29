@@ -166,14 +166,17 @@ export function calculatePipelineForecast(): PipelineForecast {
   const pipelineDeals = dealRecords.filter((d) => (d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations") && !d.isOneOff);
 
   const confirmed = signedDeals.reduce((sum, d) => sum + d.estimatedCommission, 0);
-  const projected = pipelineDeals.reduce((sum, d) => sum + d.estimatedCommission, 0) * 0.65;
+  const closeRate = signedDeals.length + pipelineDeals.length > 0
+    ? signedDeals.length / (signedDeals.length + pipelineDeals.length)
+    : 0;
+  const projected = pipelineDeals.reduce((sum, d) => sum + d.estimatedCommission, 0) * closeRate;
 
   return {
     confirmed,
     confirmedCount: signedDeals.length,
     projected: Math.round(projected),
     projectedCount: pipelineDeals.length,
-    closeRate: 0.65,
+    closeRate,
     pipelineDeals: pipelineDeals.length,
   };
 }

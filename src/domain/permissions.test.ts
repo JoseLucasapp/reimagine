@@ -30,9 +30,9 @@ const brandUser: ScopedUser = { role: "brand", brandId: "brand-1", dealId: null 
 const dealUser: ScopedUser = { role: "deal", brandId: "brand-2", dealId: "deal-2" };
 
 describe("role permissions", () => {
-  it("defaults invalid roles to admin preview mode", () => {
-    expect(parseUserRole(null)).toBe("admin");
-    expect(parseUserRole("unknown")).toBe("admin");
+  it("defaults invalid roles to the least privileged role", () => {
+    expect(parseUserRole(null)).toBe("deal");
+    expect(parseUserRole("unknown")).toBe("deal");
   });
 
   it("keeps legacy role values compatible", () => {

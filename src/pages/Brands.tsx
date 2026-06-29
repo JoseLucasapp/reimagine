@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Search, ArrowRight, BarChart3, LayoutList, Columns3, Building2, Handshake, CheckCircle2, Plus, FileBarChart2, CalendarIcon, ChevronDown, LayoutGrid, Check, Link as LinkIcon, ExternalLink, MapPin } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from "recharts";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { DEAL_STATUS_ORDER } from "@/data/dealsData";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -53,6 +52,10 @@ type LineTooltipProps = ChartTooltipProps & {
   filtered: BrandDetail[];
 };
 
+type StageTooltipProps = ChartTooltipProps & {
+  stages: string[];
+};
+
 type XAxisTickProps = {
   x?: number;
   y?: number;
@@ -93,6 +96,27 @@ const STATUS_PILL_GLOBAL: Record<string, { label: string; cls: string }> = {
   "On Hold": { label: "On Hold", cls: "pill-on-hold" },
 };
 
+function parseBrandMetricDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isCurrentMonth(value: string | null | undefined): boolean {
+  const date = parseBrandMetricDate(value);
+  if (!date) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function dealActivityDate(deal: DealRecord): string | null {
+  return deal.notes[0]?.date ?? deal.dateLeaseSigned ?? deal.dateIntroCall ?? null;
+}
+
+function monthlyTrend(value: number, label = "this mo"): string {
+  return `${value} ${label}`;
+}
+
 const STATUS_BAR_COLORS: Record<string, string> = {
   "Signed": "#E18739", "Lease Negotiations": "#E18739", "First LOI(s) Submitted": "#E18739",
   "Market Study": "#E18739", "Site Tours": "#E18739", "LOI Negotiations": "#E18739",
@@ -100,6 +124,10 @@ const STATUS_BAR_COLORS: Record<string, string> = {
 };
 
 const LINK_DEFAULT = "https://";
+const CHART_LIMIT_OPTIONS = ["10", "15", "25", "50", "all"];
+const CHART_MIN_DEAL_OPTIONS = ["0", "1", "3", "5", "10"];
+
+type ChartSortKey = "deals_desc" | "active_desc" | "signed_desc" | "name_asc";
 
 function parseDealDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -131,6 +159,10 @@ export default function BrandsPage() {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState<string[]>([]);
   const [dealFilter, setDealFilter] = useState("all");
+  const [chartStatusFilter, setChartStatusFilter] = useState<string[]>([]);
+  const [chartLimit, setChartLimit] = useState("15");
+  const [chartMinDeals, setChartMinDeals] = useState("1");
+  const [chartSort, setChartSort] = useState<ChartSortKey>("deals_desc");
   const [view, setView] = useState<BrandView>("overview");
   const runtimeDataVersion = useRuntimeDataVersion();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -269,10 +301,16 @@ export default function BrandsPage() {
   const overviewStats = useMemo(() => {
     void runtimeDataVersion;
     const allDeals = dealRecords.filter(d => !d.isOneOff);
+    const activeThisMonth = allDeals.filter((d) => d.status !== "Signed" && d.status !== "On Hold" && isCurrentMonth(dealActivityDate(d))).length;
+    const signedThisMonth = allDeals.filter((d) => d.status === "Signed" && isCurrentMonth(d.dateLeaseSigned)).length;
+    const activeBrandsThisMonth = new Set(allDeals.filter((d) => isCurrentMonth(dealActivityDate(d))).map((d) => d.brandId)).size;
     return {
       totalBrands: dealBrands.length,
       activeDeals: allDeals.filter(d => d.status !== "Signed").length,
       dealsSigned: allDeals.filter(d => d.status === "Signed").length,
+      activeBrandsThisMonth,
+      activeThisMonth,
+      signedThisMonth,
     };
   }, [runtimeDataVersion]);
 
@@ -294,18 +332,66 @@ export default function BrandsPage() {
 
   const maxDeals = Math.max(...brandDealCounts.map(b => b.count), 1);
   const maxStatus = Math.max(...statusCounts.map(s => s[1]), 1);
+  const chartStages = useMemo(
+    () => chartStatusFilter.length > 0 ? DEAL_STATUS_ORDER.filter((stage) => chartStatusFilter.includes(stage)) : DEAL_STATUS_ORDER,
+    [chartStatusFilter],
+  );
+  const chartBrands = useMemo(() => {
+    void runtimeDataVersion;
+    const stageSet = new Set(chartStages);
+    const minDeals = Number(chartMinDeals);
+    const limit = chartLimit === "all" ? Number.POSITIVE_INFINITY : Number(chartLimit);
+    const rows = filtered
+      .map((brand) => {
+        const allDeals = dealRecords.filter((deal) => deal.brandId === brand.id && !deal.isOneOff);
+        const chartDeals = allDeals.filter((deal) => stageSet.has(deal.status));
+        return {
+          brand,
+          chartDeals: chartDeals.length,
+          activeDeals: chartDeals.filter((deal) => deal.status !== "Signed" && deal.status !== "On Hold").length,
+          signedDeals: chartDeals.filter((deal) => deal.status === "Signed").length,
+        };
+      })
+      .filter((row) => row.chartDeals >= minDeals);
+
+    rows.sort((a, b) => {
+      if (chartSort === "name_asc") return a.brand.name.localeCompare(b.brand.name);
+      if (chartSort === "active_desc") return b.activeDeals - a.activeDeals || a.brand.name.localeCompare(b.brand.name);
+      if (chartSort === "signed_desc") return b.signedDeals - a.signedDeals || a.brand.name.localeCompare(b.brand.name);
+      return b.chartDeals - a.chartDeals || a.brand.name.localeCompare(b.brand.name);
+    });
+
+    return rows.slice(0, limit).map((row) => row.brand);
+  }, [chartLimit, chartMinDeals, chartSort, chartStages, filtered, runtimeDataVersion]);
+  const hasChartFilters =
+    search.trim().length > 0 ||
+    catFilter.length > 0 ||
+    dealFilter !== "all" ||
+    chartStatusFilter.length > 0 ||
+    chartLimit !== "15" ||
+    chartMinDeals !== "1" ||
+    chartSort !== "deals_desc";
+  const resetChartFilters = () => {
+    setSearch("");
+    setCatFilter([]);
+    setDealFilter("all");
+    setChartStatusFilter([]);
+    setChartLimit("15");
+    setChartMinDeals("1");
+    setChartSort("deals_desc");
+  };
 
   // Chart data — bar chart: stacked by stage per (filtered) brand
   const barChartData = useMemo(() => {
-    return filtered.map((b) => {
+    return chartBrands.map((b) => {
       const deals = dealRecords.filter((d) => d.brandId === b.id && !d.isOneOff);
       const row: Record<string, string | number> = { name: b.name };
-      DEAL_STATUS_ORDER.forEach((s) => {
+      chartStages.forEach((s) => {
         row[s] = deals.filter((d) => d.status === s).length;
       });
       return row;
     });
-  }, [filtered, runtimeDataVersion]);
+  }, [chartBrands, chartStages, runtimeDataVersion]);
 
   // Chart data — line chart: deals active over last 6 months per brand
   const lineChartData = useMemo(() => {
@@ -317,12 +403,12 @@ export default function BrandsPage() {
     }
     return months.map((m) => {
       const row: Record<string, string | number> = { month: m.label };
-      filtered.forEach((b) => {
+      chartBrands.forEach((b) => {
         row[b.name] = dealRecords.filter((deal) => deal.brandId === b.id && wasDealActiveAtMonthEnd(deal, m.end)).length;
       });
       return row;
     });
-  }, [filtered, runtimeDataVersion]);
+  }, [chartBrands, runtimeDataVersion]);
 
   const formatCurrency = (val: number) => {
     if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
@@ -339,9 +425,9 @@ export default function BrandsPage() {
   };
 
   const statCards = [
-    { key: "totalBrands", label: "Total Brands", value: overviewStats.totalBrands.toString(), icon: Building2, trend: "↑ 2 this mo" },
-    { key: "activeDeals", label: "Active Deals", value: overviewStats.activeDeals.toString(), icon: Handshake, trend: "↑ 5 this mo" },
-    { key: "dealsSigned", label: "Deals Signed", value: overviewStats.dealsSigned.toString(), icon: CheckCircle2, trend: "↑ 3 this mo" },
+    { key: "totalBrands", label: "Total Brands", value: overviewStats.totalBrands.toString(), icon: Building2, trend: monthlyTrend(overviewStats.activeBrandsThisMonth, "active this mo") },
+    { key: "activeDeals", label: "Active Deals", value: overviewStats.activeDeals.toString(), icon: Handshake, trend: monthlyTrend(overviewStats.activeThisMonth) },
+    { key: "dealsSigned", label: "Deals Signed", value: overviewStats.dealsSigned.toString(), icon: CheckCircle2, trend: monthlyTrend(overviewStats.signedThisMonth) },
   ];
 
   // ── Panel renderers (used by both single-view and custom split layouts) ──
@@ -516,7 +602,7 @@ export default function BrandsPage() {
   };
 
   const renderChartPanel = (chartView: "bar" | "line", inSplit = false) => {
-    if (filtered.length === 0) {
+    if (chartBrands.length === 0) {
       return (
         <div style={{ padding: 64, textAlign: "center" }}>
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>No data — all brands are filtered out.</p>
@@ -524,8 +610,8 @@ export default function BrandsPage() {
       );
     }
     const legendItems = chartView === "bar"
-      ? DEAL_STATUS_ORDER.map((s) => ({ label: s, color: STAGE_COLORS[s] }))
-      : filtered.map((b) => ({ label: b.name, color: b.logoColor }));
+      ? chartStages.map((s) => ({ label: s, color: STAGE_COLORS[s] }))
+      : chartBrands.map((b) => ({ label: b.name, color: b.logoColor }));
 
     return (
       <div
@@ -554,8 +640,8 @@ export default function BrandsPage() {
                     interval={0}
                   />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <RTooltip cursor={{ fill: "rgba(225,135,57,0.06)", radius: 8 }} content={<StageTooltip />} />
-                  {DEAL_STATUS_ORDER.map((stage) => (
+                  <RTooltip cursor={{ fill: "rgba(225,135,57,0.06)", radius: 8 }} content={<StageTooltip stages={chartStages} />} />
+                  {chartStages.map((stage) => (
                     <Bar
                       key={stage}
                       dataKey={stage}
@@ -571,10 +657,12 @@ export default function BrandsPage() {
                         const payload = barProps.payload;
                         if (height <= 0) return <g />;
                         let topStage: string | null = null;
-                        for (let i = DEAL_STATUS_ORDER.length - 1; i >= 0; i--) {
-                          const stageCount = Number(payload?.[DEAL_STATUS_ORDER[i]] ?? 0);
+                        for (let i = chartStages.length - 1; i >= 0; i--) {
+                          const candidate = chartStages[i];
+                          if (!candidate) continue;
+                          const stageCount = Number(payload?.[candidate] ?? 0);
                           if (stageCount > 0) {
-                            topStage = DEAL_STATUS_ORDER[i];
+                            topStage = candidate;
                             break;
                           }
                         }
@@ -591,7 +679,7 @@ export default function BrandsPage() {
               ) : (
                 <ComposedChart data={lineChartData} margin={{ top: 16, right: 8, bottom: 8, left: 0 }}>
                   <defs>
-                    {filtered.map((b) => (
+                    {chartBrands.map((b) => (
                       <linearGradient key={b.id} id={`lineFill-${b.id}`} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={b.logoColor} stopOpacity={0.16} />
                         <stop offset="100%" stopColor={b.logoColor} stopOpacity={0} />
@@ -601,11 +689,11 @@ export default function BrandsPage() {
                   <CartesianGrid strokeDasharray="2 6" stroke="var(--border-divider)" strokeOpacity={0.4} vertical={false} />
                   <XAxis dataKey="month" tick={{ fill: "var(--text-secondary)", fontSize: 12, fontWeight: 600 }} tickLine={false} axisLine={{ stroke: "var(--border-divider)" }} />
                   <YAxis allowDecimals={false} tick={{ fill: "var(--text-muted)", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <RTooltip content={<LineTooltip filtered={filtered} />} />
-                  {filtered.map((b) => (
+                  <RTooltip content={<LineTooltip filtered={chartBrands} />} />
+                  {chartBrands.map((b) => (
                     <Area key={`area-${b.id}`} type="monotone" dataKey={b.name} stroke="none" fill={`url(#lineFill-${b.id})`} fillOpacity={1} isAnimationActive={false} />
                   ))}
-                  {filtered.map((b) => (
+                  {chartBrands.map((b) => (
                     <Line
                       key={b.id}
                       type="monotone"
@@ -648,6 +736,9 @@ export default function BrandsPage() {
     if (p === "kanban") return renderKanbanPanel();
     return renderChartPanel(p, inSplit);
   };
+  const showChartFilters =
+    (!customLayout && (view === "bar" || view === "line")) ||
+    Boolean(customLayout?.panels.some((panel) => panel === "bar" || panel === "line"));
 
 
   return (
@@ -764,6 +855,83 @@ export default function BrandsPage() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {showChartFilters && (
+        <div className="flex flex-col gap-3 rounded-[12px] px-3 py-3" style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
+          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#94a3b8" }} />
+              <input
+                type="text"
+                placeholder="Search brands..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="glass-input pl-9 pr-4 py-2 text-sm w-56"
+              />
+            </div>
+            <MultiSelectFilter
+              label="Category"
+              value={catFilter}
+              onChange={setCatFilter}
+              options={brandCategories.map((c) => ({ value: c, label: c }))}
+            />
+            <Select value={dealFilter} onValueChange={setDealFilter}>
+              <SelectTrigger className="w-44 glass-input"><SelectValue placeholder="All Deal Counts" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Brands</SelectItem>
+                <SelectItem value="active">Has Active Deals</SelectItem>
+                <SelectItem value="none">No Active Deals</SelectItem>
+              </SelectContent>
+            </Select>
+            <MultiSelectFilter
+              label="Stage"
+              value={chartStatusFilter}
+              onChange={setChartStatusFilter}
+              options={DEAL_STATUS_ORDER.map((stage) => ({ value: stage, label: stage }))}
+            />
+            <Select value={chartLimit} onValueChange={setChartLimit}>
+              <SelectTrigger className="w-32 glass-input"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CHART_LIMIT_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>{option === "all" ? "All" : `Top ${option}`}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={chartMinDeals} onValueChange={setChartMinDeals}>
+              <SelectTrigger className="w-36 glass-input"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CHART_MIN_DEAL_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>{option === "0" ? "Any deals" : `${option}+ deals`}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={chartSort} onValueChange={(value) => setChartSort(value as ChartSortKey)}>
+              <SelectTrigger className="w-44 glass-input"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="deals_desc">Most Deals</SelectItem>
+                <SelectItem value="active_desc">Most Active</SelectItem>
+                <SelectItem value="signed_desc">Most Signed</SelectItem>
+                <SelectItem value="name_asc">A-Z</SelectItem>
+              </SelectContent>
+            </Select>
+            {hasChartFilters && (
+              <button
+                type="button"
+                onClick={resetChartFilters}
+                className="h-9 rounded-[10px] px-3 text-xs font-semibold"
+                style={{ border: "1px solid var(--border-subtle)", background: "var(--bg-card)", color: "var(--text-secondary)" }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+            <span>{chartBrands.length} of {filtered.length} brands charted</span>
+            <span>·</span>
+            <span>{chartStages.length} stage{chartStages.length === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+      )}
 
       {/* ═══ CUSTOM LAYOUT (split panels) ═══ */}
       {customLayout && (
@@ -954,33 +1122,6 @@ export default function BrandsPage() {
       {/* ═══ CHART VIEWS (Bar / Line) ═══ */}
       {!customLayout && (view === "bar" || view === "line") && (
         <>
-          {/* Filters — visible but disabled with tooltip */}
-          <TooltipProvider delayDuration={100}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 mb-2"
-                  style={{ opacity: 0.55, cursor: "not-allowed" }}
-                  onClick={(e) => e.preventDefault()}
-                >
-                  <div className="relative" style={{ pointerEvents: "none" }}>
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#94a3b8" }} />
-                    <input type="text" placeholder="Search brands..." disabled className="glass-input pl-9 pr-4 py-2 text-sm w-56" />
-                  </div>
-                  <div style={{ pointerEvents: "none" }}>
-                    <MultiSelectFilter label="Category" value={catFilter} onChange={() => {}} options={brandCategories.map((c) => ({ value: c, label: c }))} />
-                  </div>
-                  <div style={{ pointerEvents: "none" }}>
-                    <Select value={dealFilter}>
-                      <SelectTrigger className="w-44 glass-input"><SelectValue placeholder="All Deal Counts" /></SelectTrigger>
-                    </Select>
-                  </div>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>Chart view does not support filtering</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
           {renderChartPanel(view as "bar" | "line")}
         </>
       )}
@@ -1249,12 +1390,12 @@ function TruncatedXAxisTick(props: XAxisTickProps) {
 }
 
 /* ── Custom stacked-bar tooltip: brand header + stage rows with dot/name/count ── */
-function StageTooltip(props: ChartTooltipProps) {
+function StageTooltip(props: StageTooltipProps) {
   if (!props.active || !props.payload?.length) return null;
   const brandName = String(props.label ?? "");
   // Use the underlying row to render in DEAL_STATUS_ORDER, dropping zero values
   const row = props.payload[0]?.payload ?? {};
-  const rows = (DEAL_STATUS_ORDER as readonly string[])
+  const rows = props.stages
     .filter((stage) => Number(row[stage] ?? 0) > 0)
     .map((stage) => ({ name: stage, value: Number(row[stage] ?? 0), color: STAGE_COLORS[stage] }));
   if (rows.length === 0) return null;

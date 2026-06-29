@@ -53,7 +53,7 @@ export function PipelineForecast() {
         </div>
 
         <p className="text-[12px]" style={{ color: "#94a3b8", marginTop: 12, lineHeight: 1.6 }}>
-          Projection based on {forecast.pipelineDeals} active pipeline deal{forecast.pipelineDeals !== 1 ? "s" : ""} at historical 65% close rate
+          Projection based on {forecast.pipelineDeals} active pipeline deal{forecast.pipelineDeals !== 1 ? "s" : ""} at {Math.round(forecast.closeRate * 100)}% calculated close rate
         </p>
       </div>
     </div>

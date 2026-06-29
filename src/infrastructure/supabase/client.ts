@@ -53,7 +53,7 @@ async function parseResponse(response: Response): Promise<unknown> {
   return response.json() as Promise<unknown>;
 }
 
-async function refreshStoredSession(): Promise<string | null> {
+export async function refreshStoredSession(): Promise<string | null> {
   const session = getStoredSession();
   if (!session?.refreshToken) return null;
 

@@ -22,7 +22,7 @@ import {
 
 const PREVIEW_KEY = "rcre_preview_role";
 const EVENT = "rcre:role-change";
-const DEFAULT_ROLE: UserRole = "admin";
+const DEFAULT_ROLE: UserRole = "deal";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
