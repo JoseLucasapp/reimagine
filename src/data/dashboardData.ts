@@ -82,18 +82,18 @@ export interface SearchResult {
   url: string;
 }
 
-export function globalSearch(query: string): SearchResult[] {
+export function globalSearch(query: string, scopedDeals = dealRecords, scopedBrands = dealBrands): SearchResult[] {
   if (!query || query.length < 2) return [];
   const q = query.toLowerCase();
   const results: SearchResult[] = [];
 
-  dealBrands.forEach((b) => {
+  scopedBrands.forEach((b) => {
     if (b.name.toLowerCase().includes(q)) {
       results.push({ type: "Brand", id: b.id, title: b.name, subtitle: "Brand", url: `/brands/${b.id}/deals` });
     }
   });
 
-  dealRecords.forEach((deal) => {
+  scopedDeals.forEach((deal) => {
     const brand = getDealBrandById(deal.brandId);
     if (
       deal.franchisee.toLowerCase().includes(q) ||
@@ -111,7 +111,7 @@ export function globalSearch(query: string): SearchResult[] {
   });
 
   const contactSet = new Set<string>();
-  dealRecords.forEach((deal) => {
+  scopedDeals.forEach((deal) => {
     if (deal.broker.toLowerCase().includes(q) && !contactSet.has(deal.broker)) {
       contactSet.add(deal.broker);
       results.push({ type: "Contact", id: deal.broker, title: deal.broker, subtitle: "Broker", url: `/deals` });

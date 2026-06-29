@@ -7,6 +7,7 @@ import { dealRecords, getDealBrandById, dealBrands, getDealRecordById } from "@/
 import { useIsCompact } from "@/hooks/use-mobile";
 import { useRecentDealsForBrand } from "@/hooks/useRecentDeals";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
+import { useCurrentProfile } from "@/hooks/useUserRole";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -161,8 +162,12 @@ interface HeaderBarProps {
 export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
   const crumbs = useBreadcrumbs();
   const isCompact = useIsCompact();
+  const profile = useCurrentProfile();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const location = useLocation();
+  const displayName = profile?.fullName || profile?.username || profile?.email || "User";
+  const displayEmail = profile?.email || "";
+  const initial = displayName.trim()[0]?.toUpperCase() ?? "U";
 
   // Get page title for compact header
   const pageTitle = pageTitles[location.pathname] || crumbs[crumbs.length - 1]?.label || "";
@@ -230,7 +235,7 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
               color: "var(--text-tertiary)", fontSize: 12, fontWeight: 700,
             }}
           >
-            A
+            {initial}
           </button>
         </div>
       </header>
@@ -308,8 +313,8 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
             <User className="w-4 h-4" />
           </button>
           <div className="flex flex-col">
-            <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>Admin</p>
-            <p className="text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>admin@reimaginecre.com</p>
+            <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{displayName}</p>
+            <p className="text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>{displayEmail}</p>
           </div>
         </div>
       </div>

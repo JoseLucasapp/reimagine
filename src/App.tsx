@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { AuthSession } from "@/application/auth/session";
-import { getStoredSession, persistSession } from "@/application/auth/session";
+import { AUTH_SESSION_EVENT, getStoredSession, persistSession } from "@/application/auth/session";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -74,6 +74,14 @@ function MainAppRoutes() {
 
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => getStoredSession() !== null);
+
+  useEffect(() => {
+    const syncSessionState = () => {
+      setIsLoggedIn(getStoredSession() !== null);
+    };
+    window.addEventListener(AUTH_SESSION_EVENT, syncSessionState);
+    return () => window.removeEventListener(AUTH_SESSION_EVENT, syncSessionState);
+  }, []);
 
   const handleLogin = (session: AuthSession) => {
     // Persist the authenticated platform role. The default seeded account is Admin,

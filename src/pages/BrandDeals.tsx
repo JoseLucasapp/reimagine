@@ -6,7 +6,7 @@ import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2 } from "lucide-reac
 import { TakeActionDrawer, type TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
-import { useUserRole } from "@/hooks/useUserRole";
+import { canAccessBrand, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
@@ -34,10 +34,13 @@ export default function BrandDeals() {
   const { brandId } = useParams();
   const navigate = useNavigate();
   const runtimeDataVersion = useRuntimeDataVersion();
+  const user = useScopedUser();
+  const profile = useCurrentProfile();
+  const role = useUserRole();
   const brand = useMemo(() => getDealBrandById(brandId || ""), [brandId, runtimeDataVersion]);
   const deals = useMemo(
-    () => getDealRecordsByBrand(brandId || "").filter((d) => !d.isOneOff),
-    [brandId, runtimeDataVersion],
+    () => getDealRecordsByBrand(brandId || "").filter((d) => !d.isOneOff && canAccessBrand(user ?? role, d.brandId)),
+    [brandId, runtimeDataVersion, role, user],
   );
 
   // Subscribe to brand action store
@@ -51,17 +54,17 @@ export default function BrandDeals() {
   const [actionPanelOpen, setActionPanelOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [, setDealVersion] = useState(0);
-  const role = useUserRole();
   const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
 
   useEffect(() => {
     if (!brandId) return;
+    if (!canAccessBrand(user ?? role, brandId)) return;
     void brandActionStore.loadByBrand(brandId).catch((err) => {
       toast.error("Unable to load action items", {
         description: err instanceof Error ? err.message : "Check Supabase schema and permissions.",
       });
     });
-  }, [brandId]);
+  }, [brandId, role, user]);
 
   const signed = deals.filter((d) => d.status === "Signed").length;
   const inProgress = deals.filter((d) => d.status !== "Signed" && d.status !== "On Hold").length;
@@ -76,8 +79,18 @@ export default function BrandDeals() {
     );
   }
 
+  if (!canAccessBrand(user ?? role, brand.id)) {
+    return (
+      <div className="p-8 text-center">
+        <p style={{ color: "var(--text-muted)" }}>You do not have access to this brand.</p>
+        <button onClick={() => navigate("/brand")} className="mt-4 text-sm font-semibold" style={{ color: "#E18739" }}>Back to Brand View</button>
+      </div>
+    );
+  }
+
   const handleSubmit = async (data: TakeActionSubmission) => {
     try {
+      if (!profile) throw new Error("Current user profile is required.");
       await brandActionStore.add({
         brandId: brand.id,
         actionTypeKey: data.actionTypeKey,
@@ -85,7 +98,7 @@ export default function BrandDeals() {
         recipients: data.recipients,
         message: data.message,
         urgency: data.urgency,
-        requestedBy: "ME",
+        requestedBy: profile?.email || profile?.fullName || profile?.username || "Unknown",
       });
     } catch (err) {
       toast.error("Unable to save action item", {

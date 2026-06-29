@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { recordDealVisit } from "@/hooks/useRecentDeals";
 import { getDealRecordById, getDealBrandById, daysToSign, daysActive, DealStatusNew, type DealRecord, type DealDocuments } from "@/data/dealsData";
@@ -11,7 +11,7 @@ import { DealSummaryTab } from "@/components/deal/DealSummaryTab";
 import { BrandAvatar } from "@/components/BrandAvatar";
 import { ArrowRight, MapPin, Clock, FileText, Check, Plus, Map, BookOpen, BarChart3, Zap, Store, Layers, FolderOpen, X, Send, RefreshCw, ClipboardList, MessageSquare, CheckCircle2, Link2, Loader2, Upload } from "lucide-react";
 import { TakeActionDrawer, TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
-import { useUserRole } from "@/hooks/useUserRole";
+import { canAccessDeal, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
@@ -22,8 +22,10 @@ import { createDealActionItem, createTourBook, siteToMutationInput, updateDeal, 
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
 import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
+import { dealActionStore, type DealActionItem } from "@/lib/dealActionStore";
 
 const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+const EMPTY_DEAL_ACTION_ITEMS: DealActionItem[] = [];
 
 
 type DealDocumentDescriptor = {
@@ -565,10 +567,11 @@ function SignedCompletionModal({
   );
 }
 
-export default function DealDetail() {
+export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string } = {}) {
   const { dealId } = useParams();
   const navigate = useNavigate();
-  const deal = getDealRecordById(dealId || "");
+  const requestedDealId = dealIdOverride || dealId || "";
+  const deal = getDealRecordById(requestedDealId);
   const [newNote, setNewNote] = useState("");
   const [status, setStatus] = useState(deal?.status || "Kick Off");
   const [activeTab, setActiveTab] = useState<DealTab>("project");
@@ -578,6 +581,8 @@ export default function DealDetail() {
   const [showTakeAction, setShowTakeAction] = useState(false);
   const [showLinksEditor, setShowLinksEditor] = useState(false);
   const role = useUserRole();
+  const user = useScopedUser();
+  const profile = useCurrentProfile();
   useRuntimeDataVersion();
   const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
   type ActionRequest = {
@@ -590,10 +595,30 @@ export default function DealDetail() {
   };
   type FeedEntry = { date: string; text: string; author?: string; action?: ActionRequest };
   const [localNotes, setLocalNotes] = useState<FeedEntry[]>(deal?.notes || []);
+  const dealActionItems = useSyncExternalStore(
+    (cb) => dealActionStore.subscribe(cb),
+    () => (deal?.id ? dealActionStore.getByDeal(deal.id) : EMPTY_DEAL_ACTION_ITEMS),
+    () => EMPTY_DEAL_ACTION_ITEMS,
+  );
+  const hasDealAccess = deal ? canAccessDeal(user ?? role, deal) : false;
 
   useEffect(() => {
     if (deal?.id && deal?.brandId) recordDealVisit(deal.brandId, deal.id);
   }, [deal?.id, deal?.brandId]);
+
+  useEffect(() => {
+    setStatus(deal?.status || "Kick Off");
+    setLocalNotes(deal?.notes || []);
+  }, [deal?.id, deal?.notes, deal?.status]);
+
+  useEffect(() => {
+    if (!deal?.id || !hasDealAccess) return;
+    void dealActionStore.loadByDeal(deal.id).catch((error) => {
+      toast.error("Unable to load deal action items", {
+        description: error instanceof Error ? error.message : "Please check Supabase permissions.",
+      });
+    });
+  }, [deal?.id, hasDealAccess]);
 
   const persistDealChanges = async (overrides: Partial<DealMutationInput> = {}) => {
     if (!deal) throw new Error("Deal not found.");
@@ -703,12 +728,14 @@ export default function DealDetail() {
     ].join("\n");
     try {
       if (!deal) throw new Error("Deal not found.");
+      if (!profile) throw new Error("Current user profile is required.");
       await createDealActionItem({
         dealId: deal.id,
         audience: role === "deal" ? "internal" : "franchisee",
         title: data.actionTypeLabel,
         body: noteBody,
       });
+      await dealActionStore.loadByDeal(deal.id);
       if (data.actionTypeKey === "tour") {
         await createTourBook({
           dealId: deal.id,
@@ -737,11 +764,33 @@ export default function DealDetail() {
     );
   };
 
+  const resolvePersistentAction = async (item: DealActionItem) => {
+    try {
+      await dealActionStore.resolve(item.id);
+      toast.success("Action item resolved");
+    } catch (error) {
+      toast.error("Unable to resolve action item", {
+        description: error instanceof Error ? error.message : "Please check Supabase permissions.",
+      });
+    }
+  };
+
   if (!deal) {
     return (
       <div className="p-8 text-center animate-fade-in">
         <p style={{ color: "var(--text-muted)", fontSize: 16 }}>Deal not found.</p>
         <button onClick={() => navigate("/deals")} className="mt-4 text-[14px] font-semibold" style={{ color: "var(--text-orange-ui)" }}>Back to Deals</button>
+      </div>
+    );
+  }
+
+  if (!hasDealAccess) {
+    return (
+      <div className="p-8 text-center animate-fade-in">
+        <p style={{ color: "var(--text-muted)", fontSize: 16 }}>You do not have access to this deal.</p>
+        <button onClick={() => navigate(role === "deal" ? "/deal" : "/deals")} className="mt-4 text-[14px] font-semibold" style={{ color: "var(--text-orange-ui)" }}>
+          Back
+        </button>
       </div>
     );
   }
@@ -972,7 +1021,7 @@ export default function DealDetail() {
       {/* Edit Links Modal — Admin only */}
       {showLinksEditor && role === "admin" && (
         <DealLinksEditorModal
-          dealId={dealId || ""}
+          dealId={requestedDealId}
           initial={{
             marketStudyUrl: cleanUrl(deal.marketStudyLink) || "",
             mapUrl: cleanUrl(deal.mapLink) || "",
@@ -1160,6 +1209,50 @@ export default function DealDetail() {
               </div>
 
               {/* Broker Files moved into Deal Summary tab as a modal trigger */}
+
+              <div className="glass-card-static" style={{ padding: 0 }}>
+                <div className="flex items-center justify-between" style={{ padding: "16px 20px 12px", borderBottom: "1px solid var(--border-divider)" }}>
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4" style={{ color: "#E18739" }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)" }}>Take Action</span>
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{dealActionItems.filter((item) => item.status !== "resolved").length} open</span>
+                </div>
+                <div className="flex flex-col" style={{ padding: 12, gap: 8 }}>
+                  {dealActionItems.length === 0 ? (
+                    <p className="text-sm" style={{ color: "var(--text-muted)", padding: 8 }}>No action items yet.</p>
+                  ) : (
+                    dealActionItems.map((item) => {
+                      const resolved = item.status === "resolved";
+                      return (
+                        <div key={item.id} style={{ border: "1px solid var(--border-subtle)", borderLeft: `4px solid ${resolved ? "#059669" : "#E18739"}`, borderRadius: 10, padding: 12, background: "var(--bg-card)", opacity: resolved ? 0.7 : 1 }}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{item.title}</p>
+                              <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>{new Date(item.timestamp).toLocaleDateString()} · {item.audience}</p>
+                            </div>
+                            <span className="text-[11px] font-semibold" style={{ textTransform: "uppercase", letterSpacing: "0.06em", color: resolved ? "#059669" : "#E18739" }}>
+                              {resolved ? "Resolved" : "Pending"}
+                            </span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-sm" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>{item.body}</p>
+                          {!resolved && (
+                            <button
+                              type="button"
+                              onClick={() => void resolvePersistentAction(item)}
+                              className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold"
+                              style={{ color: "#059669" }}
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              Mark as Resolved
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
 
               {/* Deal Documents */}
               <div className="glass-card-static" style={{ padding: 0 }}>

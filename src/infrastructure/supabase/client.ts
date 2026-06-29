@@ -1,6 +1,5 @@
 import { getStoredSession, persistSession } from "@/application/auth/session";
 import { getRuntimeConfig } from "@/config/env";
-import { parseUserRole } from "@/domain/permissions";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -18,7 +17,7 @@ export class SupabaseHttpError extends Error {
 }
 
 export type SupabaseRequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: JsonObject | JsonObject[];
   query?: URLSearchParams;
   accessToken?: string | null;
@@ -28,10 +27,6 @@ export type SupabaseRequestOptions = {
 type RefreshTokenResponse = {
   access_token?: unknown;
   refresh_token?: unknown;
-  user?: {
-    user_metadata?: { role?: unknown };
-    app_metadata?: { role?: unknown };
-  };
 };
 
 function getBaseUrl(): string {
@@ -58,12 +53,6 @@ async function parseResponse(response: Response): Promise<unknown> {
   return response.json() as Promise<unknown>;
 }
 
-function readRole(payload: RefreshTokenResponse) {
-  const metadataRole = payload.user?.user_metadata?.role;
-  const appRole = payload.user?.app_metadata?.role;
-  return parseUserRole(typeof metadataRole === "string" ? metadataRole : typeof appRole === "string" ? appRole : null);
-}
-
 async function refreshStoredSession(): Promise<string | null> {
   const session = getStoredSession();
   if (!session?.refreshToken) return null;
@@ -84,7 +73,7 @@ async function refreshStoredSession(): Promise<string | null> {
   if (!response.ok || typeof payload.access_token !== "string") return null;
 
   const nextRefreshToken = typeof payload.refresh_token === "string" ? payload.refresh_token : session.refreshToken;
-  persistSession({ accessToken: payload.access_token, refreshToken: nextRefreshToken, role: readRole(payload) });
+  persistSession({ ...session, accessToken: payload.access_token, refreshToken: nextRefreshToken });
   return payload.access_token;
 }
 

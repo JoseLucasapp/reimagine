@@ -2,32 +2,39 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Grid3X3, Filter, Handshake, Ruler, Star,
   Settings, Map, ChevronLeft, ChevronRight, Sun, Moon, Eye,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useIsCompact } from "@/hooks/use-mobile";
-import { useUserRole, roleStore, ROLE_LABELS, canSeeRoute } from "@/hooks/useUserRole";
+import { useIsRolePreview, useScopedUser, useUserRole, roleStore, ROLE_LABELS, canSeeRoute } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import logoFull from "@/assets/logo-full.png";
 import logoFullDark from "@/assets/logo-full-dark.png";
 import logoIcon from "@/assets/logo-icon.png";
+
+type SidebarItem = {
+  label: string;
+  to: string;
+  icon: LucideIcon;
+};
 
 const group1 = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Brands", to: "/brands", icon: Grid3X3 },
   { label: "Prospects", to: "/bizdev", icon: Filter },
   { label: "Deals", to: "/deals", icon: Handshake },
-];
+] satisfies SidebarItem[];
 
 const group2 = [
   { label: "Map", to: "/map", icon: Map },
   { label: "Space Reqs", to: "/space-requirements", icon: Ruler },
   { label: "One-Off Deals", to: "/one-off", icon: Star },
-];
+] satisfies SidebarItem[];
 
 const bottomNav = [
   { label: "Settings", to: "/settings", icon: Settings },
-];
+] satisfies SidebarItem[];
 
 interface AppSidebarProps {
   collapsed: boolean;
@@ -37,26 +44,30 @@ interface AppSidebarProps {
 
 export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps) {
   const location = useLocation();
-  const { theme, toggle, isDark } = useTheme();
+  const { toggle, isDark } = useTheme();
   const isCompact = useIsCompact();
   const role = useUserRole();
+  const user = useScopedUser();
+  const isPreviewing = useIsRolePreview();
 
   // In compact mode (mobile/tablet drawer), always show full sidebar
   const effectiveCollapsed = isCompact ? false : collapsed;
   const showLabels = !effectiveCollapsed;
 
   // Filter nav items by what the active role can access.
-  const visibleGroup1 = group1.filter((i) => canSeeRoute(role, i.to));
+  const visibleGroup1 = group1.filter((i) => canSeeRoute(user ?? role, i.to));
+  const visibleGroup2 = group2.filter((i) => canSeeRoute(user ?? role, i.to));
+  const visibleBottomNav = bottomNav.filter((i) => canSeeRoute(user ?? role, i.to));
 
   const handleExitPreview = () => {
-    roleStore.set("admin");
+    roleStore.resetToAdmin();
     toast.success(`Now viewing as ${ROLE_LABELS.admin}`);
   };
 
   const isActive = (path: string) =>
     location.pathname === path || (path !== "/" && location.pathname.startsWith(path));
 
-  const renderLinks = (items: typeof group1) =>
+  const renderLinks = (items: SidebarItem[]) =>
     items.map((item) => {
       const active = isActive(item.to);
       return (
@@ -124,6 +135,16 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
           </p>
         )}
         {renderLinks(visibleGroup1)}
+        {visibleGroup2.length > 0 && (
+          <>
+            {showLabels && (
+              <p className="px-[12px] text-[12px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--sidebar-section-label)", marginTop: 16, marginBottom: 4 }}>
+                Tools
+              </p>
+            )}
+            {renderLinks(visibleGroup2)}
+          </>
+        )}
       </nav>
 
       {/* Bottom: toggle + settings + collapse */}
@@ -172,7 +193,7 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
         </button>
 
         {/* Role preview banner — shown when a non-admin role is active */}
-        {role !== "admin" && (
+        {isPreviewing && (
           <div
             style={{
               marginBottom: 8,
@@ -240,7 +261,7 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
           </div>
         )}
 
-        {renderLinks(bottomNav)}
+        {renderLinks(visibleBottomNav)}
 
         {/* Collapse button only on desktop */}
         {!isCompact && (

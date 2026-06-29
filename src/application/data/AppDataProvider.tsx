@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { getStoredSession } from "@/application/auth/session";
+import { getStoredSession, persistSession } from "@/application/auth/session";
 import { getRuntimeConfig } from "@/config/env";
 import { loadRuntimeAppData } from "@/application/data/loadRuntimeAppData";
+import { refreshProfileSession } from "@/infrastructure/supabase/auth";
 
 interface AppDataProviderProps {
   children: React.ReactNode;
@@ -24,7 +25,9 @@ export function AppDataProvider({ children }: AppDataProviderProps) {
         if (!session?.accessToken) {
           throw new Error("Session expired. Refresh the page and log in again.");
         }
-        await loadRuntimeAppData({ accessToken: session.accessToken });
+        const profileSession = await refreshProfileSession(session);
+        persistSession(profileSession);
+        await loadRuntimeAppData({ accessToken: profileSession.accessToken, currentUser: profileSession.profile });
         if (active) setStatus("ready");
       } catch (err) {
         if (!active) return;

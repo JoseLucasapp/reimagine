@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Building2, Handshake, Users, X } from "lucide-react";
 import { globalSearch, SearchResult } from "@/data/dashboardData";
+import { dealBrands, dealRecords } from "@/data/dealsData";
+import { getVisibleBrandsForUser, getVisibleDealsForUser, useScopedUser } from "@/hooks/useUserRole";
+import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
 const typeIcons: Record<string, React.ElementType> = {
   Brand: Building2,
@@ -12,13 +15,34 @@ const typeIcons: Record<string, React.ElementType> = {
 export function GlobalSearch() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
+  const user = useScopedUser();
+  const runtimeDataVersion = useRuntimeDataVersion();
+
+  const visibleDeals = useMemo(() => {
+    void runtimeDataVersion;
+    return getVisibleDealsForUser(user, dealRecords);
+  }, [runtimeDataVersion, user]);
+
+  const visibleBrands = useMemo(() => {
+    void runtimeDataVersion;
+    return getVisibleBrandsForUser(user, dealBrands, visibleDeals);
+  }, [runtimeDataVersion, user, visibleDeals]);
+
+  const results = useMemo(() => {
+    return globalSearch(query, visibleDeals, visibleBrands);
+  }, [query, visibleDeals, visibleBrands]);
+
+  const grouped = useMemo(() => {
+    return results.reduce<Record<string, SearchResult[]>>((acc, r) => {
+      (acc[r.type] ??= []).push(r);
+      return acc;
+    }, {});
+  }, [results]);
 
   useEffect(() => {
-    setResults(globalSearch(query));
-    setOpen(query.length >= 2);
+    if (query.length < 2) setOpen(false);
   }, [query]);
 
   useEffect(() => {
@@ -29,18 +53,18 @@ export function GlobalSearch() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const grouped = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
-    (acc[r.type] ??= []).push(r);
-    return acc;
-  }, {});
-
   return (
     <div ref={ref} className="relative w-full max-w-md">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "var(--text-muted)" }} />
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQuery(next);
+            setOpen(next.length >= 2);
+          }}
+          onFocus={() => setOpen(query.length >= 2)}
           placeholder="Search brands, deals, contacts..."
           className="glass-input w-full pl-9 pr-9 py-2 text-sm"
           aria-label="Search brands, deals, contacts"

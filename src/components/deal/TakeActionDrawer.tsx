@@ -8,7 +8,7 @@ import { teamMembers, type TeamMember } from "@/data/teamData";
 export interface TakeActionSubmission {
   actionTypeKey: string;
   actionTypeLabel: string;
-  recipients: string[]; // member names
+  recipients: string[];
   message: string;
   urgency: string;
   siteIds: string[];
@@ -127,11 +127,13 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
       ? customLabel.trim() || "Custom Action"
       : ACTION_TYPES.find((a) => a.key === actionType)?.label ?? "";
 
-  const hasRecipients = isDealLevel || selectedTeam.length > 0;
+  const hasRecipients = isDealLevel ? teamMembers.length > 0 : selectedTeam.length > 0;
   const canSend =
     !!actionType &&
     hasRecipients &&
+    message.trim().length > 0 &&
     (actionType !== "custom" || customLabel.trim().length > 0) &&
+    (actionType !== "report" || reportSelected.length > 0) &&
     (actionType !== "tour" || tourSites.length > 0);
 
   const handleSend = async () => {
@@ -150,14 +152,23 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
       );
       return;
     }
-    const recipientNames = isDealLevel
-      ? ["Reimagine Team"]
-      : teamMembers.filter((m) => selectedTeam.includes(m.id)).map((m) => m.name);
+    if (!message.trim()) {
+      toast.error("Add a message before sending");
+      return;
+    }
+    if (actionType === "report" && reportSelected.length === 0) {
+      toast.error("Select at least one report section");
+      return;
+    }
+    const selectedMembersForSubmit = isDealLevel
+      ? teamMembers
+      : teamMembers.filter((m) => selectedTeam.includes(m.id));
+    const recipientEmails = selectedMembersForSubmit.map((member) => member.email).filter(Boolean);
     try {
       await onSubmit?.({
         actionTypeKey: actionType,
         actionTypeLabel: resolvedLabel,
-        recipients: recipientNames,
+        recipients: recipientEmails,
         message: message.trim(),
         urgency: "normal",
         siteIds: actionType === "tour" ? tourSites : [],
@@ -171,13 +182,13 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
     if (actionType === "report") {
       toast.success(
         reportFormat === "pdf"
-          ? `Report generated and sent to ${recipientNames.length} recipient${recipientNames.length === 1 ? "" : "s"}`
-          : `CSV export sent to ${recipientNames.length} recipient${recipientNames.length === 1 ? "" : "s"}`,
+          ? `Report generated and sent to ${recipientEmails.length} recipient${recipientEmails.length === 1 ? "" : "s"}`
+          : `CSV export sent to ${recipientEmails.length} recipient${recipientEmails.length === 1 ? "" : "s"}`,
       );
     } else if (actionType === "tour") {
-      toast.success(`Tour book generated and sent to ${recipientNames.length} recipient${recipientNames.length === 1 ? "" : "s"}`);
+      toast.success(`Tour book generated and sent to ${recipientEmails.length} recipient${recipientEmails.length === 1 ? "" : "s"}`);
     } else {
-      toast.success(`Action sent to ${recipientNames.length} ${recipientNames.length === 1 ? "person" : "people"}`);
+      toast.success(`Action sent to ${recipientEmails.length} ${recipientEmails.length === 1 ? "person" : "people"}`);
     }
     reset();
     onClose();
@@ -517,9 +528,20 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
                     <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
                       Reimagine Team
                     </p>
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-                      Your request will be routed to your Reimagine contact.
-                    </p>
+                    {teamMembers.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                        No Reimagine team profiles with email are visible. Add an internal profile in Supabase.
+                      </p>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                          Your request will be routed to {teamMembers.length} Reimagine team recipient{teamMembers.length === 1 ? "" : "s"}.
+                        </p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, wordBreak: "break-word" }}>
+                        {teamMembers.map((member) => member.email).join(", ")}
+                      </p>
+                      </>
+                    )}
                   </div>
                 </div>
               </>
@@ -618,7 +640,8 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
                       <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", display: "block" }}>
                         {member.name}
                       </span>
-                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{member.role}</span>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)", display: "block" }}>{member.email}</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{member.role}</span>
                     </div>
                   </button>
                 );
@@ -657,7 +680,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
                       >
                         {m.initials}
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)" }}>{m.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-primary)" }}>{m.name} ({m.email})</span>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -744,7 +767,7 @@ export function TakeActionDrawer({ open, onClose, dealName, dealId, sites = [], 
               <>
                 <Users className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {selectedTeam.length} recipient{selectedTeam.length !== 1 ? "s" : ""}
+                  {isDealLevel ? teamMembers.length : selectedTeam.length} recipient{(isDealLevel ? teamMembers.length : selectedTeam.length) !== 1 ? "s" : ""}
                 </span>
               </>
             )}

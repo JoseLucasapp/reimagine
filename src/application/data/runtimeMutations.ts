@@ -912,12 +912,15 @@ export async function createTourBook(input: TourBookMutationInput): Promise<void
 }
 
 export async function createDealActionItem(input: DealActionMutationInput): Promise<void> {
+  const profile = getStoredSession()?.profile;
+  if (!profile) throw new Error("Current user profile is required before creating action items.");
   await insertReturning<TakeActionRow>("take_action_items", {
     deal_id: input.dealId,
     audience: input.audience,
     status: "open",
     title: input.title.trim(),
     body: input.body.trim(),
+    created_by: profile.id,
   });
 }
 
@@ -998,4 +1001,3 @@ export async function createSites(inputs: SiteMutationInput[]): Promise<Site[]> 
   records.forEach(upsertSiteRuntime);
   return records;
 }
-

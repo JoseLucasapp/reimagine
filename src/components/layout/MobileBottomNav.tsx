@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Grid3X3, Filter, Handshake, Settings } from "lucide-react";
+import { canSeeRoute, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 
 const tabs = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
@@ -11,10 +12,13 @@ const tabs = [
 
 export function MobileBottomNav() {
   const location = useLocation();
+  const role = useUserRole();
+  const user = useScopedUser();
+  const visibleTabs = tabs.filter((tab) => canSeeRoute(user ?? role, tab.to));
 
   return (
     <nav className="mobile-bottom-nav">
-      {tabs.map((tab) => {
+      {visibleTabs.map((tab) => {
         const isActive =
           tab.to === "/"
             ? location.pathname === "/"

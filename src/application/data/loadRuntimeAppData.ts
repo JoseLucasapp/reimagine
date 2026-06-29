@@ -15,11 +15,14 @@ import { replaceMapRuntimeData, type DealStage, type Site, type SiteFile, type S
 import { replaceSpaceRequirementsRuntimeData, type GasReq, type SecondFloor, type SpaceRequirement } from "@/data/spaceReqData";
 import { replaceTeamRuntimeData } from "@/data/teamData";
 import type { UserRole } from "@/domain/entities";
+import type { SessionProfile } from "@/application/auth/session";
+import { canAccessBrand, getVisibleBrandsForUser, getVisibleDealsForUser } from "@/domain/permissions";
 import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
 import { supabaseRequest } from "@/infrastructure/supabase/client";
 
 type RuntimeLoadOptions = {
   accessToken: string | null;
+  currentUser?: SessionProfile | null;
 };
 
 type BrandRow = {
@@ -38,9 +41,12 @@ type BrandRow = {
 
 type ProfileRow = {
   id: string;
+  email: string | null;
   full_name: string | null;
   username: string | null;
   role: UserRole;
+  brand_id: string | null;
+  deal_id: string | null;
 };
 
 type DealRow = {
@@ -478,9 +484,12 @@ function applyCoreRuntimeData(
   rebuildBrandRuntimeData();
   replaceTeamRuntimeData(profileRows.map((row) => ({
     id: row.id,
+    email: row.email ?? null,
     fullName: row.full_name,
     username: row.username,
     role: row.role,
+    brandId: row.brand_id,
+    dealId: row.deal_id,
   })));
 }
 
@@ -488,15 +497,23 @@ function applySecondaryRuntimeData(
   prospectRows: ProspectRow[],
   siteRows: SiteRow[],
   spaceRows: SpaceRequirementRow[],
+  currentUser?: SessionProfile | null,
 ): void {
-  const prospects = prospectRows.map(mapProspect);
-  const spaceRequirements = spaceRows.map(mapSpaceRequirement);
+  const visibleDealIds = new Set(dealRecords.map((deal) => deal.id));
+  const scopedProspectRows = currentUser?.role === "admin" ? prospectRows : [];
+  const scopedSiteRows = siteRows.filter((row) => visibleDealIds.has(row.deal_id));
+  const scopedSpaceRows = currentUser
+    ? spaceRows.filter((row) => canAccessBrand(currentUser, row.brand_id))
+    : spaceRows;
+
+  const prospects = scopedProspectRows.map(mapProspect);
+  const spaceRequirements = scopedSpaceRows.map(mapSpaceRequirement);
 
   replaceBizDevRuntimeData(prospects);
   replaceSpaceRequirementsRuntimeData(spaceRequirements);
 
   const sitesByDeal = new Map<string, Site[]>();
-  for (const row of siteRows) {
+  for (const row of scopedSiteRows) {
     const current = sitesByDeal.get(row.deal_id) ?? [];
     current.push(mapSite(row));
     sitesByDeal.set(row.deal_id, current);
@@ -519,18 +536,18 @@ function applySecondaryRuntimeData(
   });
 }
 
-async function loadSecondaryRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
+async function loadSecondaryRuntimeAppData({ accessToken, currentUser }: RuntimeLoadOptions): Promise<void> {
   const [prospectRows, siteRows, spaceRows] = await Promise.all([
     readTable<ProspectRow>("prospects", accessToken),
     readTable<SiteRow>("sites", accessToken),
     readTable<SpaceRequirementRow>("space_requirements", accessToken),
   ]);
 
-  applySecondaryRuntimeData(prospectRows, siteRows, spaceRows);
+  applySecondaryRuntimeData(prospectRows, siteRows, spaceRows, currentUser);
   notifyRuntimeDataChanged();
 }
 
-export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): Promise<void> {
+export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLoadOptions): Promise<void> {
   const [brandRows, profileRows, dealRows, noteRows, documentRows] = await Promise.all([
     readTable<BrandRow>("brands", accessToken),
     readTable<ProfileRow>("profiles", accessToken),
@@ -539,10 +556,16 @@ export async function loadRuntimeAppData({ accessToken }: RuntimeLoadOptions): P
     readTable<DealDocumentRow>("deal_documents", accessToken),
   ]);
 
-  applyCoreRuntimeData(brandRows, profileRows, dealRows, noteRows, documentRows);
+  const scopedDealRows = currentUser ? getVisibleDealsForUser(currentUser, dealRows) : dealRows;
+  const scopedBrandRows = currentUser ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows.length ? scopedDealRows : dealRows) : brandRows;
+  const visibleDealIds = new Set(scopedDealRows.map((row) => row.id));
+  const scopedNoteRows = noteRows.filter((row) => visibleDealIds.has(row.deal_id));
+  const scopedDocumentRows = documentRows.filter((row) => visibleDealIds.has(row.deal_id));
+
+  applyCoreRuntimeData(scopedBrandRows, profileRows, scopedDealRows, scopedNoteRows, scopedDocumentRows);
   notifyRuntimeDataChanged();
 
-  void loadSecondaryRuntimeAppData({ accessToken }).catch((error) => {
+  void loadSecondaryRuntimeAppData({ accessToken, currentUser }).catch((error) => {
     console.error("Secondary Supabase data load failed", error);
   });
 }

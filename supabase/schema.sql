@@ -115,6 +115,7 @@ create table public.deals (
 
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  email text unique,
   full_name text,
   username text unique,
   role public.user_role not null default 'deal',
@@ -336,9 +337,10 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, username, role)
+  insert into public.profiles (id, email, full_name, username, role)
   values (
     new.id,
+    lower(nullif(new.email, '')),
     nullif(new.raw_user_meta_data ->> 'full_name', ''),
     nullif(new.raw_user_meta_data ->> 'username', ''),
     public.normalize_user_role(new.raw_user_meta_data ->> 'role')
@@ -346,7 +348,11 @@ begin
   on conflict (id) do update set
     full_name = excluded.full_name,
     username = excluded.username,
-    role = excluded.role,
+    email = excluded.email,
+    role = case
+      when new.raw_user_meta_data ? 'role' then excluded.role
+      else public.profiles.role
+    end,
     updated_at = now();
   return new;
 end;
@@ -354,7 +360,7 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
-after insert on auth.users
+after insert or update of email, raw_user_meta_data on auth.users
 for each row execute function public.handle_new_user();
 
 alter table public.brands enable row level security;
@@ -480,7 +486,11 @@ $$;
 create policy "brands select by platform scope" on public.brands for select using (public.current_user_can_access_brand(id));
 create policy "admins manage brands" on public.brands for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
-create policy "profiles select own or admin" on public.profiles for select using (id = auth.uid() or public.current_user_role() = 'admin');
+create policy "profiles select own admin or reimagine team" on public.profiles for select using (
+  id = auth.uid()
+  or public.current_user_role() = 'admin'
+  or lower(coalesce(email, '')) like '%@reimagine.com'
+);
 create policy "profiles update own" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "admins manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
@@ -518,10 +528,12 @@ create policy "admins manage tour books" on public.tour_books for all using (pub
 
 create policy "take action select by deal scope" on public.take_action_items for select using (public.current_user_can_access_deal(deal_id));
 create policy "take action insert by deal scope" on public.take_action_items for insert with check (public.current_user_can_access_deal(deal_id));
+create policy "take action update by deal scope" on public.take_action_items for update using (public.current_user_can_access_deal(deal_id)) with check (public.current_user_can_access_deal(deal_id));
 create policy "admins manage take action" on public.take_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "brand action select by brand scope" on public.brand_action_items for select using (public.current_user_can_access_brand(brand_id));
 create policy "brand action insert by brand scope" on public.brand_action_items for insert with check (public.current_user_can_access_brand(brand_id));
+create policy "brand action update by brand scope" on public.brand_action_items for update using (public.current_user_can_access_brand(brand_id)) with check (public.current_user_can_access_brand(brand_id));
 create policy "admins manage brand action" on public.brand_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "ai insights select by entity scope" on public.ai_insights for select using (

@@ -74,7 +74,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     const result = await signInWithSupabase(credential, password);
     if (result.ok) {
-      onLogin({ accessToken: result.session.accessToken, refreshToken: result.session.refreshToken, role: result.session.role });
+      onLogin(result.session);
       return;
     }
     setError(result.message);

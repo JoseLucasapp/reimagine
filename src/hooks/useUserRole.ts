@@ -1,83 +1,93 @@
-// Reactive user-role store backed by sessionStorage.
-// Switching roles updates every subscriber synchronously so the whole app
-// re-renders without a page reload.
-import { useSyncExternalStore } from "react";
+// Reactive role/profile access backed by the authenticated Supabase profile.
+// Admin preview is intentionally stored separately from the persisted session.
+import { useMemo, useSyncExternalStore } from "react";
+import { AUTH_SESSION_EVENT, getStoredProfile, type SessionProfile } from "@/application/auth/session";
 import type { UserRole } from "@/domain/entities";
 import {
+  canAccessAdminArea,
+  canAccessBrand,
+  canAccessDeal,
   canEditDeal,
   canSeeRoute,
   canUseInternalTakeAction,
   canViewBrokerFiles,
   canViewFinancials,
+  getVisibleBrandsForUser,
+  getVisibleDealsForUser,
   parseUserRole,
   ROLE_LABELS,
   ROLE_ROUTES,
+  type ScopedUser,
 } from "@/domain/permissions";
 
-const KEY = "rcre_role";
+const PREVIEW_KEY = "rcre_preview_role";
 const EVENT = "rcre:role-change";
 const DEFAULT_ROLE: UserRole = "admin";
-
-// Bump this when the default preview role changes. This prevents existing
-// browser sessions that were saved as Deal Level from locking the user out
-// after a deployment.
-const DEFAULT_ROLE_VERSION_KEY = "rcre_role_default_version";
-const DEFAULT_ROLE_VERSION = "brand-deal-platforms-2026-06-15";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
-function ensureDefaultRole(): void {
-  if (typeof window === "undefined") return;
-
-  const currentVersion = sessionStorage.getItem(DEFAULT_ROLE_VERSION_KEY);
-  const currentRole = sessionStorage.getItem(KEY);
-
-  if (currentVersion !== DEFAULT_ROLE_VERSION || !currentRole) {
-    sessionStorage.setItem(KEY, DEFAULT_ROLE);
-    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
-  }
+function readProfile(): SessionProfile | null {
+  return getStoredProfile();
 }
 
-function readRole(): UserRole {
-  if (typeof window === "undefined") return DEFAULT_ROLE;
-  ensureDefaultRole();
-  return parseUserRole(sessionStorage.getItem(KEY));
+function readPreviewRole(): UserRole | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(PREVIEW_KEY);
+  if (!raw) return null;
+  return parseUserRole(raw);
 }
 
-// Cache so useSyncExternalStore receives a stable reference between updates.
-let current: UserRole = readRole();
+function readEffectiveRole(): UserRole {
+  const profile = readProfile();
+  if (!profile) return DEFAULT_ROLE;
+  if (profile.role !== "admin") return profile.role;
+  return readPreviewRole() ?? profile.role;
+}
+
+function readRealRole(): UserRole {
+  return readProfile()?.role ?? DEFAULT_ROLE;
+}
 
 function emit() {
-  current = readRole();
+  currentRole = readEffectiveRole();
+  currentProfile = readProfile();
   listeners.forEach((listener) => listener());
 }
 
-if (typeof window !== "undefined") {
-  ensureDefaultRole();
+let currentRole: UserRole = readEffectiveRole();
+let currentProfile: SessionProfile | null = readProfile();
 
-  // Sync across tabs.
+if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
-    if (event.key === KEY || event.key === DEFAULT_ROLE_VERSION_KEY) emit();
+    if (event.key === PREVIEW_KEY || event.key?.startsWith("rcre_")) emit();
   });
-  // Sync within the same tab.
   window.addEventListener(EVENT, emit as EventListener);
+  window.addEventListener(AUTH_SESSION_EVENT, emit as EventListener);
 }
 
 export const roleStore = {
   get(): UserRole {
-    return current;
+    return currentRole;
+  },
+  getRealRole(): UserRole {
+    return readRealRole();
+  },
+  isPreviewing(): boolean {
+    const profile = readProfile();
+    return Boolean(profile && profile.role === "admin" && readPreviewRole() && readPreviewRole() !== "admin");
   },
   set(role: UserRole) {
     if (typeof window === "undefined") return;
-    sessionStorage.setItem(KEY, role);
-    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
+    const profile = readProfile();
+    if (!profile || profile.role !== "admin") return;
+    if (role === "admin") sessionStorage.removeItem(PREVIEW_KEY);
+    else sessionStorage.setItem(PREVIEW_KEY, role);
     window.dispatchEvent(new Event(EVENT));
   },
   resetToAdmin() {
     if (typeof window === "undefined") return;
-    sessionStorage.setItem(KEY, DEFAULT_ROLE);
-    sessionStorage.setItem(DEFAULT_ROLE_VERSION_KEY, DEFAULT_ROLE_VERSION);
+    sessionStorage.removeItem(PREVIEW_KEY);
     window.dispatchEvent(new Event(EVENT));
   },
   subscribe(listener: Listener) {
@@ -91,8 +101,50 @@ export const roleStore = {
 export function useUserRole(): UserRole {
   return useSyncExternalStore(
     roleStore.subscribe,
-    () => current,
+    () => currentRole,
     () => DEFAULT_ROLE,
+  );
+}
+
+export function useCurrentProfile(): SessionProfile | null {
+  return useSyncExternalStore(
+    roleStore.subscribe,
+    () => currentProfile,
+    () => null,
+  );
+}
+
+export function useScopedUser(): ScopedUser | null {
+  const profile = useCurrentProfile();
+  const role = useUserRole();
+  return useMemo(() => {
+    if (!profile) return null;
+    return {
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.fullName,
+      username: profile.username,
+      role,
+      realRole: profile.role,
+      brandId: profile.brandId,
+      dealId: profile.dealId,
+    };
+  }, [profile, role]);
+}
+
+export function useRealUserRole(): UserRole {
+  return useSyncExternalStore(
+    roleStore.subscribe,
+    () => readRealRole(),
+    () => DEFAULT_ROLE,
+  );
+}
+
+export function useIsRolePreview(): boolean {
+  return useSyncExternalStore(
+    roleStore.subscribe,
+    () => roleStore.isPreviewing(),
+    () => false,
   );
 }
 
@@ -101,12 +153,17 @@ export function isAdminRole(role: UserRole): boolean {
 }
 
 export {
+  canAccessAdminArea,
+  canAccessBrand,
+  canAccessDeal,
   canEditDeal,
   canSeeRoute,
   canUseInternalTakeAction,
   canViewBrokerFiles,
   canViewFinancials,
+  getVisibleBrandsForUser,
+  getVisibleDealsForUser,
   ROLE_LABELS,
   ROLE_ROUTES,
 };
-export type { UserRole };
+export type { ScopedUser, UserRole };

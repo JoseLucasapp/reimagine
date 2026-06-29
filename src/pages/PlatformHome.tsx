@@ -1,12 +1,11 @@
 import { useUserRole } from "@/hooks/useUserRole";
+import { Navigate } from "react-router-dom";
 import Dashboard from "./Dashboard";
-import FranchisorDashboard from "./FranchisorDashboard";
-import FranchiseeDashboard from "./FranchiseeDashboard";
 
 export default function PlatformHome() {
   const role = useUserRole();
 
-  if (role === "brand") return <FranchisorDashboard />;
-  if (role === "deal") return <FranchiseeDashboard />;
+  if (role === "brand") return <Navigate to="/brand" replace />;
+  if (role === "deal") return <Navigate to="/deal" replace />;
   return <Dashboard />;
 }

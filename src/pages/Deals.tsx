@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  dealRecords, dealBrands, getDealBrandById, getUniqueBrokers, getUniqueStates,
+  dealRecords, dealBrands, getDealBrandById,
   emptyDealDocuments, DealStatusNew, KANBAN_COLUMNS, daysActive, DealRecord, DealDocuments,
 } from "@/data/dealsData";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
@@ -17,7 +17,7 @@ import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useUserRole, canEditDeal, canViewFinancials } from "@/hooks/useUserRole";
+import { useScopedUser, useUserRole, canEditDeal, canViewFinancials, getVisibleBrandsForUser, getVisibleDealsForUser } from "@/hooks/useUserRole";
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
@@ -64,17 +64,22 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
   const [editingDeal, setEditingDeal] = useState<DealRecord | null>(null);
   const runtimeDataVersion = useRuntimeDataVersion();
   const role = useUserRole();
+  const user = useScopedUser();
   const allowEdit = canEditDeal(role);
-  const showFinancials = canViewFinancials(role);
 
   const baseDeals = useMemo(() => {
     void runtimeDataVersion;
-    let d = dealRecords;
+    let d = getVisibleDealsForUser(user ?? role, dealRecords);
     if (isOneOff) d = d.filter((x) => x.isOneOff);
     else if (brandFilter) d = d.filter((x) => x.brandId === brandFilter && !x.isOneOff);
     else d = d.filter((x) => !x.isOneOff);
     return d;
-  }, [brandFilter, isOneOff, runtimeDataVersion]);
+  }, [brandFilter, isOneOff, role, runtimeDataVersion, user]);
+
+  const visibleBrands = useMemo(() => {
+    void runtimeDataVersion;
+    return getVisibleBrandsForUser(user ?? role, dealBrands, baseDeals);
+  }, [baseDeals, role, runtimeDataVersion, user]);
 
   const filtered = useMemo(() => {
     let d = baseDeals;
@@ -153,7 +158,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
             label="Brand"
             value={brandFilterState}
             onChange={setBrandFilterState}
-            options={dealBrands.map((b) => ({ value: b.id, label: b.name }))}
+            options={visibleBrands.map((b) => ({ value: b.id, label: b.name }))}
           />
         )}
         <MultiSelectFilter
@@ -166,18 +171,18 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
           label="Broker"
           value={brokerFilter}
           onChange={setBrokerFilter}
-          options={getUniqueBrokers().map((b) => ({ value: b, label: b }))}
+          options={[...new Set(baseDeals.map((deal) => deal.broker).filter(Boolean))].sort().map((b) => ({ value: b, label: b }))}
         />
         <MultiSelectFilter
           label="State"
           value={stateFilter}
           onChange={setStateFilter}
-          options={getUniqueStates().map((s) => ({ value: s, label: s }))}
+          options={[...new Set(baseDeals.map((deal) => deal.state).filter(Boolean))].sort().map((s) => ({ value: s, label: s }))}
         />
       </div>
 
       {/* Table View */}
-      {view === "table" && <DealsTable deals={filtered} navigate={navigate} setEditingDeal={setEditingDeal} setShowDrawer={setShowDrawer} />}
+      {view === "table" && <DealsTable deals={filtered} navigate={navigate} setEditingDeal={setEditingDeal} setShowDrawer={setShowDrawer} allowEdit={allowEdit} />}
 
       {/* Kanban View */}
       {view === "kanban" && (
@@ -307,11 +312,12 @@ function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (pa
 // ===== DEALS TABLE =====
 const ROWS_PER_PAGE = 10;
 
-function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer }: {
+function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer, allowEdit }: {
   deals: DealRecord[];
   navigate: (path: string) => void;
   setEditingDeal: (d: DealRecord | null) => void;
   setShowDrawer: (v: boolean) => void;
+  allowEdit: boolean;
 }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.ceil(deals.length / ROWS_PER_PAGE);
@@ -412,7 +418,7 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer }: {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => navigate(`/deals/${deal.id}`)}>View</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => { setEditingDeal(deal); setShowDrawer(true); }}>Edit</DropdownMenuItem>
+                        {allowEdit && <DropdownMenuItem onClick={() => { setEditingDeal(deal); setShowDrawer(true); }}>Edit</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
