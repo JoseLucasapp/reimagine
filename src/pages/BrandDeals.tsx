@@ -2,7 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useSyncExternalStore, useMemo } from "react";
 import { getDealBrandById, getDealRecordsByBrand, DEAL_STATUS_ORDER, daysActive, type DealRecord } from "@/data/dealsData";
 import DealsPage from "./Deals";
-import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2, ExternalLink } from "lucide-react";
 import { TakeActionDrawer, type TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
@@ -14,7 +14,6 @@ const STAGE_DOT_COLORS: Record<string, string> = {
   "Kick Off": "#E18739",
   "Market Study": "#F2A65A",
   "Site Tours": "#5BA4D9",
-  "First LOI(s) Submitted": "#3B82F6",
   "LOI Negotiations": "#1E5BA8",
   "Lease Negotiations": "rgba(36,60,81,0.70)",
   "Signed": "#059669",
@@ -45,6 +44,19 @@ function isCurrentMonth(value: string | null | undefined): boolean {
 
 function dealActivityDate(deal: DealRecord): string | null {
   return deal.notes[0]?.date ?? deal.dateLeaseSigned ?? deal.dateIntroCall ?? null;
+}
+
+function brandLinkLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./, "");
+    if (hostname === "docs.google.com" && parsed.pathname.startsWith("/spreadsheets")) {
+      return "docs.google.com/spreadsheets";
+    }
+    return hostname || url;
+  } catch {
+    return url;
+  }
 }
 
 export default function BrandDeals() {
@@ -131,15 +143,30 @@ export default function BrandDeals() {
         <button onClick={() => navigate("/brands")} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide transition-colors mb-4" style={{ color: "#94a3b8" }}>
           <ArrowLeft className="w-4 h-4" /> Brands
         </button>
-        <div className="glass-card-static p-5 flex items-center gap-5 mb-2">
+        <div className="glass-card-static p-5 flex flex-col gap-5 lg:flex-row lg:items-center mb-2">
           <div className="w-14 h-14 rounded-[11px] flex items-center justify-center text-xl font-bold text-white shrink-0" style={{ backgroundColor: brand.logoColor, boxShadow: "0 4px 12px rgba(0,0,0,0.18)" }}>
             {brand.name.charAt(0)}
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{brand.name}</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{brand.category} · <a href={brand.corporateLink} target="_blank" rel="noopener" style={{ color: "#E18739" }}>{brand.corporateLink}</a></p>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: "#94a3b8" }}>
+              <span>{brand.category}</span>
+              {brand.corporateLink && brand.corporateLink !== "#" && (
+                <a
+                  href={brand.corporateLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={brand.corporateLink}
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium"
+                  style={{ color: "#E18739" }}
+                >
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{brandLinkLabel(brand.corporateLink)}</span>
+                </a>
+              )}
+            </div>
           </div>
-          <div className="flex items-center" style={{ gap: 24 }}>
+          <div className="flex shrink-0 flex-wrap items-center justify-start lg:justify-end" style={{ gap: 24 }}>
             {[
               { value: signed, label: "Signed", color: "#059669" },
               { value: inProgress, label: "In Progress", color: "#3b82f6" },

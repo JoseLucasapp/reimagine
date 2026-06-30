@@ -49,7 +49,6 @@ create type public.deal_stage as enum (
   'Kick Off',
   'Market Study',
   'Site Tours',
-  'First LOI(s) Submitted',
   'LOI Negotiations',
   'Lease Negotiations',
   'Signed',

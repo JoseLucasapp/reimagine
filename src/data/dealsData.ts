@@ -6,33 +6,33 @@ export type DealStatusNew =
   | "Signed"
   | "Lease Negotiations"
   | "LOI Negotiations"
-  | "First LOI(s) Submitted"
   | "Site Tours"
   | "Market Study"
   | "Kick Off"
   | "On Hold";
 
+export const LEGACY_FIRST_LOI_STATUS = "First LOI(s) Submitted" as const;
+export type PersistedDealStatus = DealStatusNew | typeof LEGACY_FIRST_LOI_STATUS;
+
 export const DEAL_STATUS_ORDER: DealStatusNew[] = [
   "Kick Off",
   "Market Study",
   "Site Tours",
-  "First LOI(s) Submitted",
   "LOI Negotiations",
   "Lease Negotiations",
   "Signed",
   "On Hold",
 ];
 
-export const KANBAN_COLUMNS: DealStatusNew[] = [
-  "Kick Off",
-  "Market Study",
-  "Site Tours",
-  "First LOI(s) Submitted",
-  "LOI Negotiations",
-  "Lease Negotiations",
-  "Signed",
-  "On Hold",
-];
+export const KANBAN_COLUMNS: DealStatusNew[] = [...DEAL_STATUS_ORDER];
+
+const DEAL_STATUS_SET = new Set<DealStatusNew>(DEAL_STATUS_ORDER);
+
+export function normalizeDealStatus(status: PersistedDealStatus | string | null | undefined): DealStatusNew {
+  if (status === LEGACY_FIRST_LOI_STATUS) return "LOI Negotiations";
+  if (status && DEAL_STATUS_SET.has(status as DealStatusNew)) return status as DealStatusNew;
+  return "Kick Off";
+}
 
 export interface DealNote {
   date: string;
@@ -156,7 +156,6 @@ export const dealStatusColors: Record<DealStatusNew, { bg: string; text: string;
   Signed: { bg: "bg-emerald-500/15", text: "text-emerald-700", dot: "bg-emerald-500" },
   "Lease Negotiations": { bg: "bg-blue-500/15", text: "text-blue-700", dot: "bg-blue-500" },
   "LOI Negotiations": { bg: "bg-indigo-500/15", text: "text-indigo-700", dot: "bg-indigo-500" },
-  "First LOI(s) Submitted": { bg: "bg-sky-400/15", text: "text-sky-700", dot: "bg-sky-500" },
   "Site Tours": { bg: "bg-teal-500/15", text: "text-teal-700", dot: "bg-teal-500" },
   "Market Study": { bg: "bg-purple-500/15", text: "text-purple-700", dot: "bg-purple-500" },
   "Kick Off": { bg: "bg-gray-400/15", text: "text-gray-600", dot: "bg-gray-400" },

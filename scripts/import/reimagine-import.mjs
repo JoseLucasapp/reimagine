@@ -745,7 +745,7 @@ function normalizeDealStage(value) {
   if (text.includes("signed") || text === "open" || text.includes("7-signed")) return "Signed";
   if (text.includes("lease")) return "Lease Negotiations";
   if (text.includes("loi negotiation")) return "LOI Negotiations";
-  if (text === "loi" || text.includes("first loi")) return "First LOI(s) Submitted";
+  if (text === "loi" || text.includes("first loi")) return "LOI Negotiations";
   if (text.includes("market")) return "Market Study";
   if (text.includes("property tour") || text.includes("site tour") || text.includes("tour")) return "Site Tours";
   if (text.includes("hold") || text.includes("dead") || text.includes("cancel") || text.includes("inactive")) return "On Hold";

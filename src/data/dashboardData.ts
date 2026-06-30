@@ -1,4 +1,4 @@
-import { dealRecords, dealBrands, getDealBrandById, DealStatusNew, dealStatusColors } from "./dealsData";
+import { DEAL_STATUS_ORDER, dealRecords, dealBrands, getDealBrandById, DealStatusNew, dealStatusColors } from "./dealsData";
 
 export type DealStatus = DealStatusNew;
 
@@ -42,7 +42,7 @@ export function getRecentActivity(): RecentActivity[] {
 
 export function getDealsByStatusCounts(): { status: DealStatus; count: number }[] {
   const counts: Record<string, number> = {};
-  const statuses: DealStatus[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+  const statuses: DealStatus[] = DEAL_STATUS_ORDER;
   statuses.forEach((s) => (counts[s] = 0));
   dealRecords.filter((d) => !d.isOneOff).forEach((d) => { counts[d.status] = (counts[d.status] || 0) + 1; });
   return statuses.map((s) => ({ status: s, count: counts[s] || 0 }));

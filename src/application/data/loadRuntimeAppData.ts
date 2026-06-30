@@ -4,10 +4,12 @@ import {
   dealBrands,
   dealRecords,
   emptyDealDocuments,
+  normalizeDealStatus,
   replaceDealRuntimeData,
   type DealBrand,
   type DealDocuments,
   type DealNote,
+  type PersistedDealStatus,
   type DealRecord,
   type DealStatusNew,
 } from "@/data/dealsData";
@@ -62,7 +64,7 @@ type DealRow = {
   associate: string | null;
   city: string;
   state: string;
-  stage: DealStatusNew;
+  stage: PersistedDealStatus;
   store_count: number | null;
   stores_bought: number | null;
   estimated_commission: string | number | null;
@@ -298,7 +300,7 @@ function mapDeal(row: DealRow, notes: Map<string, DealNote[]>, documents: Map<st
     cobroker: row.cobroker ?? "",
     cobrokerPercent: row.cobroker_percent ?? "",
     estimatedCommission: numberFromDb(row.estimated_commission),
-    status: row.stage,
+    status: normalizeDealStatus(row.stage),
     notes: notes.get(row.id) ?? [],
     documents: documents.get(row.id) ?? { ...emptyDealDocuments },
     isOneOff: row.is_one_off ?? false,
@@ -403,7 +405,7 @@ function mapSpaceRequirement(row: SpaceRequirementRow): SpaceRequirement {
 function mapStatusToLegacyStage(status: DealStatusNew): DealStage {
   if (status === "Signed") return "Open";
   if (status === "Lease Negotiations") return "Lease";
-  if (status === "LOI Negotiations" || status === "First LOI(s) Submitted") return "LOI";
+  if (status === "LOI Negotiations") return "LOI";
   if (status === "On Hold") return "Closed";
   return "Prospecting";
 }

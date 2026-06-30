@@ -15,7 +15,6 @@ const STAGE_BENCHMARKS: Record<DealStatusNew, number> = {
   "Kick Off": 7,
   "Market Study": 14,
   "Site Tours": 10,
-  "First LOI(s) Submitted": 21,
   "LOI Negotiations": 21,
   "Lease Negotiations": 30,
   "Signed": 999,
@@ -58,11 +57,11 @@ export function calculateDealHealth(deal: DealRecord): DealHealthResult {
     reasons.push("Engagement letter missing");
   }
 
-  if (deal.status === "First LOI(s) Submitted" && deal.dateIntroCall) {
+  if (deal.status === "LOI Negotiations" && deal.dateIntroCall) {
     const daysInPipeline = daysSince(deal.dateIntroCall);
     if (daysInPipeline > 30) {
       score -= 10;
-      reasons.push("In LOI stage for 30+ days");
+      reasons.push("In LOI Negotiations stage for 30+ days");
     }
   }
 
@@ -91,7 +90,6 @@ export function generateDealSummary(deal: DealRecord): string {
     "Signed": `This ${brandName} deal with ${deal.franchisee} in ${deal.city}, ${deal.state} has been successfully signed.`,
     "Lease Negotiations": `This ${brandName} deal is currently in lease negotiations for ${deal.franchisee} in ${deal.city}, ${deal.state}.`,
     "LOI Negotiations": `LOI negotiations are underway for ${deal.franchisee}'s ${brandName} location in ${deal.city}, ${deal.state}.`,
-    "First LOI(s) Submitted": `An LOI has been submitted for ${deal.franchisee}'s ${brandName} location in ${deal.city}, ${deal.state}.`,
     "Site Tours": `Site tours are being conducted for ${deal.franchisee}'s ${brandName} deal in ${deal.city}, ${deal.state}.`,
     "Market Study": `A market study is underway for ${deal.franchisee}'s ${brandName} opportunity in ${deal.city}, ${deal.state}.`,
     "Kick Off": `A kick-off call has been completed with ${deal.franchisee} for a ${brandName} opportunity in ${deal.city}, ${deal.state}.`,
@@ -108,7 +106,6 @@ export function generateDealSummary(deal: DealRecord): string {
     "Kick Off": "Next step: Initiate market study to identify viable locations in the target area.",
     "Market Study": "Next step: Schedule site tours once the market study identifies suitable locations.",
     "Site Tours": "Next step: Prepare and submit an LOI for the preferred property.",
-    "First LOI(s) Submitted": "Next step: Await landlord response and prepare for LOI negotiations.",
     "LOI Negotiations": "Next step: Finalize LOI terms and move toward lease negotiations.",
     "Lease Negotiations": "Next step: Finalize lease terms and move toward execution.",
     "Signed": "Deal complete. Monitor for any post-signing items or additional location opportunities.",
@@ -125,7 +122,7 @@ export function generateSuggestedAction(deal: DealRecord): string {
   const health = calculateDealHealth(deal);
   const missingDocs: string[] = [];
   if (!deal.documents.engagementLetter) missingDocs.push("engagement letter");
-  if (!deal.documents.signedLOI && (deal.status === "First LOI(s) Submitted" || deal.status === "LOI Negotiations" || deal.status === "Lease Negotiations" || deal.status === "Signed")) missingDocs.push("signed LOI");
+  if (!deal.documents.signedLOI && (deal.status === "LOI Negotiations" || deal.status === "Lease Negotiations" || deal.status === "Signed")) missingDocs.push("signed LOI");
   if (!deal.documents.floorPlan && (deal.status === "Lease Negotiations" || deal.status === "Signed")) missingDocs.push("floor plan");
 
   if (health.lastUpdatedDays > 30) {
@@ -140,7 +137,6 @@ export function generateSuggestedAction(deal: DealRecord): string {
     "Kick Off": `Begin the market study for ${deal.city}, ${deal.state} to identify viable locations for ${deal.franchisee}.`,
     "Market Study": `Once the market study is complete, schedule site tours for the top 3-4 locations in ${deal.city}.`,
     "Site Tours": `Prepare the LOI package for ${deal.franchisee}'s preferred property and submit to the landlord.`,
-    "First LOI(s) Submitted": `Follow up with the landlord on the LOI response — it has been ${health.lastUpdatedDays} days since the last update.`,
     "LOI Negotiations": `Push to finalize LOI terms with the landlord and prepare for lease negotiations.`,
     "Lease Negotiations": `Push to finalize lease terms. Confirm all tenant improvement allowances and opening timeline with ${deal.franchisee}.`,
     "Signed": `Ensure all post-signing documentation is filed and commission agreement is in place.`,
@@ -163,7 +159,7 @@ export interface PipelineForecast {
 
 export function calculatePipelineForecast(): PipelineForecast {
   const signedDeals = dealRecords.filter((d) => d.status === "Signed" && !d.isOneOff);
-  const pipelineDeals = dealRecords.filter((d) => (d.status === "First LOI(s) Submitted" || d.status === "LOI Negotiations" || d.status === "Lease Negotiations") && !d.isOneOff);
+  const pipelineDeals = dealRecords.filter((d) => (d.status === "LOI Negotiations" || d.status === "Lease Negotiations") && !d.isOneOff);
 
   const confirmed = signedDeals.reduce((sum, d) => sum + d.estimatedCommission, 0);
   const closeRate = signedDeals.length + pipelineDeals.length > 0
@@ -319,7 +315,7 @@ export function getDealNudges(): DealNudgeItem[] {
         type: "deal",
         id: deal.id,
         title: `${brandName} — ${deal.city}, ${deal.state}`,
-        suggestion: `${deal.status} stage for ${timeInStage} days — ${ratio}× above average. Consider following up on the ${deal.status === "First LOI(s) Submitted" ? "counter-LOI with the landlord" : "next steps with " + deal.franchisee}.`,
+        suggestion: `${deal.status} stage for ${timeInStage} days — ${ratio}× above average. Consider following up on the next steps with ${deal.franchisee}.`,
         action: "Log Update →",
         actionUrl: `/deals/${deal.id}`,
       });

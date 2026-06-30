@@ -1,7 +1,7 @@
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { recordDealVisit } from "@/hooks/useRecentDeals";
-import { getDealRecordById, getDealBrandById, daysToSign, daysActive, DealStatusNew, type DealRecord, type DealDocuments } from "@/data/dealsData";
+import { DEAL_STATUS_ORDER, getDealRecordById, getDealBrandById, daysToSign, daysActive, DealStatusNew, type DealRecord, type DealDocuments } from "@/data/dealsData";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
 import { AIDealSummary } from "@/components/AIDealSummary";
 import { TopSitesTab } from "@/components/deal/TopSitesTab";
@@ -24,7 +24,7 @@ import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, ty
 import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
 import { dealActionStore, type DealActionItem } from "@/lib/dealActionStore";
 
-const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+const ALL_STATUSES: DealStatusNew[] = DEAL_STATUS_ORDER;
 const EMPTY_DEAL_ACTION_ITEMS: DealActionItem[] = [];
 
 
@@ -72,8 +72,7 @@ const VELOCITY_STAGES: { status: DealStatusNew; label: string; dotColor: string;
   { status: "Kick Off",                label: "Kick Off",   dotColor: "#94a3b8", weight: 7 },
   { status: "Market Study",            label: "Mkt Study",  dotColor: "#8b5cf6", weight: 14 },
   { status: "Site Tours",              label: "Site Tours", dotColor: "#14b8a6", weight: 10 },
-  { status: "First LOI(s) Submitted",  label: "1st LOI",    dotColor: "#7bafc8", weight: 21 },
-  { status: "LOI Negotiations",        label: "LOI Neg.",   dotColor: "#6366f1", weight: 21 },
+  { status: "LOI Negotiations",        label: "LOI Negotiations", dotColor: "#1E5BA8", weight: 21 },
   { status: "Lease Negotiations",      label: "Lease Neg.", dotColor: "#3b82f6", weight: 30 },
   { status: "Signed",                  label: "Signed",     dotColor: "#059669", weight: 0 },
 ];

@@ -41,7 +41,7 @@ const statCardConfig: {
 ];
 
 const STATUS_BAR_COLORS: Record<string, string> = {
-  "Signed": "#10b981", "Lease Negotiations": "#3b82f6", "First LOI(s) Submitted": "#7bafc8",
+  "Signed": "#10b981", "Lease Negotiations": "#3b82f6",
   "Market Study": "#8b5cf6", "Site Tours": "#14b8a6", "LOI Negotiations": "#6366f1",
   "Kick Off": "#94a3b8", "On Hold": "#E18739",
 };
@@ -49,7 +49,6 @@ const STATUS_BAR_COLORS: Record<string, string> = {
 const STATUS_CHART_COLORS: Record<string, string> = {
   "Signed": "#E18739",
   "In Progress": "#E18739",
-  "First LOI(s) Submitted": "#E18739",
   "Market Study": "#E18739",
   "On Hold": "#E18739",
   "Kick Off": "#E18739",
@@ -67,13 +66,13 @@ const BRAND_GRADIENTS = [
 ];
 
 const STATUS_PILL_CLASS: Record<string, string> = {
-  "Signed": "pill-signed", "Lease Negotiations": "pill-leases", "First LOI(s) Submitted": "pill-loi",
+  "Signed": "pill-signed", "Lease Negotiations": "pill-leases",
   "Market Study": "pill-market-study", "Site Tours": "pill-prop-tour",
   "On Hold": "pill-on-hold", "Kick Off": "pill-intro-call", "LOI Negotiations": "pill-loi-neg",
 };
 
 const STAGE_AVERAGES: Record<string, number> = {
-  "Kick Off": 7, "Market Study": 14, "Site Tours": 10, "First LOI(s) Submitted": 21, "LOI Negotiations": 21, "Lease Negotiations": 30,
+  "Kick Off": 7, "Market Study": 14, "Site Tours": 10, "LOI Negotiations": 21, "Lease Negotiations": 30,
 };
 
 function getStageTimingColor(status: string, days: number): string {
@@ -189,8 +188,7 @@ const PIPELINE_STAGE_LABELS: Record<string, string> = {
   "Kick Off": "Intro Call",
   "Market Study": "Mkt Study",
   "Site Tours": "Prop. Tour",
-  "First LOI(s) Submitted": "LOI",
-  "LOI Negotiations": "LOI Neg.",
+  "LOI Negotiations": "LOI Negotiations",
   "Lease Negotiations": "Leases",
   Signed: "Signed",
   "On Hold": "On-Hold",
@@ -370,7 +368,7 @@ export default function Dashboard() {
     const signedDeals = active.filter((deal) => deal.status === "Signed");
     const onHoldDeals = active.filter((deal) => deal.status === "On Hold");
     const pipelineDeals = active.filter((deal) =>
-      ["First LOI(s) Submitted", "LOI Negotiations", "Lease Negotiations"].includes(deal.status),
+      ["LOI Negotiations", "Lease Negotiations"].includes(deal.status),
     );
 
     const closedOutcomeCount = signedDeals.length + onHoldDeals.length;
@@ -395,15 +393,15 @@ export default function Dashboard() {
 
   const chartRows = useMemo(() => {
     const signed = statusCounts.find((s) => s.status === "Signed")?.count || 0;
-    const inProgress = statusCounts.filter((s) => ["Lease Negotiations", "LOI Negotiations", "Site Tours"].includes(s.status)).reduce((a, s) => a + s.count, 0);
-    const loi = statusCounts.find((s) => s.status === "First LOI(s) Submitted")?.count || 0;
+    const inProgress = statusCounts.filter((s) => ["Lease Negotiations", "Site Tours"].includes(s.status)).reduce((a, s) => a + s.count, 0);
+    const loi = statusCounts.find((s) => s.status === "LOI Negotiations")?.count || 0;
     const mktStudy = statusCounts.find((s) => s.status === "Market Study")?.count || 0;
     const onHold = statusCounts.find((s) => s.status === "On Hold")?.count || 0;
     const kickOff = statusCounts.find((s) => s.status === "Kick Off")?.count || 0;
     return [
       { label: "Signed", count: signed, key: "Signed" },
       { label: "In Progress", count: inProgress, key: "In Progress" },
-      { label: "LOI", count: loi, key: "First LOI(s) Submitted" },
+      { label: "LOI Negotiations", count: loi, key: "LOI Negotiations" },
       { label: "Mkt Study", count: mktStudy, key: "Market Study" },
       { label: "On-Hold", count: onHold, key: "On Hold" },
       { label: "Intro Call", count: kickOff, key: "Kick Off" },
@@ -653,7 +651,7 @@ export default function Dashboard() {
               const pct = Math.max((row.count / chartMax) * 100, 4);
               return (
                 <div key={row.key} className="flex items-center gap-2.5" style={{ marginBottom: 9 }}>
-                  <span className="shrink-0" style={{ width: 100, fontSize: 12, fontWeight: 500, color: "var(--text-tertiary)" }}>{row.label}</span>
+                  <span className="shrink-0" style={{ width: 128, fontSize: 12, fontWeight: 500, lineHeight: 1.15, color: "var(--text-tertiary)" }}>{row.label}</span>
                    <div className="flex-1 overflow-hidden" style={{ height: 8, background: "var(--border-divider)", borderRadius: 4 }}>
                      <div className="h-full transition-all duration-500" style={{ width: `${pct}%`, background: "#E18739", borderRadius: 4 }} />
                    </div>
@@ -760,7 +758,6 @@ export default function Dashboard() {
               "Kick Off": "intro",
               "Market Study": "market",
               "Site Tours": "tour",
-              "First LOI(s) Submitted": "loi",
               "LOI Negotiations": "loi",
               "Lease Negotiations": "leases",
               Signed: "signed",
@@ -881,9 +878,9 @@ export default function Dashboard() {
                   </div>
                   <ArrowRight className="w-3 h-3 shrink-0 transition-all duration-200 group-hover:translate-x-[3px]" style={{ color: "var(--text-muted)" }} />
                 </div>
-                <div className="flex flex-wrap gap-1" style={{ marginTop: 8, maxHeight: 22, overflow: "hidden" }}>
+                <div className="flex flex-wrap gap-1" style={{ marginTop: 8, maxHeight: 48, overflow: "hidden" }}>
                   {pillEntries.slice(0, 4).map(([stage, count]) => {
-                    const shortLabels: Record<string, string> = { "Signed": "Signed", "Lease Negotiations": "Leases", "LOI Negotiations": "LOI", "First LOI(s) Submitted": "LOI", "Market Study": "Mkt Study", "Site Tours": "Tour", "On Hold": "On-hold", "Kick Off": "Intro" };
+                    const shortLabels: Record<string, string> = { "Signed": "Signed", "Lease Negotiations": "Leases", "LOI Negotiations": "LOI Negotiations", "Market Study": "Mkt Study", "Site Tours": "Tour", "On Hold": "On-hold", "Kick Off": "Intro" };
                     const pillClass = STATUS_PILL_CLASS[stage] || "pill-intro-call";
                     return (
                       <span key={stage} className={cn("inline-flex items-center rounded-[10px]", pillClass)} style={{ fontSize: 12, fontWeight: 600, padding: "2px 6px" }}>

@@ -77,7 +77,6 @@ const STAGE_COLORS: Record<string, string> = {
   "Kick Off": "#E18739",                       // brand orange
   "Market Study": "#F2A65A",                   // warm amber (lighter)
   "Site Tours": "#5BA4D9",                     // sky blue
-  "First LOI(s) Submitted": "#3B82F6",         // medium blue
   "LOI Negotiations": "#1E5BA8",               // deeper blue
   "Lease Negotiations": "rgba(36,60,81,0.70)", // navy 70%
   "Signed": "#059669",                         // success green
@@ -88,8 +87,7 @@ const STAGE_COLORS: Record<string, string> = {
 const STATUS_PILL_GLOBAL: Record<string, { label: string; cls: string }> = {
   "Signed": { label: "Signed", cls: "pill-signed" },
   "Lease Negotiations": { label: "Lease", cls: "pill-lease" },
-  "LOI Negotiations": { label: "LOI", cls: "pill-loi" },
-  "First LOI(s) Submitted": { label: "First LOI", cls: "pill-first-loi" },
+  "LOI Negotiations": { label: "LOI Negotiations", cls: "pill-loi" },
   "Site Tours": { label: "Site Tours", cls: "pill-site-tours" },
   "Market Study": { label: "Market Study", cls: "pill-market-study" },
   "Kick Off": { label: "Kick Off", cls: "pill-intro-call" },
@@ -118,7 +116,7 @@ function monthlyTrend(value: number, label = "this mo"): string {
 }
 
 const STATUS_BAR_COLORS: Record<string, string> = {
-  "Signed": "#E18739", "Lease Negotiations": "#E18739", "First LOI(s) Submitted": "#E18739",
+  "Signed": "#E18739", "Lease Negotiations": "#E18739",
   "Market Study": "#E18739", "Site Tours": "#E18739", "LOI Negotiations": "#E18739",
   "Kick Off": "#E18739", "On Hold": "#E18739",
 };
@@ -436,8 +434,7 @@ export default function BrandsPage() {
     const STATUS_PILL: Record<string, { label: string; cls: string }> = {
       "Signed": { label: "Signed", cls: "pill-signed" },
       "Lease Negotiations": { label: "Lease", cls: "pill-leases" },
-      "LOI Negotiations": { label: "LOI Neg.", cls: "pill-loi" },
-      "First LOI(s) Submitted": { label: "1st LOI", cls: "pill-loi" },
+      "LOI Negotiations": { label: "LOI Negotiations", cls: "pill-loi" },
       "Market Study": { label: "Mkt Study", cls: "pill-market-study" },
       "Site Tours": { label: "Tour", cls: "pill-prop-tour" },
       "Kick Off": { label: "Intro", cls: "pill-intro-call" },
@@ -974,8 +971,7 @@ export default function BrandsPage() {
             const STATUS_PILL: Record<string, { label: string; cls: string }> = {
               "Signed": { label: "Signed", cls: "pill-signed" },
               "Lease Negotiations": { label: "Lease", cls: "pill-leases" },
-              "LOI Negotiations": { label: "LOI", cls: "pill-loi" },
-              "First LOI(s) Submitted": { label: "LOI", cls: "pill-loi" },
+              "LOI Negotiations": { label: "LOI Negotiations", cls: "pill-loi" },
               "Market Study": { label: "Mkt Study", cls: "pill-market-study" },
               "Site Tours": { label: "Tour", cls: "pill-prop-tour" },
               "Kick Off": { label: "Intro", cls: "pill-intro-call" },

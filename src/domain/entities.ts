@@ -6,7 +6,6 @@ export type DealStage =
   | "Kick Off"
   | "Market Study"
   | "Site Tours"
-  | "First LOI(s) Submitted"
   | "LOI Negotiations"
   | "Lease Negotiations"
   | "Signed"

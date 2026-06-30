@@ -11,9 +11,11 @@ import {
   dealBrands,
   dealRecords,
   emptyDealDocuments,
+  normalizeDealStatus,
   type DealBrand,
   type DealDocuments,
   type DealNote,
+  type PersistedDealStatus,
   type DealRecord,
   type DealStatusNew,
 } from "@/data/dealsData";
@@ -103,7 +105,7 @@ type DealRow = {
   cell_phone: string | null;
   city: string;
   state: string;
-  stage: DealStatusNew;
+  stage: PersistedDealStatus;
   store_count: number | null;
   stores_bought: number | null;
   estimated_commission: string | number | null;
@@ -509,7 +511,7 @@ function mapDeal(row: DealRow, existing?: DealRecord): DealRecord {
     cobroker: row.cobroker ?? "",
     cobrokerPercent: row.cobroker_percent ?? "",
     estimatedCommission: numberFromDb(row.estimated_commission),
-    status: row.stage,
+    status: normalizeDealStatus(row.stage),
     notes: existing?.notes ?? [],
     documents: existing?.documents ?? { ...emptyDealDocuments },
     isOneOff: row.is_one_off ?? false,
@@ -529,7 +531,7 @@ function mapNote(row: DealNoteRow): DealNote {
 function statusToMapStage(status: DealStatusNew): DealStage {
   if (status === "Signed") return "Open";
   if (status === "Lease Negotiations") return "Lease";
-  if (status === "LOI Negotiations" || status === "First LOI(s) Submitted") return "LOI";
+  if (status === "LOI Negotiations") return "LOI";
   if (status === "On Hold") return "Closed";
   return "Prospecting";
 }
@@ -723,7 +725,7 @@ function dealBody(input: DealMutationInput): JsonObject {
     cell_phone: blankToNull(input.cellPhone),
     city: input.city.trim(),
     state: input.state.trim(),
-    stage: input.status,
+    stage: normalizeDealStatus(input.status),
     store_count: cleanNumber(input.storeCount),
     stores_bought: cleanNumber(input.storesBought),
     estimated_commission: cleanNumber(input.estimatedCommission),

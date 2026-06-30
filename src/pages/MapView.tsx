@@ -5,10 +5,10 @@ import { DealCityMap, type DealCityMapResult } from "@/components/DealCityMap";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
-import { dealBrands, dealRecords, type DealRecord, type DealStatusNew } from "@/data/dealsData";
+import { DEAL_STATUS_ORDER, dealBrands, dealRecords, type DealRecord, type DealStatusNew } from "@/data/dealsData";
 import { canAccessDeal, getVisibleBrandsForUser, getVisibleDealsForUser, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 
-const statuses: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+const statuses: DealStatusNew[] = DEAL_STATUS_ORDER;
 
 function dealTitle(deal: DealRecord): string {
   const brand = dealBrands.find((item) => item.id === deal.brandId);

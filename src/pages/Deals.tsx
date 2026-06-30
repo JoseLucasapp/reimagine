@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   dealRecords, dealBrands, getDealBrandById,
-  emptyDealDocuments, DealStatusNew, KANBAN_COLUMNS, daysActive, DealRecord, DealDocuments,
+  DEAL_STATUS_ORDER, emptyDealDocuments, DealStatusNew, KANBAN_COLUMNS, daysActive, DealRecord, DealDocuments,
 } from "@/data/dealsData";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
@@ -25,7 +25,7 @@ import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 type ViewMode = "table" | "kanban" | "map";
 
-const ALL_STATUSES: DealStatusNew[] = ["Signed", "Lease Negotiations", "LOI Negotiations", "First LOI(s) Submitted", "Site Tours", "Market Study", "Kick Off", "On Hold"];
+const ALL_STATUSES: DealStatusNew[] = DEAL_STATUS_ORDER;
 
 const DOCUMENT_FIELDS: { key: keyof DealDocuments; label: string }[] = [
   { key: "engagementLetter", label: "Engagement Letter" },
