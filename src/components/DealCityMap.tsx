@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import type { GeoJsonObject } from "geojson";
 import { dealBrands, type DealRecord } from "@/data/dealsData";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
 import { resolveDealCoordinates, type CoordinatePrecision } from "@/lib/cityCoordinates";
+import type { SavedTerritory, TerritoryBounds, TerritoryZip } from "@/data/territoryData";
 
 type CityPin = {
   key: string;
@@ -23,6 +25,13 @@ interface DealCityMapProps {
   deals: DealRecord[];
   className?: string;
   onComputed?: (result: DealCityMapResult) => void;
+  territoryMode?: boolean;
+  territoryZips?: TerritoryZip[];
+  selectedZipCodes?: string[];
+  savedTerritories?: SavedTerritory[];
+  visibleTerritoryIds?: string[];
+  onTerritoryViewportChange?: (bounds: TerritoryBounds) => void;
+  onZipToggle?: (zipCode: string) => void;
 }
 
 const precisionColors: Record<CoordinatePrecision, string> = {
@@ -53,6 +62,20 @@ function createCityIcon(count: number, precision: CoordinatePrecision) {
     ">${count}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function createTerritoryLabelIcon(name: string, population: number) {
+  const label = `${escapeHtml(name)} · ${population.toLocaleString()}`;
+  return L.divIcon({
+    className: "territory-label-marker",
+    html: `<div style="
+      background:#fff;color:#243c51;border:1px solid rgba(36,60,81,0.14);
+      border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;
+      box-shadow:0 8px 22px rgba(15,23,42,0.18);white-space:nowrap;
+    ">${label}</div>`,
+    iconSize: [160, 28],
+    iconAnchor: [80, 14],
   });
 }
 
@@ -117,10 +140,39 @@ function popupHtml(pin: CityPin): string {
   `;
 }
 
-export function DealCityMap({ deals, className, onComputed }: DealCityMapProps) {
+function territoryCenter(zips: TerritoryZip[]): L.LatLngTuple {
+  if (zips.length === 0) return [32.7767, -96.797];
+  const totals = zips.reduce(
+    (acc, zip) => ({ lat: acc.lat + zip.center[0], lng: acc.lng + zip.center[1] }),
+    { lat: 0, lng: 0 },
+  );
+  return [totals.lat / zips.length, totals.lng / zips.length];
+}
+
+function layerHasBounds(layer: L.Layer): layer is L.Layer & { getBounds: () => L.LatLngBounds } {
+  return typeof (layer as { getBounds?: unknown }).getBounds === "function";
+}
+
+export function DealCityMap({
+  deals,
+  className,
+  onComputed,
+  territoryMode = false,
+  territoryZips = [],
+  selectedZipCodes = [],
+  savedTerritories = [],
+  visibleTerritoryIds = [],
+  onTerritoryViewportChange,
+  onZipToggle,
+}: DealCityMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const savedTerritoryLayersRef = useRef<L.Layer[]>([]);
+  const zipLayersRef = useRef<L.Layer[]>([]);
+  const wasTerritoryModeRef = useRef(false);
+  const hasFitSavedTerritoriesRef = useRef(false);
+  const raisedTerritoryZoomRef = useRef(false);
   const result = useMemo(() => buildDealCityPins(deals), [deals]);
 
   useEffect(() => {
@@ -163,6 +215,125 @@ export function DealCityMap({ deals, className, onComputed }: DealCityMapProps) 
       map.setView([39.8283, -98.5795], 4);
     }
   }, [result]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    savedTerritoryLayersRef.current.forEach((layer) => layer.remove());
+    savedTerritoryLayersRef.current = [];
+
+    const zipByCode = new Map(territoryZips.map((zip) => [zip.zip, zip]));
+    const visibleIds = new Set(visibleTerritoryIds);
+
+    for (const territory of savedTerritories) {
+      if (!visibleIds.has(territory.id)) continue;
+      const zips = territory.zipCodes.map((zipCode) => zipByCode.get(zipCode)).filter(Boolean) as TerritoryZip[];
+      if (zips.length === 0) continue;
+
+      for (const zip of zips) {
+        const layer = L.geoJSON(zip.geometry as GeoJsonObject, {
+          style: {
+            color: "#E18739",
+            weight: 2,
+            opacity: 0.78,
+            fillColor: "#E18739",
+            fillOpacity: 0.22,
+          },
+        }).addTo(map);
+        layer.bindTooltip(`${territory.name} · ${zip.zip}`, { sticky: true });
+        savedTerritoryLayersRef.current.push(layer);
+      }
+
+      const marker = L.marker(territoryCenter(zips), {
+        interactive: false,
+        icon: createTerritoryLabelIcon(territory.name, territory.population),
+      }).addTo(map);
+      savedTerritoryLayersRef.current.push(marker);
+    }
+
+    const visibleLayers = savedTerritoryLayersRef.current.filter(layerHasBounds);
+    if (!territoryMode && !hasFitSavedTerritoriesRef.current && visibleLayers.length > 0) {
+      const bounds = L.latLngBounds([]);
+      visibleLayers.forEach((layer) => {
+        bounds.extend(layer.getBounds());
+      });
+      if (bounds.isValid()) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 10 });
+      hasFitSavedTerritoriesRef.current = true;
+    }
+  }, [savedTerritories, territoryMode, territoryZips, visibleTerritoryIds]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    zipLayersRef.current.forEach((layer) => layer.remove());
+    zipLayersRef.current = [];
+
+    const selected = new Set(selectedZipCodes);
+    if (territoryMode) {
+      for (const zip of territoryZips) {
+        const isSelected = selected.has(zip.zip);
+        const layer = L.geoJSON(zip.geometry as GeoJsonObject, {
+          style: {
+            color: isSelected ? "#243c51" : "#7bafc8",
+            weight: isSelected ? 2.5 : 1.5,
+            opacity: isSelected ? 0.9 : 0.48,
+            fillColor: isSelected ? "#E18739" : "#7bafc8",
+            fillOpacity: isSelected ? 0.3 : 0.1,
+            dashArray: isSelected ? undefined : "5 5",
+          },
+          onEachFeature: () => undefined,
+        }).addTo(map);
+        layer.bindTooltip(`${zip.zip} · ${zip.label}`, { sticky: true });
+        layer.on("click", () => onZipToggle?.(zip.zip));
+        zipLayersRef.current.push(layer);
+      }
+
+      if (!wasTerritoryModeRef.current && territoryZips.length > 0) {
+        const bounds = L.latLngBounds([]);
+        zipLayersRef.current.filter(layerHasBounds).forEach((layer) => {
+          bounds.extend(layer.getBounds());
+        });
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50], maxZoom: 10 });
+      }
+    }
+
+    wasTerritoryModeRef.current = territoryMode;
+  }, [onZipToggle, selectedZipCodes, territoryMode, territoryZips]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !territoryMode || !onTerritoryViewportChange) return;
+
+    const publishBounds = () => {
+      if (!raisedTerritoryZoomRef.current && map.getZoom() < 6) {
+        raisedTerritoryZoomRef.current = true;
+        map.setZoomAround(map.getCenter(), 6);
+        return;
+      }
+
+      const bounds = map.getBounds();
+      onTerritoryViewportChange({
+        north: bounds.getNorth(),
+        east: bounds.getEast(),
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        zoom: map.getZoom(),
+      });
+    };
+
+    map.on("moveend", publishBounds);
+    publishBounds();
+
+    return () => {
+      map.off("moveend", publishBounds);
+    };
+  }, [onTerritoryViewportChange, territoryMode]);
+
+  useEffect(() => {
+    if (!territoryMode) raisedTerritoryZoomRef.current = false;
+  }, [territoryMode]);
 
   return <div ref={containerRef} className={className || "w-full h-full"} style={{ minHeight: 420 }} />;
 }
