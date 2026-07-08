@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Grid3X3, Filter, Handshake, Ruler, Star,
-  Settings, Map, ChevronLeft, ChevronRight, Sun, Moon, Eye,
+  Settings, Map, ChevronLeft, ChevronRight, Sun, Moon, Eye, Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ const group1 = [
   { label: "Brands", to: "/brands", icon: Grid3X3 },
   { label: "Prospects", to: "/bizdev", icon: Filter },
   { label: "Deals", to: "/deals", icon: Handshake },
+  { label: "Action Items", to: "/action-items", icon: Inbox },
 ] satisfies SidebarItem[];
 
 const group2 = [

@@ -30,6 +30,7 @@ import { getSitesByDeal, replaceMapDealRuntime, replaceSiteRuntime, type Deal as
 import type { TakeActionAudience, TakeActionStatus } from "@/domain/entities";
 import { supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
 import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
+import { sendTakeActionNotification } from "@/lib/takeActionNotifications";
 
 type BrandRow = {
   id: string;
@@ -256,6 +257,12 @@ export type DealActionMutationInput = {
   audience: TakeActionAudience;
   title: string;
   body: string;
+  recipients: string[];
+  requestedBy: string;
+  contextName: string;
+  contextUrl: string;
+  message: string;
+  urgency?: string;
 };
 
 export type SpaceRequirementMutationInput = Omit<SpaceRequirement, "id">;
@@ -927,6 +934,18 @@ export async function createDealActionItem(input: DealActionMutationInput): Prom
     title: input.title.trim(),
     body: input.body.trim(),
     created_by: profile.id,
+  });
+  await sendTakeActionNotification({
+    recipients: input.recipients,
+    actionTypeLabel: input.title,
+    message: input.message,
+    requestedBy: input.requestedBy,
+    contextName: input.contextName,
+    contextUrl: input.contextUrl,
+    urgency: input.urgency,
+  }).catch((error) => {
+    console.warn("Take Action email notification failed", error);
+    return false;
   });
 }
 

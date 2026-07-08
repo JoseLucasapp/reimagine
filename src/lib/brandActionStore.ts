@@ -1,5 +1,6 @@
 import { getStoredSession } from "@/application/auth/session";
 import { SupabaseHttpError, supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
+import { sendTakeActionNotification } from "@/lib/takeActionNotifications";
 
 export interface BrandActionItem {
   id: string;
@@ -129,6 +130,18 @@ export const brandActionStore = {
 
     if (!rows[0]) throw new Error("Supabase returned no brand action item.");
     const next = mapRow(rows[0]);
+    await sendTakeActionNotification({
+      recipients: item.recipients,
+      actionTypeLabel: item.actionTypeLabel,
+      message: item.message,
+      requestedBy: item.requestedBy,
+      contextName: item.dealName ?? "Brand action request",
+      contextUrl: `${window.location.origin}/brands/${item.brandId}/deals`,
+      urgency: item.urgency,
+    }).catch((error) => {
+      console.warn("Take Action email notification failed", error);
+      return false;
+    });
     const current = byBrandCache.get(item.brandId) ?? EMPTY_ITEMS;
     setBrandItems(item.brandId, [next, ...current]);
     return next;

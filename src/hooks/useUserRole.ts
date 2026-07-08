@@ -128,6 +128,7 @@ export function useScopedUser(): ScopedUser | null {
       realRole: profile.role,
       brandId: profile.brandId,
       dealId: profile.dealId,
+      brokerName: profile.brokerName,
     };
   }, [profile, role]);
 }

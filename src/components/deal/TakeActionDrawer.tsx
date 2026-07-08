@@ -57,6 +57,7 @@ interface ActionSite {
 
 const ROLE_COLORS: Record<TeamMember["role"], string> = {
   Admin: "#E18739",
+  Broker: "#243c51",
   "Brand Level": "#3b82f6",
   "Deal Level": "#059669",
 };

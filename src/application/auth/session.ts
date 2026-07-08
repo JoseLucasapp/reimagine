@@ -19,6 +19,7 @@ export type SessionProfile = {
   role: UserRole;
   brandId: string | null;
   dealId: string | null;
+  brokerName: string | null;
 };
 
 export type AuthSession = {
@@ -46,6 +47,7 @@ function readProfile(): SessionProfile | null {
       role: parseUserRole(parsed.role),
       brandId: typeof parsed.brandId === "string" ? parsed.brandId : null,
       dealId: typeof parsed.dealId === "string" ? parsed.dealId : null,
+      brokerName: typeof parsed.brokerName === "string" ? parsed.brokerName : null,
     };
   } catch {
     return null;

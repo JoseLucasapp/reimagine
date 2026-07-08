@@ -49,6 +49,7 @@ type ProfileRow = {
   role: UserRole;
   brand_id: string | null;
   deal_id: string | null;
+  broker_name?: string | null;
 };
 
 type DealRow = {
@@ -492,6 +493,7 @@ function applyCoreRuntimeData(
     role: row.role,
     brandId: row.brand_id,
     dealId: row.deal_id,
+    brokerName: row.broker_name ?? null,
   })));
 }
 
@@ -559,7 +561,7 @@ export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLo
   ]);
 
   const scopedDealRows = currentUser ? getVisibleDealsForUser(currentUser, dealRows) : dealRows;
-  const scopedBrandRows = currentUser ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows.length ? scopedDealRows : dealRows) : brandRows;
+  const scopedBrandRows = currentUser ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows) : brandRows;
   const visibleDealIds = new Set(scopedDealRows.map((row) => row.id));
   const scopedNoteRows = noteRows.filter((row) => visibleDealIds.has(row.deal_id));
   const scopedDocumentRows = documentRows.filter((row) => visibleDealIds.has(row.deal_id));

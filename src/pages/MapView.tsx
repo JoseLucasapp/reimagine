@@ -338,6 +338,7 @@ export default function MapView() {
   const role = useUserRole();
   const profile = useCurrentProfile();
   const user = useScopedUser();
+  const canUseAdvancedMapTools = role === "admin";
   const [brandFilter, setBrandFilter] = useState(() => requestedBrandId || "all");
   const [stageFilter, setStageFilter] = useState("all");
   const [mapResult, setMapResult] = useState<DealCityMapResult>({ pins: [], unmappedDeals: [] });
@@ -379,6 +380,13 @@ export default function MapView() {
     if (!territoriesHydrated || typeof window === "undefined") return;
     window.localStorage.setItem(TERRITORY_STORAGE_KEY, JSON.stringify(savedTerritories));
   }, [savedTerritories, territoriesHydrated]);
+
+  useEffect(() => {
+    if (!canUseAdvancedMapTools && territoryMode) {
+      setTerritoryMode(false);
+      setSelectedZipCodes([]);
+    }
+  }, [canUseAdvancedMapTools, territoryMode]);
 
   const visibleDeals = useMemo(() => {
     void runtimeDataVersion;
@@ -552,11 +560,13 @@ export default function MapView() {
           <button
             type="button"
             onClick={() => setTerritoryMode((current) => !current)}
+            disabled={!canUseAdvancedMapTools}
             className="inline-flex h-10 items-center gap-2 rounded-[10px] px-3 text-sm font-semibold transition-colors"
             style={{
               color: territoryMode ? "#fff" : "var(--text-primary)",
               background: territoryMode ? "#243c51" : "var(--bg-card)",
               border: "1px solid var(--border-subtle)",
+              display: canUseAdvancedMapTools ? "inline-flex" : "none",
             }}
           >
             <Hash className="h-4 w-4" />
@@ -588,15 +598,15 @@ export default function MapView() {
             className="h-full w-full"
             onComputed={setMapResult}
             territoryMode={territoryMode}
-            territoryZips={territoryZips}
-            selectedZipCodes={selectedZipCodes}
-            savedTerritories={savedTerritories}
-            visibleTerritoryIds={visibleTerritoryIds}
-            onTerritoryViewportChange={handleTerritoryViewportChange}
-            onZipToggle={toggleZip}
+            territoryZips={canUseAdvancedMapTools ? territoryZips : []}
+            selectedZipCodes={canUseAdvancedMapTools ? selectedZipCodes : []}
+            savedTerritories={canUseAdvancedMapTools ? savedTerritories : []}
+            visibleTerritoryIds={canUseAdvancedMapTools ? visibleTerritoryIds : []}
+            onTerritoryViewportChange={canUseAdvancedMapTools ? handleTerritoryViewportChange : undefined}
+            onZipToggle={canUseAdvancedMapTools ? toggleZip : undefined}
           />
 
-          {territoryMode && (
+          {canUseAdvancedMapTools && territoryMode && (
             <div
               className="absolute left-1/2 top-4 z-[450] -translate-x-1/2 rounded-[10px] px-4 py-2 text-sm font-semibold"
               style={{ color: "#fff", background: "rgba(15,23,42,0.86)", boxShadow: "0 10px 24px rgba(15,23,42,0.2)" }}
@@ -605,7 +615,7 @@ export default function MapView() {
             </div>
           )}
 
-          {territoryMode && territoryBoundsError && (
+          {canUseAdvancedMapTools && territoryMode && territoryBoundsError && (
             <div
               className="absolute left-4 bottom-5 z-[450] max-w-[360px] rounded-[10px] px-3 py-2 text-xs font-semibold"
               style={{ color: "#991b1b", background: "rgba(254,226,226,0.94)", border: "1px solid rgba(153,27,27,0.18)" }}
@@ -614,23 +624,25 @@ export default function MapView() {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => setTerritoryMode((current) => !current)}
-            className="absolute bottom-5 right-5 z-[430] flex h-12 w-12 items-center justify-center rounded-[12px] transition-colors"
-            style={{
-              color: territoryMode ? "#fff" : "var(--text-primary)",
-              background: territoryMode ? "#243c51" : "var(--bg-surface)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "0 12px 28px rgba(15,23,42,0.18)",
-            }}
-            aria-label="Toggle zip draw tool"
-            title="Zip draw"
-          >
-            <Hash className="h-5 w-5" />
-          </button>
+          {canUseAdvancedMapTools && (
+            <button
+              type="button"
+              onClick={() => setTerritoryMode((current) => !current)}
+              className="absolute bottom-5 right-5 z-[430] flex h-12 w-12 items-center justify-center rounded-[12px] transition-colors"
+              style={{
+                color: territoryMode ? "#fff" : "var(--text-primary)",
+                background: territoryMode ? "#243c51" : "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+                boxShadow: "0 12px 28px rgba(15,23,42,0.18)",
+              }}
+              aria-label="Toggle zip draw tool"
+              title="Zip draw"
+            >
+              <Hash className="h-5 w-5" />
+            </button>
+          )}
 
-          {territoryMode && (
+          {canUseAdvancedMapTools && territoryMode && (
             <TerritoryBuilderPanel
               territoryName={territoryName}
               setTerritoryName={setTerritoryName}
@@ -660,58 +672,60 @@ export default function MapView() {
           </div>
 
           <div className="themed-scrollbar overflow-y-auto" style={{ maxHeight: 640, padding: 14 }}>
-            <section>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="section-label">Territories</span>
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>{savedTerritories.length}</span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {savedTerritories.length === 0 ? (
-                  <p className="rounded-[10px] p-4 text-sm" style={{ color: "var(--text-muted)", border: "1px dashed var(--border-divider)" }}>No territories saved.</p>
-                ) : (
-                  savedTerritories.map((territory) => {
-                    const visible = visibleTerritoryIds.includes(territory.id);
-                    return (
-                      <div
-                        key={territory.id}
-                        className="rounded-[10px] p-3"
-                        style={{ border: "1px solid var(--border-subtle)", background: "var(--bg-card)" }}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: "#E18739" }} />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{territory.name}</p>
-                            <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                              {territory.zipCodes.length} zips · {formatNumber(territory.population)} pop
-                            </p>
+            {canUseAdvancedMapTools && (
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="section-label">Territories</span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{savedTerritories.length}</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {savedTerritories.length === 0 ? (
+                    <p className="rounded-[10px] p-4 text-sm" style={{ color: "var(--text-muted)", border: "1px dashed var(--border-divider)" }}>No territories saved.</p>
+                  ) : (
+                    savedTerritories.map((territory) => {
+                      const visible = visibleTerritoryIds.includes(territory.id);
+                      return (
+                        <div
+                          key={territory.id}
+                          className="rounded-[10px] p-3"
+                          style={{ border: "1px solid var(--border-subtle)", background: "var(--bg-card)" }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: "#E18739" }} />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{territory.name}</p>
+                              <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                                {territory.zipCodes.length} zips · {formatNumber(territory.population)} pop
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleTerritoryVisibility(territory.id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--bg-hover)]"
+                              aria-label={`${visible ? "Hide" : "Show"} ${territory.name}`}
+                              title={visible ? "Hide" : "Show"}
+                            >
+                              {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteTerritory(territory.id)}
+                              className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--bg-hover)]"
+                              aria-label={`Delete ${territory.name}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" style={{ color: "#991b1b" }} />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleTerritoryVisibility(territory.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--bg-hover)]"
-                            aria-label={`${visible ? "Hide" : "Show"} ${territory.name}`}
-                            title={visible ? "Hide" : "Show"}
-                          >
-                            {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteTerritory(territory.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--bg-hover)]"
-                            aria-label={`Delete ${territory.name}`}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" style={{ color: "#991b1b" }} />
-                          </button>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            )}
 
-            <section className="mt-5">
+            <section className={canUseAdvancedMapTools ? "mt-5" : ""}>
               <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" style={{ color: "#E18739" }} />

@@ -1,6 +1,6 @@
 import type { UserRole } from "@/domain/entities";
 
-export type TeamMemberRole = "Admin" | "Brand Level" | "Deal Level";
+export type TeamMemberRole = "Admin" | "Broker" | "Brand Level" | "Deal Level";
 
 export interface TeamMember {
   id: string;
@@ -14,6 +14,7 @@ export const teamMembers: TeamMember[] = [];
 
 const roleLabels: Record<UserRole, TeamMemberRole> = {
   admin: "Admin",
+  broker: "Broker",
   brand: "Brand Level",
   deal: "Deal Level",
 };
@@ -29,7 +30,7 @@ export function replaceTeamRuntimeData(
   const next = profiles
     .filter((profile) => {
       const email = profile.email?.trim().toLowerCase();
-      return Boolean(email && (profile.role === "admin" || email.endsWith("@reimagine.com")));
+      return Boolean(email && (profile.role === "admin" || profile.role === "broker" || email.endsWith("@reimagine.com")));
     })
     .map((profile) => {
       const email = profile.email?.trim().toLowerCase() ?? "";

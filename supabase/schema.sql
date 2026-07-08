@@ -25,8 +25,10 @@ drop function if exists public.handle_new_user() cascade;
 drop function if exists public.current_user_role() cascade;
 drop function if exists public.current_profile_brand_id() cascade;
 drop function if exists public.current_profile_deal_id() cascade;
+drop function if exists public.current_profile_broker_name() cascade;
 drop function if exists public.current_user_brand_id() cascade;
 drop function if exists public.current_user_deal_id() cascade;
+drop function if exists public.current_user_broker_name() cascade;
 drop function if exists public.current_user_can_access_brand(uuid) cascade;
 drop function if exists public.current_user_can_access_deal(uuid) cascade;
 drop function if exists public.current_user_can_access_site(uuid) cascade;
@@ -44,7 +46,7 @@ drop type if exists public.prospect_status cascade;
 drop type if exists public.deal_stage cascade;
 drop type if exists public.user_role cascade;
 
-create type public.user_role as enum ('admin', 'brand', 'deal');
+create type public.user_role as enum ('admin', 'broker', 'brand', 'deal');
 create type public.deal_stage as enum (
   'Kick Off',
   'Market Study',
@@ -70,6 +72,7 @@ immutable
 as $$
   select case
     when lower(coalesce(value, '')) in ('admin') then 'admin'::public.user_role
+    when lower(coalesce(value, '')) in ('broker', 'reimagine_broker') then 'broker'::public.user_role
     when lower(coalesce(value, '')) in ('brand', 'franchisor') then 'brand'::public.user_role
     when lower(coalesce(value, '')) in ('deal', 'franchisee') then 'deal'::public.user_role
     else 'deal'::public.user_role
@@ -122,6 +125,7 @@ create table public.profiles (
   role public.user_role not null default 'deal',
   brand_id uuid references public.brands(id) on delete set null,
   deal_id uuid references public.deals(id) on delete set null,
+  broker_name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -254,6 +258,9 @@ create table public.take_action_items (
   title text not null,
   body text not null,
   created_by uuid references public.profiles(id),
+  response_body text,
+  responded_by uuid references public.profiles(id),
+  responded_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -268,6 +275,9 @@ create table public.brand_action_items (
   message text,
   urgency text not null default 'normal',
   requested_by text not null,
+  response_body text,
+  responded_by uuid references public.profiles(id),
+  responded_at timestamptz,
   status text not null default 'pending' check (status in ('pending', 'resolved')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -428,6 +438,15 @@ as $$
   select deal_id from public.profiles where id = auth.uid();
 $$;
 
+create or replace function public.current_profile_broker_name()
+returns text
+language sql
+security definer
+stable
+as $$
+  select nullif(lower(trim(broker_name)), '') from public.profiles where id = auth.uid();
+$$;
+
 create or replace function public.current_user_brand_id()
 returns uuid
 language sql
@@ -446,6 +465,15 @@ as $$
   select public.current_profile_deal_id();
 $$;
 
+create or replace function public.current_user_broker_name()
+returns text
+language sql
+security definer
+stable
+as $$
+  select public.current_profile_broker_name();
+$$;
+
 create or replace function public.current_user_can_access_brand(brand_uuid uuid)
 returns boolean
 language sql
@@ -455,6 +483,13 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when public.current_user_role() = 'broker' then exists (
+      select 1
+      from public.deals d,
+      lateral regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+      where d.brand_id = brand_uuid
+        and broker_code = public.current_profile_broker_name()
+    )
     when public.current_user_role() = 'brand' then brand_uuid = public.current_profile_brand_id()
     when public.current_user_role() = 'deal' then exists (
       select 1 from public.deals d
@@ -474,6 +509,13 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when public.current_user_role() = 'broker' then exists (
+      select 1
+      from public.deals d,
+      lateral regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+      where d.id = deal_uuid
+        and broker_code = public.current_profile_broker_name()
+    )
     when public.current_user_role() = 'brand' then exists (
       select 1 from public.deals d
       where d.id = deal_uuid

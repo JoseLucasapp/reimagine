@@ -20,6 +20,13 @@ const ROLE_OPTIONS: RoleOption[] = [
       "Full access to every brand, deal, and broker file. Can edit all fields, view commissions, and manage the team.",
   },
   {
+    key: "broker",
+    label: "Broker",
+    icon: Shield,
+    description:
+      "Sees only deals assigned to their broker code. Can review scoped deal activity and request actions without admin tools.",
+  },
+  {
     key: "brand",
     label: "Brand Level",
     icon: Building2,
@@ -309,6 +316,7 @@ export default function SettingsPage() {
               {[
                 { label: "Role", value: ROLE_LABELS[realRole] },
                 { label: "Email", value: profile?.email || "Not set" },
+                { label: "Broker scope", value: profile?.brokerName || "Not assigned" },
                 { label: "Brand scope", value: profile?.brandId || "Not assigned" },
                 { label: "Deal scope", value: profile?.dealId || "Not assigned" },
               ].map((item) => (

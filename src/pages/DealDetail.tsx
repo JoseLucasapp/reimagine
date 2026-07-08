@@ -735,6 +735,12 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
         audience: role === "deal" ? "internal" : "franchisee",
         title: data.actionTypeLabel,
         body: noteBody,
+        recipients: data.recipients,
+        requestedBy: profile.email || profile.fullName || profile.username || "Unknown",
+        contextName: dealDisplayName,
+        contextUrl: `${window.location.origin}/deals/${deal.id}`,
+        message: data.message,
+        urgency: data.urgency,
       });
       await dealActionStore.loadByDeal(deal.id);
       if (data.actionTypeKey === "tour") {

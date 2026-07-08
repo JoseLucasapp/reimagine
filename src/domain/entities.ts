@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "brand" | "deal";
+export type UserRole = "admin" | "broker" | "brand" | "deal";
 
 export type LegacyUserRole = "franchisor" | "franchisee";
 
@@ -109,6 +109,9 @@ export type TakeActionItem = {
   title: string;
   body: string;
   createdBy: string;
+  responseBody?: string | null;
+  respondedBy?: string | null;
+  respondedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -43,6 +43,7 @@ type ProfileRow = {
   role: UserRole;
   brand_id: string | null;
   deal_id: string | null;
+  broker_name?: string | null;
 };
 
 function normalizeAuthResponse(payload: unknown): SupabaseAuthSession | null {
@@ -68,6 +69,7 @@ function mapProfile(row: ProfileRow, authEmail: string | null): SessionProfile {
     role: parseUserRole(row.role),
     brandId: row.brand_id,
     dealId: row.deal_id,
+    brokerName: row.broker_name ?? null,
   };
 }
 
@@ -84,13 +86,20 @@ async function fetchProfileRows(accessToken: string, userId: string, select: str
 
 export async function fetchCurrentProfile(accessToken: string, userId: string, authEmail: string | null): Promise<SessionProfile> {
   try {
-    const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id");
+    const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id,broker_name");
     if (rows[0]) return mapProfile(rows[0], authEmail);
   } catch (error) {
-    const canFallbackWithoutEmail = error instanceof SupabaseHttpError && error.status === 400;
-    if (!canFallbackWithoutEmail) throw error;
-    const rows = await fetchProfileRows(accessToken, userId, "id,full_name,username,role,brand_id,deal_id");
-    if (rows[0]) return mapProfile(rows[0], authEmail);
+    const canFallbackWithoutBrokerName = error instanceof SupabaseHttpError && error.status === 400;
+    if (!canFallbackWithoutBrokerName) throw error;
+    try {
+      const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id");
+      if (rows[0]) return mapProfile(rows[0], authEmail);
+    } catch (fallbackError) {
+      const canFallbackWithoutEmail = fallbackError instanceof SupabaseHttpError && fallbackError.status === 400;
+      if (!canFallbackWithoutEmail) throw fallbackError;
+      const rows = await fetchProfileRows(accessToken, userId, "id,full_name,username,role,brand_id,deal_id");
+      if (rows[0]) return mapProfile(rows[0], authEmail);
+    }
   }
 
   throw new Error("Your Supabase Auth user does not have a platform profile. Ask an admin to create a row in public.profiles.");

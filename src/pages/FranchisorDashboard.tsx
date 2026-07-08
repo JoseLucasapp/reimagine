@@ -153,7 +153,7 @@ export default function FranchisorDashboard() {
               <span className="text-xs font-semibold">List</span>
               <span className="text-xs">|</span>
               <MapIcon className="h-4 w-4 opacity-50" />
-              <span className="text-xs">Map coming soon</span>
+              <span className="text-xs">Map available</span>
             </div>
             {actionBrandId && (
               <>

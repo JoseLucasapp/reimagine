@@ -23,6 +23,7 @@ const BizDevPage = lazy(() => import("./pages/BizDev"));
 const SpaceRequirementsPage = lazy(() => import("./pages/SpaceRequirements"));
 const OneOffDealsPage = lazy(() => import("./pages/OneOffDeals"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
+const AdminActionItemsPage = lazy(() => import("./pages/AdminActionItems"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const TourBookPage = lazy(() => import("./pages/TourBookPage"));
 const FranchisorDashboard = lazy(() => import("./pages/FranchisorDashboard"));
@@ -64,6 +65,7 @@ function MainAppRoutes() {
           <Route path="/map" element={<MapView />} />
           <Route path="/space-requirements" element={<SpaceRequirementsPage />} />
           <Route path="/one-off" element={<OneOffDealsPage />} />
+          <Route path="/action-items" element={<AdminActionItemsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

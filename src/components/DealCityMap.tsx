@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { GeoJsonObject } from "geojson";
-import { dealBrands, type DealRecord } from "@/data/dealsData";
+import { dealBrands, type DealRecord, type DealStatusNew } from "@/data/dealsData";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
 import { resolveDealCoordinates, type CoordinatePrecision } from "@/lib/cityCoordinates";
 import type { SavedTerritory, TerritoryBounds, TerritoryZip } from "@/data/territoryData";
@@ -34,10 +34,14 @@ interface DealCityMapProps {
   onZipToggle?: (zipCode: string) => void;
 }
 
-const precisionColors: Record<CoordinatePrecision, string> = {
-  site: "#059669",
-  city: "#E18739",
-  state: "#3B82F6",
+const statusMarkerColors: Record<DealStatusNew, string> = {
+  "Kick Off": "#94a3b8",
+  "Market Study": "#8b5cf6",
+  "Site Tours": "#14b8a6",
+  "LOI Negotiations": "#1E5BA8",
+  "Lease Negotiations": "#3b82f6",
+  Signed: "#059669",
+  "On Hold": "#E18739",
 };
 
 function escapeHtml(value: string): string {
@@ -49,8 +53,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#039;");
 }
 
-function createCityIcon(count: number, precision: CoordinatePrecision) {
-  const color = precisionColors[precision];
+function createCityIcon(pin: CityPin) {
+  const statuses = new Set(pin.deals.map((deal) => deal.status));
+  const color = statuses.size === 1 ? statusMarkerColors[pin.deals[0].status] : "#243c51";
+  const count = pin.deals.length;
   const size = count > 9 ? 34 : 30;
   return L.divIcon({
     className: "deal-city-marker",
@@ -59,7 +65,7 @@ function createCityIcon(count: number, precision: CoordinatePrecision) {
       background:${color};color:#fff;border:3px solid #fff;
       display:flex;align-items:center;justify-content:center;
       font-size:12px;font-weight:800;box-shadow:0 4px 14px rgba(15,23,42,0.28);
-    ">${count}</div>`,
+    ">${count > 1 ? count : ""}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -202,7 +208,7 @@ export function DealCityMap({
 
     for (const pin of result.pins) {
       const marker = L.marker([pin.lat, pin.lng], {
-        icon: createCityIcon(pin.deals.length, pin.precision),
+        icon: createCityIcon(pin),
       }).addTo(map);
       marker.bindPopup(popupHtml(pin));
       markersRef.current.push(marker);
