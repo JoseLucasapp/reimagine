@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Send, Map as MapIcon, List, CheckCircle2, Handshake, Briefcase } from "lucide-react";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
@@ -107,6 +107,10 @@ export default function FranchisorDashboard() {
   };
 
   const missingBrandScope = role === "brand" && !profile?.brandId;
+
+  if (role === "brand" && profile?.brandId) {
+    return <Navigate to={`/brands/${profile.brandId}/deals`} replace />;
+  }
 
   if (missingBrandScope) {
     return (

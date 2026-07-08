@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   dealRecords, dealBrands, getDealBrandById,
@@ -8,6 +8,7 @@ import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
 import { StageTimingBadge } from "@/components/StageTimingBadge";
 import { BrandAvatar } from "@/components/BrandAvatar";
+import { DealCityMap } from "@/components/DealCityMap";
 import {
   Search, LayoutList, Columns3, Map as MapIcon, Plus, ChevronRight, FileText, MoreHorizontal,
 } from "lucide-react";
@@ -21,7 +22,6 @@ import { useScopedUser, useUserRole, canEditDeal, canViewFinancials, getVisibleB
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
-import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 type ViewMode = "table" | "kanban" | "map";
 
@@ -40,7 +40,6 @@ const DOCUMENT_FIELDS: { key: keyof DealDocuments; label: string }[] = [
 ];
 
 const LINK_DEFAULT = "https://";
-const LazyMapComponent = lazy(() => import("@/components/MapComponent").then((module) => ({ default: module.MapComponent })));
 
 interface DealsPageProps {
   brandFilter?: string;
@@ -254,7 +253,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
 
       {/* Map View */}
       {view === "map" && (
-        <DealsMapPanel deals={filtered} navigate={navigate} />
+        <DealsMapPanel deals={filtered} />
       )}
 
       {/* Add/Edit Drawer */}
@@ -280,31 +279,20 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
 }
 
 
-function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (path: string) => void }) {
-  const sites = useMemo(() => deals.flatMap((deal) => getSitesByDeal(deal.id)), [deals]);
-
-  if (sites.length === 0) {
+function DealsMapPanel({ deals }: { deals: DealRecord[] }) {
+  if (deals.length === 0) {
     return (
       <div className="glass-card-static p-16 text-center">
         <MapIcon className="w-10 h-10 mx-auto mb-3" style={{ color: "#b8c5d0" }} />
-        <p className="text-sm font-medium" style={{ color: "#4a5568" }}>No mapped sites</p>
-        <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Add sites with latitude and longitude to see them on the deal map.</p>
+        <p className="text-sm font-medium" style={{ color: "#4a5568" }}>No deals to map</p>
+        <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Adjust the filters to show deals on the city map.</p>
       </div>
     );
   }
 
   return (
-    <div className="glass-card-static overflow-hidden" style={{ borderRadius: 14, padding: 0, height: 560 }}>
-      <Suspense fallback={<div className="flex h-full items-center justify-center text-sm" style={{ color: "var(--text-muted)" }}>Loading map...</div>}>
-        <LazyMapComponent
-          sites={sites}
-          className="w-full h-full"
-          onSiteClick={(siteId) => {
-            const site = sites.find((item) => item.id === siteId);
-            if (site) navigate(`/deals/${site.dealId}`);
-          }}
-        />
-      </Suspense>
+    <div className="glass-card-static overflow-hidden" style={{ borderRadius: 14, padding: 0, height: 620 }}>
+      <DealCityMap deals={deals} className="h-full w-full" />
     </div>
   );
 }

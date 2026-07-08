@@ -140,9 +140,11 @@ export default function BrandDeals() {
   return (
     <div className="animate-fade-in">
       <div className="p-6 lg:p-8 pb-0 max-w-[1600px] mx-auto">
-        <button onClick={() => navigate("/brands")} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide transition-colors mb-4" style={{ color: "#94a3b8" }}>
-          <ArrowLeft className="w-4 h-4" /> Brands
-        </button>
+        {role === "admin" && (
+          <button onClick={() => navigate("/brands")} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide transition-colors mb-4" style={{ color: "#94a3b8" }}>
+            <ArrowLeft className="w-4 h-4" /> Brands
+          </button>
+        )}
         <div className="glass-card-static p-5 flex flex-col gap-5 lg:flex-row lg:items-center mb-2">
           <div className="w-14 h-14 rounded-[11px] flex items-center justify-center text-xl font-bold text-white shrink-0" style={{ backgroundColor: brand.logoColor, boxShadow: "0 4px 12px rgba(0,0,0,0.18)" }}>
             {brand.name.charAt(0)}

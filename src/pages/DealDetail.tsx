@@ -818,11 +818,11 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
     if (!t || t === "#" || t === "https://") return undefined;
     return t;
   };
-  const dealAddress = [deal.city, deal.state].filter(Boolean).join(", ");
   const effectiveMarketStudyUrl = cleanUrl(deal.marketStudyLink);
   const userMapUrl = cleanUrl(deal.mapLink);
+  const internalDealMapUrl = `/map?deal=${encodeURIComponent(deal.id)}`;
   const effectiveMapUrl =
-    userMapUrl ?? (dealAddress ? `https://maps.google.com?q=${encodeURIComponent(dealAddress)}` : undefined);
+    userMapUrl?.startsWith("/map") ? userMapUrl : internalDealMapUrl;
 
   const tourBookUrl = cleanUrl(deal.tourBookLink) ?? `/tour-book-generator?deal=${deal.id}`;
 
@@ -968,11 +968,12 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                   textDecoration: "none", cursor: link.url ? "pointer" : "default",
                   opacity: link.url ? 1 : 0.5,
                 };
+                const isInternalLink = Boolean(link.url?.startsWith("/"));
                 const trigger = link.url ? (
                   <a
                     href={link.url}
-                    target={link.key === "tourBook" ? "_self" : "_blank"}
-                    rel="noopener"
+                    target={isInternalLink ? "_self" : "_blank"}
+                    rel={isInternalLink ? undefined : "noopener"}
                     className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
                     style={triggerStyle}
                   >

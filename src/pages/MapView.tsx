@@ -334,10 +334,11 @@ export default function MapView() {
   const runtimeDataVersion = useRuntimeDataVersion();
   const [searchParams] = useSearchParams();
   const requestedDealId = searchParams.get("deal") || "";
+  const requestedBrandId = searchParams.get("brand") || "";
   const role = useUserRole();
   const profile = useCurrentProfile();
   const user = useScopedUser();
-  const [brandFilter, setBrandFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState(() => requestedBrandId || "all");
   const [stageFilter, setStageFilter] = useState("all");
   const [mapResult, setMapResult] = useState<DealCityMapResult>({ pins: [], unmappedDeals: [] });
   const [territoryMode, setTerritoryMode] = useState(false);
@@ -397,8 +398,13 @@ export default function MapView() {
   }, [role, runtimeDataVersion, user, visibleDeals]);
 
   useEffect(() => {
+    if (role === "brand") return;
+    setBrandFilter(requestedBrandId || "all");
+  }, [requestedBrandId, role]);
+
+  useEffect(() => {
     if (role === "brand" && profile?.brandId) {
-      setBrandFilter(profile.brandId);
+      if (brandFilter !== profile.brandId) setBrandFilter(profile.brandId);
       return;
     }
     if (brandFilter !== "all" && !visibleBrands.some((brand) => brand.id === brandFilter)) {
