@@ -15,6 +15,11 @@ export function MobileBottomNav() {
   const role = useUserRole();
   const user = useScopedUser();
   const scopedTabs = tabs.flatMap((tab) => {
+    if (role === "broker") {
+      // Brokers should land on Deals and must not see Dashboard in navigation.
+      if (tab.to === "/") return [];
+      return [tab];
+    }
     if (role === "brand") {
       if (tab.to === "/") return [];
       if (tab.to === "/brands") return [{ ...tab, to: "/brand" }];
