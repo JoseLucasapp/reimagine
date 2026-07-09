@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback, type ReactNode } fro
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  Search, Layers, X, Plus, Minus, Circle, Hash, Pentagon,
+  Search, Layers, X, Plus, Minus, Circle, Clock, Hash, Pentagon, Users,
   Save, FileBarChart2, Target, Download, MapPin as MapPinIcon, Eye, EyeOff, Grid3x3, Trash2,
 } from "lucide-react";
 import { MAP_LIGHT_STYLE, MAP_DARK_STYLE } from "@/lib/mapbox";
@@ -61,7 +61,7 @@ export type MapIQHeaderStat = { label: string; value: number | string; color: st
 export type MapIQSelectionSummary = {
   zips: string[];
   totalPopulation: number;
-  shapes: { id: string; tool: "radius" | "polygon"; label: string }[];
+  shapes: { id: string; tool: "radius" | "drive" | "polygon" | "pop"; label: string }[];
   hasSelection: boolean;
 };
 
@@ -141,9 +141,62 @@ function FloatingStatCards({ pin, stats }: { pin: MapIQPinData; stats: MapIQStat
 
 const DRAW_TOOLS = [
   { key: "radius", icon: Circle, label: "radius" },
+  { key: "drive", icon: Clock, label: "drive time" },
   { key: "zip", icon: Hash, label: "zip selector" },
   { key: "polygon", icon: Pentagon, label: "polygon" },
+  { key: "pop", icon: Users, label: "population radius" },
 ] as const;
+
+const RADIUS_MILE_OPTIONS = [1, 3, 5, 10, 15];
+const DRIVE_MINUTE_OPTIONS = [5, 10, 15, 20, 30];
+const POP_RADIUS_MILE_OPTIONS = [1, 3, 5, 10];
+const EARTH_RADIUS_METERS = 6378137;
+const METERS_PER_MILE = 1609.344;
+type RadiusTool = "radius" | "drive" | "pop";
+
+function isRadiusTool(tool: string | null): tool is RadiusTool {
+  return tool === "radius" || tool === "drive" || tool === "pop";
+}
+
+function clampLatitude(latitude: number): number {
+  return Math.max(-85.05112878, Math.min(85.05112878, latitude));
+}
+
+function mercatorScale(latitude: number): number {
+  return Math.max(0.15, Math.cos((clampLatitude(latitude) * Math.PI) / 180));
+}
+
+function projectMercator(point: [number, number]): [number, number] {
+  const lng = (point[0] * Math.PI) / 180;
+  const lat = (clampLatitude(point[1]) * Math.PI) / 180;
+  return [
+    EARTH_RADIUS_METERS * lng,
+    EARTH_RADIUS_METERS * Math.log(Math.tan(Math.PI / 4 + lat / 2)),
+  ];
+}
+
+function unprojectMercator(point: [number, number]): [number, number] {
+  return [
+    (point[0] / EARTH_RADIUS_METERS) * (180 / Math.PI),
+    (2 * Math.atan(Math.exp(point[1] / EARTH_RADIUS_METERS)) - Math.PI / 2) * (180 / Math.PI),
+  ];
+}
+
+function mercatorDistanceMiles(a: [number, number], b: [number, number]): number {
+  const [ax, ay] = projectMercator(a);
+  const [bx, by] = projectMercator(b);
+  const projectedMeters = Math.hypot(bx - ax, by - ay);
+  return (projectedMeters * mercatorScale(a[1])) / METERS_PER_MILE;
+}
+
+function formatMiles(value: number): string {
+  const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+  return rounded.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+
+function driveMinutesFromRadiusMiles(radiusMiles: number): number {
+  return Math.max(1, Math.round(radiusMiles * 3));
+}
 
 // ---------- Main
 export function MapIQCanvas(props: MapIQProps) {
@@ -198,6 +251,9 @@ export function MapIQCanvas(props: MapIQProps) {
 
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [radiusMiles, setRadiusMiles] = useState(3);
+  const [driveMinutes, setDriveMinutes] = useState(15);
+  const [populationRadiusMiles, setPopulationRadiusMiles] = useState(5);
 
   const [search, setSearch] = useState("");
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -207,7 +263,7 @@ export function MapIQCanvas(props: MapIQProps) {
   // ---- Draw shapes state
   type DrawShape = {
     id: string;
-    tool: "radius" | "polygon";
+    tool: RadiusTool | "polygon";
     feature: any;               // GeoJSON Feature (Polygon)
     labelPoint: [number, number];
     labelText: string;
@@ -219,7 +275,14 @@ export function MapIQCanvas(props: MapIQProps) {
   const [polygonInProgress, setPolygonInProgress] = useState<[number, number][]>([]);
   const polygonInProgressRef = useRef<[number, number][]>([]);
   const activeToolRef = useRef<string | null>(null);
+  const radiusMilesRef = useRef(radiusMiles);
+  const driveMinutesRef = useRef(driveMinutes);
+  const populationRadiusMilesRef = useRef(populationRadiusMiles);
+  const radiusDragRef = useRef<{ tool: RadiusTool; center: [number, number]; moved: boolean } | null>(null);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+  useEffect(() => { radiusMilesRef.current = radiusMiles; }, [radiusMiles]);
+  useEffect(() => { driveMinutesRef.current = driveMinutes; }, [driveMinutes]);
+  useEffect(() => { populationRadiusMilesRef.current = populationRadiusMiles; }, [populationRadiusMiles]);
   useEffect(() => { drawShapesRef.current = drawShapes; }, [drawShapes]);
   useEffect(() => { polygonInProgressRef.current = polygonInProgress; }, [polygonInProgress]);
 
@@ -349,20 +412,24 @@ export function MapIQCanvas(props: MapIQProps) {
 
   // ---- Draw shape helpers
   const makeCirclePolygon = (center: [number, number], radiusMiles: number, steps = 64) => {
-    const km = radiusMiles * 1.60934;
+    const centerMercator = projectMercator(center);
+    const projectedRadiusMeters = (radiusMiles * METERS_PER_MILE) / mercatorScale(center[1]);
     const coords: [number, number][] = [];
     for (let i = 0; i <= steps; i++) {
       const a = (i / steps) * Math.PI * 2;
-      const dx = (km / (111.32 * Math.cos((center[1] * Math.PI) / 180))) * Math.cos(a);
-      const dy = (km / 110.574) * Math.sin(a);
-      coords.push([center[0] + dx, center[1] + dy]);
+      coords.push(unprojectMercator([
+        centerMercator[0] + projectedRadiusMeters * Math.cos(a),
+        centerMercator[1] + projectedRadiusMeters * Math.sin(a),
+      ]));
     }
     return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] }, properties: {} };
   };
 
   const SHAPE_COLORS: Record<string, string> = {
     radius: "#E18739",
+    drive: "#5BA4D9",
     polygon: "#243C51",
+    pop: "#8B5CF6",
   };
 
   const ensureShapeLayers = useCallback((map: maplibregl.Map) => {
@@ -381,6 +448,25 @@ export function MapIQCanvas(props: MapIQProps) {
         map.addLayer({
           id: "mapiq-shapes-line", type: "line", source: "mapiq-shapes",
           paint: { "line-color": ["coalesce", ["get", "color"], "#E18739"], "line-width": 2 },
+        });
+      }
+      if (!map.getSource("mapiq-radius-preview")) {
+        map.addSource("mapiq-radius-preview", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      }
+      if (!map.getLayer("mapiq-radius-preview-fill")) {
+        map.addLayer({
+          id: "mapiq-radius-preview-fill", type: "fill", source: "mapiq-radius-preview",
+          paint: { "fill-color": ["coalesce", ["get", "color"], "#E18739"], "fill-opacity": 0.14 },
+        });
+      }
+      if (!map.getLayer("mapiq-radius-preview-line")) {
+        map.addLayer({
+          id: "mapiq-radius-preview-line", type: "line", source: "mapiq-radius-preview",
+          paint: {
+            "line-color": ["coalesce", ["get", "color"], "#E18739"],
+            "line-width": 2,
+            "line-dasharray": [2, 2],
+          },
         });
       }
       if (!map.getSource("mapiq-poly-preview")) {
@@ -420,17 +506,69 @@ export function MapIQCanvas(props: MapIQProps) {
     });
   }, []);
 
-  const updatePolyPreview = useCallback(() => {
+  const updateRadiusPreview = useCallback((feature: any | null, color = "#E18739") => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
-    const src = map.getSource("mapiq-poly-preview") as any;
+    const src = map.getSource("mapiq-radius-preview") as any;
     if (!src) return;
-    const pts = polygonInProgressRef.current;
     src.setData({
       type: "FeatureCollection",
-      features: pts.length >= 2 ? [{ type: "Feature", geometry: { type: "LineString", coordinates: pts }, properties: {} }] : [],
+      features: feature ? [{ ...feature, properties: { ...feature.properties, color } }] : [],
     });
   }, []);
+
+  const defaultRadiusForTool = (tool: RadiusTool): number => {
+    if (tool === "drive") return Math.max(1, driveMinutesRef.current / 3);
+    if (tool === "pop") return populationRadiusMilesRef.current;
+    return radiusMilesRef.current;
+  };
+
+  const makeRadiusShape = (tool: RadiusTool, center: [number, number], radiusMilesValue: number): DrawShape => {
+    const radius = Math.max(0.1, radiusMilesValue);
+    const labelText =
+      tool === "drive"
+        ? `${driveMinutesFromRadiusMiles(radius)} min drive time`
+        : tool === "pop"
+          ? `${formatMiles(radius)} mi population radius`
+          : `${formatMiles(radius)} mi radius`;
+
+    return {
+      id: `shape-${Date.now()}`,
+      tool,
+      feature: makeCirclePolygon(center, radius),
+      labelPoint: center,
+      labelText,
+      color: SHAPE_COLORS[tool] || "#E18739",
+    };
+  };
+
+  const commitRadiusShape = useCallback((tool: RadiusTool, center: [number, number], radiusMilesValue: number) => {
+    const shape = makeRadiusShape(tool, center, radiusMilesValue);
+    drawShapesRef.current = [...drawShapesRef.current, shape];
+    setDrawShapes(drawShapesRef.current);
+    updateRadiusPreview(null);
+    updateShapesSource();
+    activeToolRef.current = null;
+    setActiveTool(null);
+  }, [makeRadiusShape, updateRadiusPreview, updateShapesSource]);
+
+  const updatePolyPreview = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (!map.isStyleLoaded()) return;
+      ensureShapeLayers(map);
+      const src = map.getSource("mapiq-poly-preview") as any;
+      if (!src) return;
+      const pts = polygonInProgressRef.current;
+      src.setData({
+        type: "FeatureCollection",
+        features: pts.length >= 2 ? [{ type: "Feature", geometry: { type: "LineString", coordinates: pts }, properties: {} }] : [],
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("idle", apply);
+  }, [ensureShapeLayers]);
 
   const focusPinAboveDetailPanel = useCallback((pin: MapIQPinData, desiredZoom = 12) => {
     const map = mapRef.current;
@@ -489,6 +627,51 @@ export function MapIQCanvas(props: MapIQProps) {
       ensureShapeLayers(map);
       updateShapesSource();
 
+      const finishRadiusDrag = (lngLat: [number, number]) => {
+        const draft = radiusDragRef.current;
+        if (!draft) return;
+        const draggedRadius = mercatorDistanceMiles(draft.center, lngLat);
+        const radius = draft.moved && draggedRadius >= 0.05
+          ? draggedRadius
+          : defaultRadiusForTool(draft.tool);
+        radiusDragRef.current = null;
+        try { map.dragPan.enable(); } catch {}
+        commitRadiusShape(draft.tool, draft.center, radius);
+      };
+
+      map.on("mousedown", (e) => {
+        const tool = activeToolRef.current;
+        if (!isRadiusTool(tool)) return;
+        const originalEvent = e.originalEvent as MouseEvent | undefined;
+        if (typeof originalEvent?.button === "number" && originalEvent.button !== 0) return;
+
+        e.preventDefault();
+        const center: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        radiusDragRef.current = { tool, center, moved: false };
+        try { map.dragPan.disable(); } catch {}
+        window.addEventListener("mouseup", (event) => {
+          if (!radiusDragRef.current) return;
+          const rect = map.getCanvas().getBoundingClientRect();
+          const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+          const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+          const lngLat = map.unproject([x, y]);
+          finishRadiusDrag([lngLat.lng, lngLat.lat]);
+        }, { once: true });
+      });
+
+      map.on("mousemove", (e) => {
+        const draft = radiusDragRef.current;
+        if (!draft) return;
+        const cursor: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        const radius = Math.max(0.1, mercatorDistanceMiles(draft.center, cursor));
+        if (radius >= 0.05) draft.moved = true;
+        updateRadiusPreview(makeCirclePolygon(draft.center, radius), SHAPE_COLORS[draft.tool]);
+      });
+
+      map.on("mouseup", (e) => {
+        finishRadiusDrag([e.lngLat.lng, e.lngLat.lat]);
+      });
+
       map.on("click", (e) => {
         const tool = activeToolRef.current;
         if (!tool) return;
@@ -512,20 +695,8 @@ export function MapIQCanvas(props: MapIQProps) {
           return;
         }
 
-        if (tool !== "radius") return;
-        const feature = makeCirclePolygon(lngLat, 1);
-        const shape: DrawShape = {
-          id: `shape-${Date.now()}`,
-          tool: "radius",
-          feature,
-          labelPoint: lngLat,
-          labelText: "1 mi radius",
-          color: SHAPE_COLORS[tool] || "#E18739",
-        };
-        drawShapesRef.current = [...drawShapesRef.current, shape];
-        setDrawShapes(drawShapesRef.current);
-        updateShapesSource();
-        setActiveTool(null);
+        if (!isRadiusTool(tool)) return;
+        commitRadiusShape(tool, lngLat, defaultRadiusForTool(tool));
       });
 
       map.on("dblclick", (e) => {
@@ -765,7 +936,9 @@ export function MapIQCanvas(props: MapIQProps) {
     }
     const tool = DRAW_TOOLS.find((t) => t.key === activeTool);
     if (tool) {
-      setToast(`Click on the map to draw your ${tool.label}`);
+      setToast(isRadiusTool(activeTool)
+        ? `Click or drag on the map to draw your ${tool.label}`
+        : `Click on the map to draw your ${tool.label}`);
       const t = setTimeout(() => setToast(null), 3500);
       return () => clearTimeout(t);
     }
@@ -776,7 +949,7 @@ export function MapIQCanvas(props: MapIQProps) {
     const map = mapRef.current;
     if (!map) return;
     const canvas = map.getCanvas();
-    const isDraw = activeTool && ["radius", "polygon"].includes(activeTool);
+    const isDraw = activeTool && ["radius", "drive", "polygon", "pop"].includes(activeTool);
     canvas.style.cursor = isDraw ? "crosshair" : "";
 
     // Disable native double-click zoom while polygon tool is active so
@@ -792,11 +965,19 @@ export function MapIQCanvas(props: MapIQProps) {
       setPolygonInProgress([]);
       updatePolyPreview();
     }
+    if (!isRadiusTool(activeTool) && radiusDragRef.current) {
+      radiusDragRef.current = null;
+      updateRadiusPreview(null);
+      try { map.dragPan.enable(); } catch {}
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         polygonInProgressRef.current = [];
         setPolygonInProgress([]);
+        radiusDragRef.current = null;
+        updateRadiusPreview(null);
         updatePolyPreview();
+        try { map.dragPan.enable(); } catch {}
         setActiveTool(null);
       }
     };
@@ -804,9 +985,12 @@ export function MapIQCanvas(props: MapIQProps) {
     return () => {
       window.removeEventListener("keydown", onKey);
       canvas.style.cursor = "";
+      radiusDragRef.current = null;
+      updateRadiusPreview(null);
       try { map.doubleClickZoom.enable(); } catch {}
+      try { map.dragPan.enable(); } catch {}
     };
-  }, [activeTool, updatePolyPreview]);
+  }, [activeTool, updatePolyPreview, updateRadiusPreview]);
 
   // Keep draw overlays in sync even if a click lands before custom sources/layers finish restoring.
   useEffect(() => {
@@ -827,7 +1011,10 @@ export function MapIQCanvas(props: MapIQProps) {
     setDrawShapes([]);
     polygonInProgressRef.current = [];
     setPolygonInProgress([]);
+    radiusDragRef.current = null;
+    activeToolRef.current = null;
     updateShapesSource();
+    updateRadiusPreview(null);
     updatePolyPreview();
     setActiveTool(null);
   };
@@ -835,6 +1022,10 @@ export function MapIQCanvas(props: MapIQProps) {
   const cancelActiveDrawing = () => {
     polygonInProgressRef.current = [];
     setPolygonInProgress([]);
+    radiusDragRef.current = null;
+    activeToolRef.current = null;
+    try { mapRef.current?.dragPan.enable(); } catch {}
+    updateRadiusPreview(null);
     updatePolyPreview();
     setActiveTool(null);
   };
@@ -1106,6 +1297,31 @@ export function MapIQCanvas(props: MapIQProps) {
     return siteList.rows.filter((r) => r.status === siteListTab);
   }, [siteList, siteListTab]);
   const hasLayerPanel = Boolean(showSavedViews || enableTerritoryBuilder);
+  const activeRadiusOptions =
+    activeTool === "drive" ? DRIVE_MINUTE_OPTIONS :
+    activeTool === "pop" ? POP_RADIUS_MILE_OPTIONS :
+    RADIUS_MILE_OPTIONS;
+  const activeRadiusValue =
+    activeTool === "drive" ? driveMinutes :
+    activeTool === "pop" ? populationRadiusMiles :
+    radiusMiles;
+  const activeRadiusUnit = activeTool === "drive" ? "min" : "mi";
+  const activeRadiusTitle =
+    activeTool === "drive" ? "Drive time" :
+    activeTool === "pop" ? "Population radius" :
+    "Radius draw";
+  const activeRadiusCopy =
+    activeTool === "drive"
+      ? "Click once for the selected estimate, or drag from the center to size it."
+      : activeTool === "pop"
+        ? "Click once for the selected radius, or drag from the center to size it."
+        : "Click once for the selected radius, or drag from the center to size it.";
+  const isRadiusLikeTool = isRadiusTool(activeTool);
+  const setActiveRadiusValue = (value: number) => {
+    if (activeTool === "drive") setDriveMinutes(value);
+    else if (activeTool === "pop") setPopulationRadiusMiles(value);
+    else setRadiusMiles(value);
+  };
 
   return (
     <div className="mapiq-root">
@@ -1474,9 +1690,29 @@ export function MapIQCanvas(props: MapIQProps) {
       </div>
       )}
 
-      {showDrawTools && (activeTool === "polygon" || activeTool === "zip") && (
+      {showDrawTools && (isRadiusLikeTool || activeTool === "polygon" || activeTool === "zip") && (
         <div className={`mapiq-tool-panel ${activeTool === "zip" && enableTerritoryBuilder ? "zip-active" : ""}`}>
-          {activeTool === "polygon" ? (
+          {isRadiusLikeTool ? (
+            <>
+              <div className="mapiq-tool-title">{activeRadiusTitle}</div>
+              <div className="mapiq-tool-copy">{activeRadiusCopy}</div>
+              <div className="mapiq-tool-options" role="group" aria-label={`${activeRadiusTitle} options`}>
+                {activeRadiusOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`mapiq-tool-option${activeRadiusValue === option ? " active" : ""}`}
+                    onClick={() => setActiveRadiusValue(option)}
+                  >
+                    {option} {activeRadiusUnit}
+                  </button>
+                ))}
+              </div>
+              <div className="mapiq-tool-actions">
+                <button className="mapiq-tool-btn ghost" onClick={cancelActiveDrawing}>Cancel</button>
+              </div>
+            </>
+          ) : activeTool === "polygon" ? (
             <>
               <div className="mapiq-tool-title">Polygon draw</div>
               <div className="mapiq-tool-copy">

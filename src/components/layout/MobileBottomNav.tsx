@@ -14,13 +14,18 @@ export function MobileBottomNav() {
   const location = useLocation();
   const role = useUserRole();
   const user = useScopedUser();
-  const visibleTabs = tabs.filter((tab) => canSeeRoute(user ?? role, tab.to));
+  const scopedTabs = tabs.map((tab) =>
+    tab.to === "/brands" && role === "brand" ? { ...tab, to: "/brand" } : tab
+  );
+  const visibleTabs = scopedTabs.filter((tab) => canSeeRoute(user ?? role, tab.to));
 
   return (
     <nav className="mobile-bottom-nav">
       {visibleTabs.map((tab) => {
         const isActive =
-          tab.to === "/"
+          tab.to === "/brand"
+            ? location.pathname === "/brand" || location.pathname.startsWith("/brands/")
+            : tab.to === "/"
             ? location.pathname === "/"
             : location.pathname.startsWith(tab.to);
         return (

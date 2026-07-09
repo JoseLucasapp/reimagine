@@ -412,6 +412,32 @@
   line-height: 1.4;
   color: #6B7280;
 }
+.mapiq-tool-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+.mapiq-tool-option {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(36,60,81,0.12);
+  background: #fff;
+  color: #243C51;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.mapiq-tool-option:hover {
+  background: rgba(36,60,81,0.04);
+}
+.mapiq-tool-option.active {
+  background: #243C51;
+  border-color: #243C51;
+  color: #fff;
+}
 .mapiq-tool-actions {
   display: flex;
   gap: 8px;

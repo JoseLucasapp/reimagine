@@ -54,9 +54,12 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
   // In compact mode (mobile/tablet drawer), always show full sidebar
   const effectiveCollapsed = isCompact ? false : collapsed;
   const showLabels = !effectiveCollapsed;
+  const scopedGroup1 = group1.map((item) =>
+    item.to === "/brands" && role === "brand" ? { ...item, to: "/brand" } : item
+  );
 
   // Filter nav items by what the active role can access.
-  const visibleGroup1 = group1.filter((i) => canSeeRoute(user ?? role, i.to));
+  const visibleGroup1 = scopedGroup1.filter((i) => canSeeRoute(user ?? role, i.to));
   const visibleGroup2 = group2.filter((i) => canSeeRoute(user ?? role, i.to));
   const visibleBottomNav = bottomNav.filter((i) => canSeeRoute(user ?? role, i.to));
 
@@ -65,8 +68,10 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
     toast.success(`Now viewing as ${ROLE_LABELS.admin}`);
   };
 
-  const isActive = (path: string) =>
-    location.pathname === path || (path !== "/" && location.pathname.startsWith(path));
+  const isActive = (path: string) => {
+    if (path === "/brand") return location.pathname === "/brand" || location.pathname.startsWith("/brands/");
+    return location.pathname === path || (path !== "/" && location.pathname.startsWith(path));
+  };
 
   const renderLinks = (items: SidebarItem[]) =>
     items.map((item) => {

@@ -76,12 +76,13 @@ describe("role permissions", () => {
   });
 
   it("allows brand-level users to see brand portfolio routes without admin-only sections", () => {
-    expect(canSeeRoute("brand", "/brand")).toBe(true);
-    expect(canSeeRoute("brand", "/brands")).toBe(false);
-    expect(canSeeRoute("brand", "/brands/brand-1/deals")).toBe(true);
-    expect(canSeeRoute("brand", "/mapiq")).toBe(false);
-    expect(canSeeRoute("brand", "/action-items")).toBe(false);
-    expect(canSeeRoute("brand", "/bizdev")).toBe(false);
+    expect(canSeeRoute(brandUser, "/brand")).toBe(true);
+    expect(canSeeRoute(brandUser, "/brands")).toBe(false);
+    expect(canSeeRoute(brandUser, "/brands/brand-1/deals")).toBe(true);
+    expect(canSeeRoute(brandUser, "/brands/brand-2/deals")).toBe(false);
+    expect(canSeeRoute(brandUser, "/mapiq")).toBe(false);
+    expect(canSeeRoute(brandUser, "/action-items")).toBe(false);
+    expect(canSeeRoute(brandUser, "/bizdev")).toBe(false);
     expect(roleToHomeRoute("brand")).toBe("/brand");
   });
 

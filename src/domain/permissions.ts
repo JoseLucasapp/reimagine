@@ -142,7 +142,8 @@ export function canSeeRoute(userOrRole: ScopedUser | UserRole, path: string): bo
   if (user.role === "admin") return true;
 
   if (user.role === "brand" && path.startsWith("/brands/") && path.endsWith("/deals")) {
-    return true;
+    const brandId = path.split("/")[2] || null;
+    return Boolean(user.brandId && user.brandId === brandId);
   }
 
   if (user.role === "deal" && path.startsWith("/deals/")) {
