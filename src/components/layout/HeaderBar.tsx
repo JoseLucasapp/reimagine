@@ -11,6 +11,8 @@ import { useCurrentProfile } from "@/hooks/useUserRole";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
+  "/brand": "Brands",
+  "/deal": "Deals",
   "/brands": "Brands",
   "/bizdev": "Prospects",
   "/deals": "Deals",

@@ -588,9 +588,9 @@ create policy "take action insert by deal scope" on public.take_action_items for
 create policy "take action update by deal scope" on public.take_action_items for update using (public.current_user_can_access_deal(deal_id)) with check (public.current_user_can_access_deal(deal_id));
 create policy "admins manage take action" on public.take_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
-create policy "brand action select by brand scope" on public.brand_action_items for select using (public.current_user_can_access_brand(brand_id));
-create policy "brand action insert by brand scope" on public.brand_action_items for insert with check (public.current_user_can_access_brand(brand_id));
-create policy "brand action update by brand scope" on public.brand_action_items for update using (public.current_user_can_access_brand(brand_id)) with check (public.current_user_can_access_brand(brand_id));
+create policy "brand action select by brand scope" on public.brand_action_items for select using (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id()));
+create policy "brand action insert by brand scope" on public.brand_action_items for insert with check (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id()));
+create policy "brand action update by brand scope" on public.brand_action_items for update using (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id())) with check (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id()));
 create policy "admins manage brand action" on public.brand_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "ai insights select by entity scope" on public.ai_insights for select using (

@@ -8,6 +8,7 @@ import {
   type AdminActionSource,
   type AdminTakeActionItem,
 } from "@/lib/adminTakeActionStore";
+import { useUserRole } from "@/hooks/useUserRole";
 
 type StatusFilter = "open" | "resolved" | "all";
 type SourceFilter = "all" | AdminActionSource;
@@ -53,7 +54,7 @@ function getStatusStyles(item: AdminTakeActionItem) {
   };
 }
 
-function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+function EmptyState({ hasFilters, canRespond }: { hasFilters: boolean; canRespond: boolean }) {
   return (
     <div
       className="flex flex-col items-center justify-center text-center"
@@ -73,13 +74,17 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       <p style={{ fontSize: 13, marginTop: 6, maxWidth: 420 }}>
         {hasFilters
           ? "Adjust the filters or search term to see more requests."
-          : "Requests submitted from deal or brand Take Action flows will appear here."}
+          : canRespond
+          ? "Requests submitted from deal or brand Take Action flows will appear here."
+          : "Your Take Action requests and Reimagine responses will appear here."}
       </p>
     </div>
   );
 }
 
 export default function AdminActionItems() {
+  const role = useUserRole();
+  const canRespond = role === "admin";
   const [items, setItems] = useState<AdminTakeActionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -87,14 +92,29 @@ export default function AdminActionItems() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [responseText, setResponseText] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(canRespond ? "open" : "all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const sourceOptions = useMemo(() => {
+    const options: Array<[SourceFilter, string]> = [
+      ["all", "All Sources"],
+      ["deal", "Deals"],
+    ];
+    if (role !== "deal") options.push(["brand", "Brands"]);
+    return options;
+  }, [role]);
+
+  useEffect(() => {
+    if (role === "deal" && sourceFilter === "brand") setSourceFilter("all");
+  }, [role, sourceFilter]);
 
   const loadItems = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const loaded = await adminTakeActionStore.loadAll();
+      const loaded = await adminTakeActionStore.loadAll({
+        includeDealActions: true,
+        includeBrandActions: role !== "deal",
+      });
       setItems(loaded);
       setSelectedId((current) => current ?? loaded[0]?.id ?? null);
     } catch (error) {
@@ -104,7 +124,7 @@ export default function AdminActionItems() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     void loadItems();
@@ -155,7 +175,7 @@ export default function AdminActionItems() {
   }, [items]);
 
   const handleRespond = async () => {
-    if (!selectedItem || responding) return;
+    if (!canRespond || !selectedItem || responding) return;
     const trimmed = responseText.trim();
     if (!trimmed) {
       toast.error("Write a response before resolving this item.");
@@ -170,7 +190,9 @@ export default function AdminActionItems() {
       setSelectedId(selectedItem.id);
     } catch (error) {
       console.error(error);
-      toast.error("Unable to save the response.");
+      toast.error("Unable to save the response.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
     } finally {
       setResponding(false);
     }
@@ -188,7 +210,9 @@ export default function AdminActionItems() {
               Action Items
             </h1>
             <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>
-              Review and respond to Take Action requests from deals and brand dashboards.
+              {canRespond
+                ? "Review and respond to Take Action requests from deals and brand dashboards."
+                : "Review your Take Action requests and Reimagine responses."}
             </p>
           </div>
           <button
@@ -288,11 +312,7 @@ export default function AdminActionItems() {
               ))}
             </div>
             <div className="flex gap-2">
-              {([
-                ["all", "All Sources"],
-                ["deal", "Deals"],
-                ["brand", "Brands"],
-              ] as const).map(([value, label]) => (
+              {sourceOptions.map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
@@ -323,7 +343,7 @@ export default function AdminActionItems() {
             Loading Take Action messages...
           </div>
         ) : filteredItems.length === 0 ? (
-          <EmptyState hasFilters={items.length > 0} />
+          <EmptyState hasFilters={items.length > 0} canRespond={canRespond} />
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.88fr)_minmax(420px,0.62fr)]" style={{ gap: 18, alignItems: "start" }}>
             <section
@@ -497,7 +517,7 @@ export default function AdminActionItems() {
                     <div>
                       <div className="flex items-center justify-between" style={{ gap: 12 }}>
                         <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                          Admin Response
+                          Reimagine Response
                         </p>
                         {selectedItem.respondedAt && (
                           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -505,12 +525,12 @@ export default function AdminActionItems() {
                           </span>
                         )}
                       </div>
-                      {selectedItem.status === "resolved" ? (
+                      {!canRespond || selectedItem.status === "resolved" ? (
                         <div
                           style={{
                             borderRadius: 12,
-                            border: "1px solid var(--border-subtle)",
-                            background: "rgba(16,185,129,0.07)",
+                            border: selectedItem.responseBody ? "1px solid rgba(16,185,129,0.24)" : "1px dashed var(--border-subtle)",
+                            background: selectedItem.responseBody ? "rgba(16,185,129,0.07)" : "var(--bg-card)",
                             color: "var(--text-secondary)",
                             fontSize: 14,
                             lineHeight: 1.6,
@@ -519,7 +539,7 @@ export default function AdminActionItems() {
                             whiteSpace: "pre-wrap",
                           }}
                         >
-                          {selectedItem.responseBody || "Resolved before response text was enabled."}
+                          {selectedItem.responseBody || "Waiting for Reimagine response."}
                           {selectedItem.respondedBy && (
                             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10 }}>
                               Responded by {selectedItem.respondedBy}

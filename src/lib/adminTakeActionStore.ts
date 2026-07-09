@@ -67,6 +67,11 @@ type ProfileRow = {
   username: string | null;
 };
 
+type LoadAllOptions = {
+  includeDealActions?: boolean;
+  includeBrandActions?: boolean;
+};
+
 function accessToken(): string {
   const token = getStoredSession()?.accessToken;
   if (!token) throw new Error("Session expired. Log in again before saving changes.");
@@ -91,6 +96,10 @@ function isMissingResponseColumns(error: unknown): boolean {
     details.includes("schema cache") ||
     details.includes("column")
   );
+}
+
+function missingResponseColumnsError(): Error {
+  return new Error("Take Action response columns are missing. Run supabase/add-take-action-responses.sql before saving admin responses.");
 }
 
 function profileLabel(profile: ProfileRow | undefined, fallback = "Unknown user"): string {
@@ -165,7 +174,6 @@ async function patchWithResponse<TRow>(
   path: string,
   id: string,
   body: JsonObject,
-  fallbackBody: JsonObject,
 ): Promise<TRow[]> {
   const query = new URLSearchParams({ id: `eq.${id}` });
   try {
@@ -177,14 +185,8 @@ async function patchWithResponse<TRow>(
       prefer: "return=representation",
     });
   } catch (error) {
-    if (!isMissingResponseColumns(error)) throw error;
-    return supabaseRequest<TRow[]>(path, {
-      method: "PATCH",
-      query,
-      body: fallbackBody,
-      accessToken: accessToken(),
-      prefer: "return=representation",
-    });
+    if (isMissingResponseColumns(error)) throw missingResponseColumnsError();
+    throw error;
   }
 }
 
@@ -193,29 +195,35 @@ export function isOpenAdminAction(item: AdminTakeActionItem): boolean {
 }
 
 export const adminTakeActionStore = {
-  async loadAll(): Promise<AdminTakeActionItem[]> {
+  async loadAll(options: LoadAllOptions = {}): Promise<AdminTakeActionItem[]> {
+    const includeDealActions = options.includeDealActions ?? true;
+    const includeBrandActions = options.includeBrandActions ?? true;
     const token = accessToken();
     const profiles = await loadProfiles(token);
-    const dealRows = await supabaseRequest<TakeActionRow[]>("/rest/v1/take_action_items", {
-      query: new URLSearchParams({
-        select: "*",
-        order: "created_at.desc",
-      }),
-      accessToken: token,
-    }).catch((error) => {
-      if (isMissingTable(error)) return [] as TakeActionRow[];
-      throw error;
-    });
-    const brandRows = await supabaseRequest<BrandActionRow[]>("/rest/v1/brand_action_items", {
-      query: new URLSearchParams({
-        select: "*",
-        order: "created_at.desc",
-      }),
-      accessToken: token,
-    }).catch((error) => {
-      if (isMissingTable(error)) return [] as BrandActionRow[];
-      throw error;
-    });
+    const dealRows = includeDealActions
+      ? await supabaseRequest<TakeActionRow[]>("/rest/v1/take_action_items", {
+          query: new URLSearchParams({
+            select: "*",
+            order: "created_at.desc",
+          }),
+          accessToken: token,
+        }).catch((error) => {
+          if (isMissingTable(error)) return [] as TakeActionRow[];
+          throw error;
+        })
+      : [];
+    const brandRows = includeBrandActions
+      ? await supabaseRequest<BrandActionRow[]>("/rest/v1/brand_action_items", {
+          query: new URLSearchParams({
+            select: "*",
+            order: "created_at.desc",
+          }),
+          accessToken: token,
+        }).catch((error) => {
+          if (isMissingTable(error)) return [] as BrandActionRow[];
+          throw error;
+        })
+      : [];
 
     return [
       ...dealRows.map((row) => mapDealRow(row, profiles)),
@@ -232,13 +240,12 @@ export const adminTakeActionStore = {
       responded_by: respondedBy,
       responded_at: respondedAt,
     } satisfies JsonObject;
-    const fallbackPayload = { status: "resolved" } satisfies JsonObject;
 
     if (item.source === "deal") {
-      await patchWithResponse<TakeActionRow>("/rest/v1/take_action_items", item.id, responsePayload, fallbackPayload);
+      await patchWithResponse<TakeActionRow>("/rest/v1/take_action_items", item.id, responsePayload);
       return;
     }
 
-    await patchWithResponse<BrandActionRow>("/rest/v1/brand_action_items", item.id, responsePayload, fallbackPayload);
+    await patchWithResponse<BrandActionRow>("/rest/v1/brand_action_items", item.id, responsePayload);
   },
 };

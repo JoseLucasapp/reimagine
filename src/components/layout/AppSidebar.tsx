@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Grid3X3, Filter, Handshake, Ruler, Star,
-  Settings, Map, ChevronLeft, ChevronRight, Sun, Moon, Eye, Inbox,
+  Settings, Compass, ChevronLeft, ChevronRight, Sun, Moon, Eye, Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,11 +24,11 @@ const group1 = [
   { label: "Brands", to: "/brands", icon: Grid3X3 },
   { label: "Prospects", to: "/bizdev", icon: Filter },
   { label: "Deals", to: "/deals", icon: Handshake },
-  { label: "Action Items", to: "/action-items", icon: Inbox },
+  { label: "MapIQ", to: "/map", icon: Compass },
 ] satisfies SidebarItem[];
 
 const group2 = [
-  { label: "MapIQ", to: "/map", icon: Map },
+  { label: "Action Items", to: "/action-items", icon: Inbox },
   { label: "Space Reqs", to: "/space-requirements", icon: Ruler },
   { label: "One-Off Deals", to: "/one-off", icon: Star },
 ] satisfies SidebarItem[];
@@ -54,9 +54,19 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
   // In compact mode (mobile/tablet drawer), always show full sidebar
   const effectiveCollapsed = isCompact ? false : collapsed;
   const showLabels = !effectiveCollapsed;
-  const scopedGroup1 = group1.map((item) =>
-    item.to === "/brands" && role === "brand" ? { ...item, to: "/brand" } : item
-  );
+  const scopedGroup1 = group1.flatMap((item) => {
+    if (role === "brand") {
+      if (item.to === "/") return [];
+      if (item.to === "/brands") return [{ ...item, to: "/brand" }];
+      return [item];
+    }
+    if (role === "deal") {
+      if (item.to === "/") return [];
+      if (item.to === "/deals") return [{ ...item, to: "/deal" }];
+      return [item];
+    }
+    return [item];
+  });
 
   // Filter nav items by what the active role can access.
   const visibleGroup1 = scopedGroup1.filter((i) => canSeeRoute(user ?? role, i.to));

@@ -309,7 +309,7 @@ export default function SettingsPage() {
                 Platform Access
               </h2>
               <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-                Your access is assigned from your Supabase profile.
+                Your access is assigned from your profile.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 12 }}>

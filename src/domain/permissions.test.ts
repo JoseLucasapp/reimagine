@@ -56,7 +56,7 @@ describe("role permissions", () => {
     expect(canSeeRoute("deal", "/deals")).toBe(false);
     expect(canSeeRoute("deal", "/map")).toBe(true);
     expect(canSeeRoute("deal", "/mapiq")).toBe(false);
-    expect(canSeeRoute("deal", "/action-items")).toBe(false);
+    expect(canSeeRoute("deal", "/action-items")).toBe(true);
     expect(canSeeRoute("deal", "/brands")).toBe(false);
     expect(canViewFinancials("deal")).toBe(false);
     expect(canEditDeal("deal")).toBe(false);
@@ -81,7 +81,7 @@ describe("role permissions", () => {
     expect(canSeeRoute(brandUser, "/brands/brand-1/deals")).toBe(true);
     expect(canSeeRoute(brandUser, "/brands/brand-2/deals")).toBe(false);
     expect(canSeeRoute(brandUser, "/mapiq")).toBe(false);
-    expect(canSeeRoute(brandUser, "/action-items")).toBe(false);
+    expect(canSeeRoute(brandUser, "/action-items")).toBe(true);
     expect(canSeeRoute(brandUser, "/bizdev")).toBe(false);
     expect(roleToHomeRoute("brand")).toBe("/brand");
   });

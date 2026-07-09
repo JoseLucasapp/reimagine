@@ -1250,6 +1250,31 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                             </span>
                           </div>
                           <p className="mt-2 whitespace-pre-line text-sm" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>{item.body}</p>
+                          {item.responseBody && (
+                            <div
+                              className="mt-3"
+                              style={{
+                                borderRadius: 10,
+                                border: "1px solid rgba(5,150,105,0.18)",
+                                background: "rgba(5,150,105,0.08)",
+                                padding: 10,
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold" style={{ color: "#059669", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                  Reimagine Response
+                                </span>
+                                {item.respondedAt && (
+                                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                                    {new Date(item.respondedAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-2 whitespace-pre-line text-sm" style={{ color: "var(--text-primary)", lineHeight: 1.5 }}>
+                                {item.responseBody}
+                              </p>
+                            </div>
+                          )}
                           {!resolved && (
                             <button
                               type="button"

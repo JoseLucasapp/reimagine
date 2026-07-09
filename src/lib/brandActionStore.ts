@@ -14,6 +14,10 @@ export interface BrandActionItem {
   requestedBy: string;
   timestamp: string;
   status: "pending" | "resolved";
+  updatedAt?: string;
+  responseBody?: string | null;
+  respondedBy?: string | null;
+  respondedAt?: string | null;
 }
 
 type BrandActionRow = {
@@ -28,6 +32,10 @@ type BrandActionRow = {
   requested_by: string;
   status: "pending" | "resolved";
   created_at: string;
+  updated_at?: string;
+  response_body?: string | null;
+  responded_by?: string | null;
+  responded_at?: string | null;
 };
 
 type Listener = () => void;
@@ -58,6 +66,10 @@ function mapRow(row: BrandActionRow): BrandActionItem {
     requestedBy: row.requested_by,
     timestamp: row.created_at,
     status: row.status,
+    updatedAt: row.updated_at,
+    responseBody: row.response_body ?? null,
+    respondedBy: row.responded_by ?? null,
+    respondedAt: row.responded_at ?? null,
   };
 }
 

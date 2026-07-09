@@ -1,6 +1,11 @@
-import { useState } from "react";
-import { Bell, X, MapPin, FileText, AlertTriangle, Users, CheckCircle2, Clock, BookOpen } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Bell, X, MessageSquareReply, Clock } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { dealRecords } from "@/data/dealsData";
+import { brandActionStore } from "@/lib/brandActionStore";
+import { dealActionStore } from "@/lib/dealActionStore";
+import { canSeeRoute, getVisibleDealsForUser, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 
 interface Notification {
   id: string;
@@ -11,28 +16,159 @@ interface Notification {
   body: string;
   time: string;
   read: boolean;
+  href?: string;
 }
 
-const INITIAL_NOTIFICATIONS: Notification[] = [];
+const READ_NOTIFICATIONS_KEY = "rcre_read_notifications";
 
 interface NotificationsPopoverProps {
   mobile?: boolean;
 }
 
+function formatNotificationTime(value: string | null | undefined): string {
+  if (!value) return "recently";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "recently";
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.max(0, Math.round(diff / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function loadReadIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(READ_NOTIFICATIONS_KEY);
+    const values = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveReadIds(values: Set<string>) {
+  try {
+    localStorage.setItem(READ_NOTIFICATIONS_KEY, JSON.stringify(Array.from(values).slice(-250)));
+  } catch {}
+}
+
 export function NotificationsPopover({ mobile }: NotificationsPopoverProps) {
+  const navigate = useNavigate();
+  const role = useUserRole();
+  const user = useScopedUser();
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [readIds, setReadIds] = useState<Set<string>>(loadReadIds);
+  const [storeVersion, setStoreVersion] = useState(0);
+  const canOpenActionItems = canSeeRoute(user ?? role, "/action-items");
+
+  useEffect(() => {
+    const bump = () => setStoreVersion((version) => version + 1);
+    const unsubscribeBrand = brandActionStore.subscribe(bump);
+    const unsubscribeDeal = dealActionStore.subscribe(bump);
+    return () => {
+      unsubscribeBrand();
+      unsubscribeDeal();
+    };
+  }, []);
+
+  const brandId = role === "brand" ? user?.brandId ?? null : null;
+  const visibleDealIds = useMemo(() => {
+    if (!user) return [];
+    if (role === "deal" && user.dealId) return [user.dealId];
+    if (role === "brand" || role === "broker") {
+      return getVisibleDealsForUser(user, dealRecords)
+        .filter((deal) => !deal.isOneOff)
+        .map((deal) => deal.id);
+    }
+    return [];
+  }, [role, user]);
+  const visibleDealIdsKey = visibleDealIds.join("|");
+
+  const loadActionResponses = useCallback(async () => {
+    const jobs: Promise<unknown>[] = [];
+    const dealIds = visibleDealIdsKey ? visibleDealIdsKey.split("|") : [];
+    if (brandId) jobs.push(brandActionStore.loadByBrand(brandId));
+    if (dealIds.length > 0) jobs.push(dealActionStore.loadByDeals(dealIds));
+    if (jobs.length === 0) return;
+    await Promise.allSettled(jobs);
+  }, [brandId, visibleDealIdsKey]);
+
+  useEffect(() => {
+    void loadActionResponses();
+    const onFocus = () => void loadActionResponses();
+    window.addEventListener("focus", onFocus);
+    const interval = window.setInterval(() => void loadActionResponses(), 60000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(interval);
+    };
+  }, [loadActionResponses]);
+
+  useEffect(() => {
+    if (open) void loadActionResponses();
+  }, [loadActionResponses, open]);
+
+  const notifications = useMemo<Notification[]>(() => {
+    const brandNotifications = brandId
+      ? brandActionStore.getByBrand(brandId)
+          .filter((item) => Boolean(item.responseBody))
+          .map((item) => ({
+            id: `brand-response-${item.id}-${item.respondedAt ?? item.updatedAt ?? item.timestamp}`,
+            icon: MessageSquareReply,
+            iconColor: "#059669",
+            iconBg: "rgba(5,150,105,0.12)",
+            title: "Reimagine responded",
+            body: item.responseBody || item.actionTypeLabel,
+            time: formatNotificationTime(item.respondedAt ?? item.updatedAt ?? item.timestamp),
+            read: readIds.has(`brand-response-${item.id}-${item.respondedAt ?? item.updatedAt ?? item.timestamp}`),
+            href: `/brands/${item.brandId}/deals`,
+          }))
+      : [];
+
+    const dealNotifications = visibleDealIds.flatMap((dealId) =>
+      dealActionStore.getByDeal(dealId)
+        .filter((item) => Boolean(item.responseBody))
+        .map((item) => {
+          const id = `deal-response-${item.id}-${item.respondedAt ?? item.updatedAt ?? item.timestamp}`;
+          return {
+            id,
+            icon: MessageSquareReply,
+            iconColor: "#059669",
+            iconBg: "rgba(5,150,105,0.12)",
+            title: "Reimagine responded",
+            body: item.responseBody || item.title,
+            time: formatNotificationTime(item.respondedAt ?? item.updatedAt ?? item.timestamp),
+            read: readIds.has(id),
+            href: `/deals/${item.dealId}`,
+          };
+        })
+    );
+
+    return [...brandNotifications, ...dealNotifications].sort((a, b) => Number(a.read) - Number(b.read));
+  }, [brandId, readIds, storeVersion, visibleDealIds]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setReadIds((current) => {
+      const next = new Set(current);
+      notifications.forEach((notification) => next.add(notification.id));
+      saveReadIds(next);
+      return next;
+    });
   };
 
   const markRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    setReadIds((current) => {
+      const next = new Set(current);
+      next.add(id);
+      saveReadIds(next);
+      return next;
+    });
   };
 
   return (
@@ -131,12 +267,29 @@ export function NotificationsPopover({ mobile }: NotificationsPopoverProps) {
 
         {/* Notification list */}
         <div style={{ maxHeight: 400, overflowY: "auto" }}>
+          {notifications.length === 0 && (
+            <div style={{ padding: "28px 16px", textAlign: "center" }}>
+              <Bell className="w-6 h-6 mx-auto" style={{ color: "var(--text-muted)", opacity: 0.55 }} />
+              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginTop: 10 }}>
+                No notifications
+              </p>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                Take Action responses will appear here.
+              </p>
+            </div>
+          )}
           {notifications.map((n) => {
             const Icon = n.icon;
             return (
               <div
                 key={n.id}
-                onClick={() => markRead(n.id)}
+                onClick={() => {
+                  markRead(n.id);
+                  if (n.href) {
+                    setOpen(false);
+                    navigate(n.href);
+                  }
+                }}
                 className="flex gap-3 cursor-pointer transition-colors"
                 style={{
                   padding: "12px 16px",
@@ -180,10 +333,13 @@ export function NotificationsPopover({ mobile }: NotificationsPopoverProps) {
         {/* Footer */}
         <div className="flex items-center justify-center" style={{ padding: "10px 16px", borderTop: "1px solid var(--border-divider)" }}>
           <button
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              setOpen(false);
+              if (canOpenActionItems) navigate("/action-items");
+            }}
             style={{ fontSize: 12, fontWeight: 600, color: "var(--text-orange-ui, #b85c1a)", background: "none", border: "none", cursor: "pointer" }}
           >
-            View all notifications
+            {canOpenActionItems ? "View action items" : "Close"}
           </button>
         </div>
       </PopoverContent>

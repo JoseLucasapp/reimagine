@@ -379,6 +379,31 @@ export function ActionItemsPanel({
                     {/* Message */}
                     {item.message && <MessageBlock text={item.message} />}
 
+                    {item.responseBody && (
+                      <div
+                        style={{
+                          borderRadius: 10,
+                          border: "1px solid rgba(5,150,105,0.18)",
+                          background: "rgba(5,150,105,0.08)",
+                          padding: 10,
+                        }}
+                      >
+                        <div className="flex items-center justify-between" style={{ gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#059669", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            Reimagine Response
+                          </span>
+                          {item.respondedAt && (
+                            <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                              {formatTimestamp(item.respondedAt)}
+                            </span>
+                          )}
+                        </div>
+                        <p style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                          {item.responseBody}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Meta row: avatars + timestamp + resolve action */}
                     <div className="flex items-center justify-between flex-wrap" style={{ gap: 8 }}>
                       <div className="flex items-center" style={{ gap: 12 }}>

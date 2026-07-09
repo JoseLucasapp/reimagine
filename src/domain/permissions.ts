@@ -33,8 +33,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
   admin: ["/", "/brand", "/deal", "/brands", "/bizdev", "/deals", "/mapiq", "/action-items", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
   broker: ["/", "/deals", "/map", "/settings", "/tour-book-generator"],
-  brand: ["/", "/brand", "/deals", "/map", "/space-requirements", "/settings", "/tour-book-generator"],
-  deal: ["/", "/deal", "/map", "/settings", "/tour-book-generator"],
+  brand: ["/", "/brand", "/deals", "/action-items", "/map", "/space-requirements", "/settings", "/tour-book-generator"],
+  deal: ["/", "/deal", "/action-items", "/map", "/settings", "/tour-book-generator"],
 };
 
 export function parseUserRole(value: string | null | undefined): UserRole {

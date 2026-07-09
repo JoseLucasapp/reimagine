@@ -12,6 +12,9 @@ export interface DealActionItem {
   createdBy: string | null;
   timestamp: string;
   updatedAt: string;
+  responseBody?: string | null;
+  respondedBy?: string | null;
+  respondedAt?: string | null;
 }
 
 type TakeActionRow = {
@@ -24,6 +27,9 @@ type TakeActionRow = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  response_body?: string | null;
+  responded_by?: string | null;
+  responded_at?: string | null;
 };
 
 type Listener = () => void;
@@ -31,6 +37,7 @@ type Listener = () => void;
 const listeners = new Set<Listener>();
 const byDealCache = new Map<string, DealActionItem[]>();
 const EMPTY_ITEMS: DealActionItem[] = [];
+const BULK_LOAD_CHUNK_SIZE = 75;
 
 function accessToken(): string {
   const token = getStoredSession()?.accessToken;
@@ -53,6 +60,9 @@ function mapRow(row: TakeActionRow): DealActionItem {
     createdBy: row.created_by,
     timestamp: row.created_at,
     updatedAt: row.updated_at,
+    responseBody: row.response_body ?? null,
+    respondedBy: row.responded_by ?? null,
+    respondedAt: row.responded_at ?? null,
   };
 }
 
@@ -63,6 +73,23 @@ function isMissingTable(error: unknown): boolean {
 function setDealItems(dealId: string, items: DealActionItem[]) {
   byDealCache.set(dealId, items);
   notify();
+}
+
+function setManyDealItems(dealIds: string[], items: DealActionItem[]) {
+  const grouped = new Map<string, DealActionItem[]>();
+  items.forEach((item) => {
+    const current = grouped.get(item.dealId) ?? [];
+    current.push(item);
+    grouped.set(item.dealId, current);
+  });
+  dealIds.forEach((dealId) => {
+    byDealCache.set(dealId, grouped.get(dealId) ?? EMPTY_ITEMS);
+  });
+  notify();
+}
+
+function uniqueDealIds(dealIds: string[]): string[] {
+  return Array.from(new Set(dealIds.filter(Boolean)));
 }
 
 export const dealActionStore = {
@@ -84,6 +111,30 @@ export const dealActionStore = {
       throw error;
     });
     setDealItems(dealId, rows.map(mapRow));
+  },
+
+  async loadByDeals(dealIds: string[]): Promise<void> {
+    const uniqueIds = uniqueDealIds(dealIds);
+    if (uniqueIds.length === 0) return;
+
+    const rows: TakeActionRow[] = [];
+    for (let index = 0; index < uniqueIds.length; index += BULK_LOAD_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(index, index + BULK_LOAD_CHUNK_SIZE);
+      const chunkRows = await supabaseRequest<TakeActionRow[]>("/rest/v1/take_action_items", {
+        query: new URLSearchParams({
+          deal_id: `in.(${chunk.join(",")})`,
+          select: "*",
+          order: "created_at.desc",
+        }),
+        accessToken: accessToken(),
+      }).catch((error) => {
+        if (isMissingTable(error)) return [] as TakeActionRow[];
+        throw error;
+      });
+      rows.push(...chunkRows);
+    }
+
+    setManyDealItems(uniqueIds, rows.map(mapRow));
   },
 
   async resolve(id: string): Promise<void> {

@@ -14,9 +14,19 @@ export function MobileBottomNav() {
   const location = useLocation();
   const role = useUserRole();
   const user = useScopedUser();
-  const scopedTabs = tabs.map((tab) =>
-    tab.to === "/brands" && role === "brand" ? { ...tab, to: "/brand" } : tab
-  );
+  const scopedTabs = tabs.flatMap((tab) => {
+    if (role === "brand") {
+      if (tab.to === "/") return [];
+      if (tab.to === "/brands") return [{ ...tab, to: "/brand" }];
+      return [tab];
+    }
+    if (role === "deal") {
+      if (tab.to === "/") return [];
+      if (tab.to === "/deals") return [{ ...tab, to: "/deal" }];
+      return [tab];
+    }
+    return [tab];
+  });
   const visibleTabs = scopedTabs.filter((tab) => canSeeRoute(user ?? role, tab.to));
 
   return (
