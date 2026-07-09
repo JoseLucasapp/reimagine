@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", to: "/" },
-  { label: "Map", to: "/map" },
+  { label: "MapIQ", to: "/map" },
   { label: "Deals", to: "/deals" },
   { label: "Franchisor", to: "/franchisor" },
   { label: "Franchisee", to: "/franchisee" },

@@ -8,7 +8,8 @@ import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { DealHealthIndicator } from "@/components/DealHealthIndicator";
 import { StageTimingBadge } from "@/components/StageTimingBadge";
 import { BrandAvatar } from "@/components/BrandAvatar";
-import { DealCityMap } from "@/components/DealCityMap";
+import { buildDealCityPins } from "@/components/DealCityMap";
+import { MapIQCanvas, type MapIQPinData } from "@/components/mapiq/MapIQCanvas";
 import {
   Search, LayoutList, Columns3, Map as MapIcon, Plus, ChevronRight, FileText, MoreHorizontal,
 } from "lucide-react";
@@ -26,6 +27,16 @@ import { toast } from "sonner";
 type ViewMode = "table" | "kanban" | "map";
 
 const ALL_STATUSES: DealStatusNew[] = DEAL_STATUS_ORDER;
+
+const DEAL_MAP_STATUS_COLOR: Record<DealStatusNew, string> = {
+  "Kick Off": "#94A3B8",
+  "Market Study": "#8B5CF6",
+  "Site Tours": "#14B8A6",
+  "LOI Negotiations": "#1E5BA8",
+  "Lease Negotiations": "#3B82F6",
+  Signed: "#059669",
+  "On Hold": "#E18739",
+};
 
 const DOCUMENT_FIELDS: { key: keyof DealDocuments; label: string }[] = [
   { key: "engagementLetter", label: "Engagement Letter" },
@@ -253,7 +264,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
 
       {/* Map View */}
       {view === "map" && (
-        <DealsMapPanel deals={filtered} />
+        <DealsMapPanel deals={filtered} navigate={navigate} />
       )}
 
       {/* Add/Edit Drawer */}
@@ -279,20 +290,142 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
 }
 
 
-function DealsMapPanel({ deals }: { deals: DealRecord[] }) {
-  if (deals.length === 0) {
+function majorityDealStatus(deals: DealRecord[]): DealStatusNew {
+  const counts = new Map<DealStatusNew, number>();
+  deals.forEach((deal) => counts.set(deal.status, (counts.get(deal.status) ?? 0) + 1));
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Kick Off";
+}
+
+function formatMapCurrency(value: number): string {
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
+function dealMapBrandName(deal: DealRecord): string {
+  return getDealBrandById(deal.brandId)?.name ?? "Deal";
+}
+
+function dealMapDisplayName(deal: DealRecord): string {
+  return deal.name || `${dealMapBrandName(deal)} - ${deal.franchisee}`;
+}
+
+function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (path: string) => void }) {
+  const cityPinResult = useMemo(() => buildDealCityPins(deals), [deals]);
+
+  const pins = useMemo<MapIQPinData[]>(() => (
+    cityPinResult.pins.map((pin) => {
+      const status = majorityDealStatus(pin.deals);
+      const statusCount = new Set(pin.deals.map((deal) => deal.status)).size;
+      return {
+        id: pin.key,
+        lngLat: [pin.lng, pin.lat] as [number, number],
+        kind: "study" as const,
+        color: statusCount === 1 ? DEAL_MAP_STATUS_COLOR[status] : "#243C51",
+        label: pin.deals.length > 1 ? String(pin.deals.length) : "",
+        payload: {
+          city: pin.label,
+          precision: pin.precision,
+          deals: pin.deals,
+          status,
+        },
+      };
+    })
+  ), [cityPinResult.pins]);
+
+  const defaultCenter = pins[0]?.lngLat ?? ([-96.797, 32.8198] as [number, number]);
+  const siteList = useMemo(() => ({
+    tabs: ["All", ...ALL_STATUSES],
+    rows: cityPinResult.pins.map((pin) => {
+      const status = majorityDealStatus(pin.deals);
+      return {
+        id: pin.key,
+        status,
+        statusColor: DEAL_MAP_STATUS_COLOR[status],
+        name: pin.label,
+        address: `${pin.deals.length} deal${pin.deals.length === 1 ? "" : "s"}`,
+        meta: pin.precision === "site" ? "site coordinates" : "city coordinates",
+      };
+    }),
+  }), [cityPinResult.pins]);
+
+  const searchSuggestions = useMemo(
+    () => cityPinResult.pins.map((pin) => ({
+      label: pin.label,
+      sub: `${pin.deals.length} deal${pin.deals.length === 1 ? "" : "s"}`,
+      lngLat: [pin.lng, pin.lat] as [number, number],
+    })),
+    [cityPinResult.pins],
+  );
+
+  if (deals.length === 0 || pins.length === 0) {
     return (
       <div className="glass-card-static p-16 text-center">
         <MapIcon className="w-10 h-10 mx-auto mb-3" style={{ color: "#b8c5d0" }} />
         <p className="text-sm font-medium" style={{ color: "#4a5568" }}>No deals to map</p>
-        <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Adjust the filters to show deals on the city map.</p>
+        <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>Adjust the filters or add site/city coordinates.</p>
       </div>
     );
   }
 
   return (
     <div className="glass-card-static overflow-hidden" style={{ borderRadius: 14, padding: 0, height: 620 }}>
-      <DealCityMap deals={deals} className="h-full w-full" />
+      <MapIQCanvas
+        level={1}
+        pins={pins}
+        defaultCenter={defaultCenter}
+        defaultZoom={pins.length > 0 ? 9 : 11}
+        fitPinsOnLoad
+        searchSuggestions={searchSuggestions}
+        showDrawTools={false}
+        enableTerritoryBuilder={false}
+        showSavedViews={false}
+        siteList={siteList}
+        contextBadge={
+          <div className="mapiq-context-pill">
+            <MapIcon size={16} color="#E18739" />
+            <span>MapIQ — Deals</span>
+          </div>
+        }
+        actions={[]}
+        buildStats={(pin) => {
+          const pinDeals = pin.payload.deals as DealRecord[];
+          const signed = pinDeals.filter((deal) => deal.status === "Signed").length;
+          const commission = pinDeals.reduce((total, deal) => total + deal.estimatedCommission, 0);
+          return [
+            { value: pinDeals.length.toLocaleString(), label: "Deals" },
+            { value: signed.toLocaleString(), label: "Signed" },
+            { value: formatMapCurrency(commission), label: "Est. Commission" },
+          ];
+        }}
+        buildDetail={(pin) => {
+          const pinDeals = pin.payload.deals as DealRecord[];
+          const firstDeal = pinDeals[0];
+          const status = pin.payload.status as DealStatusNew;
+          const estimatedCommission = pinDeals.reduce((total, deal) => total + deal.estimatedCommission, 0);
+          const brands = new Set(pinDeals.map((deal) => dealMapBrandName(deal)));
+          const brokers = new Set(pinDeals.map((deal) => deal.broker).filter(Boolean));
+          return {
+            title: pin.payload.city as string,
+            address: firstDeal ? `${firstDeal.city}, ${firstDeal.state}` : "Mapped market",
+            statusLabel: pinDeals.length === 1 && firstDeal ? firstDeal.status : `${pinDeals.length} deals`,
+            statusColor: DEAL_MAP_STATUS_COLOR[status],
+            miniStats: [
+              { label: "Deals", value: pinDeals.length.toLocaleString() },
+              { label: "Brands", value: brands.size.toLocaleString() },
+              { label: "Brokers", value: brokers.size.toLocaleString() },
+            ],
+            keyMetricsTitle: "Market Deal Summary",
+            keyMetrics: [
+              { label: "Estimated Commission", value: formatMapCurrency(estimatedCommission) },
+              { label: "Signed Deals", value: pinDeals.filter((deal) => deal.status === "Signed").length.toLocaleString() },
+              { label: "Active Deals", value: pinDeals.filter((deal) => deal.status !== "Signed" && deal.status !== "On Hold").length.toLocaleString() },
+              { label: "Top Deal", value: firstDeal ? dealMapDisplayName(firstDeal) : "No deal" },
+            ],
+            primaryAction: firstDeal
+              ? { label: "Open First Deal", onClick: () => navigate(`/deals/${firstDeal.id}`) }
+              : undefined,
+          };
+        }}
+      />
     </div>
   );
 }

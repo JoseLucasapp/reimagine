@@ -44,6 +44,7 @@ describe("role permissions", () => {
 
   it("allows admins to access every route", () => {
     expect(canSeeRoute("admin", "/action-items")).toBe(true);
+    expect(canSeeRoute("admin", "/mapiq")).toBe(true);
     expect(canSeeRoute("admin", "/space-requirements")).toBe(true);
     expect(canSeeRoute("admin", "/tour-book-generator")).toBe(true);
     expect(roleToHomeRoute("admin")).toBe("/");
@@ -54,6 +55,7 @@ describe("role permissions", () => {
     expect(canSeeRoute("deal", "/deals/dl01")).toBe(true);
     expect(canSeeRoute("deal", "/deals")).toBe(false);
     expect(canSeeRoute("deal", "/map")).toBe(true);
+    expect(canSeeRoute("deal", "/mapiq")).toBe(false);
     expect(canSeeRoute("deal", "/action-items")).toBe(false);
     expect(canSeeRoute("deal", "/brands")).toBe(false);
     expect(canViewFinancials("deal")).toBe(false);
@@ -65,6 +67,7 @@ describe("role permissions", () => {
   it("limits broker users to their assigned broker deals", () => {
     expect(canSeeRoute("broker", "/deals")).toBe(true);
     expect(canSeeRoute("broker", "/map")).toBe(true);
+    expect(canSeeRoute("broker", "/mapiq")).toBe(false);
     expect(canSeeRoute("broker", "/action-items")).toBe(false);
     expect(canSeeRoute("broker", "/brands")).toBe(false);
     expect(canSeeRoute("broker", "/bizdev")).toBe(false);
@@ -76,6 +79,7 @@ describe("role permissions", () => {
     expect(canSeeRoute("brand", "/brand")).toBe(true);
     expect(canSeeRoute("brand", "/brands")).toBe(false);
     expect(canSeeRoute("brand", "/brands/brand-1/deals")).toBe(true);
+    expect(canSeeRoute("brand", "/mapiq")).toBe(false);
     expect(canSeeRoute("brand", "/action-items")).toBe(false);
     expect(canSeeRoute("brand", "/bizdev")).toBe(false);
     expect(roleToHomeRoute("brand")).toBe("/brand");

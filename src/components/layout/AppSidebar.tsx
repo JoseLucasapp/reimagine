@@ -28,7 +28,7 @@ const group1 = [
 ] satisfies SidebarItem[];
 
 const group2 = [
-  { label: "Map", to: "/map", icon: Map },
+  { label: "MapIQ", to: "/map", icon: Map },
   { label: "Space Reqs", to: "/space-requirements", icon: Ruler },
   { label: "One-Off Deals", to: "/one-off", icon: Star },
 ] satisfies SidebarItem[];

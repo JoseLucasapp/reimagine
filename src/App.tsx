@@ -62,6 +62,7 @@ function MainAppRoutes() {
           <Route path="/bizdev" element={<BizDevPage />} />
           <Route path="/deals" element={<DealsPage />} />
           <Route path="/deals/:dealId" element={<DealDetail />} />
+          <Route path="/mapiq" element={<Navigate to="/map" replace />} />
           <Route path="/map" element={<MapView />} />
           <Route path="/space-requirements" element={<SpaceRequirementsPage />} />
           <Route path="/one-off" element={<OneOffDealsPage />} />

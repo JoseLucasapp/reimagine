@@ -118,7 +118,7 @@ export default function SpaceRequirementsPage() {
           <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>
             {data.length} brand specification{data.length !== 1 ? "s" : ""}
           </span>
-          <button onClick={handleExport} className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide rounded-[11px] transition-colors" style={{ border: "1px solid rgba(36,60,81,0.12)", color: "var(--text-tertiary)" }}>
+          <button onClick={handleExport} className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide rounded-[11px] transition-colors" style={{ border: "1px solid var(--border-subtle)", color: "var(--text-secondary)", background: "var(--bg-surface)" }}>
             <Download className="w-4 h-4" /> Export
           </button>
           <button onClick={addRow} disabled={savingAdd} className="cta-primary inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60">
@@ -132,7 +132,7 @@ export default function SpaceRequirementsPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className="text-left px-4 py-3 sticky left-0 z-20 min-w-[160px]" style={{ background: "rgba(36,60,81,0.04)", borderRight: "1px solid rgba(36,60,81,0.05)" }}>Brand</th>
+                <th className="text-left px-4 py-3 sticky left-0 z-20 min-w-[160px]" style={{ background: "var(--bg-table-header)", borderRight: "1px solid var(--border-divider)" }}>Brand</th>
                 {columns.map((col) => (
                   <th key={col.key} className={cn("text-left px-3 py-3 whitespace-nowrap", col.width)}>{col.label}</th>
                 ))}
@@ -141,14 +141,14 @@ export default function SpaceRequirementsPage() {
             <tbody>
               {data.map((row, idx) => (
                 <tr key={row.id}>
-                  <td className="px-4 py-3 sticky left-0 z-10" style={{ background: "inherit", borderRight: "1px solid rgba(36,60,81,0.05)" }}>
+                  <td className="px-4 py-3 sticky left-0 z-10" style={{ background: "var(--bg-card)", borderRight: "1px solid var(--border-divider)" }}>
                     {editCell?.rowId === row.id && editCell.col === "brandName" ? (
                       <InlineEdit value={editValue} onChange={setEditValue} onSave={saveEdit} onCancel={cancelEdit} />
                     ) : (
                       <button
                         onClick={() => row.brandId ? navigate(`/brands`) : startEdit(row.id, "brandName", row.brandName)}
                         className="text-sm font-semibold text-left group flex items-center gap-1.5"
-                        style={{ color: "#243c51" }}
+                        style={{ color: "var(--text-primary)" }}
                       >
                         {row.brandName}
                         <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
@@ -163,7 +163,7 @@ export default function SpaceRequirementsPage() {
                         {isEditing ? (
                           <InlineEdit value={editValue} onChange={setEditValue} onSave={saveEdit} onCancel={cancelEdit} />
                         ) : (
-                          <button onClick={() => startEdit(row.id, col.key, val)} className="text-sm text-left w-full group flex items-center gap-1 transition-colors" style={{ color: "#4a5568" }}>
+                          <button onClick={() => startEdit(row.id, col.key, val)} className="text-sm text-left w-full group flex items-center gap-1 transition-colors" style={{ color: "var(--text-secondary)" }}>
                             <span className="truncate">{String(val)}</span>
                             <Pencil className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-30 transition-opacity" />
                           </button>

@@ -189,14 +189,39 @@ export function normalizeState(state: string | null | undefined): string {
   return STATE_NAMES[value.toLowerCase()] ?? value.toUpperCase();
 }
 
-function isValidCoordinate(lat: number | null | undefined, lng: number | null | undefined): lat is number {
-  return typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+function normalizeStoredCoordinate(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): Omit<Coordinates, "precision"> | null {
+  if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  let normalizedLat = lat;
+  let normalizedLng = lng;
+  const looksLikeSwappedUsCoordinate = normalizedLat < -60 && normalizedLat > -130 && normalizedLng > 15 && normalizedLng < 55;
+  const latOutOfRange = Math.abs(normalizedLat) > 90;
+  const lngCouldBeLatitude = Math.abs(normalizedLng) <= 90;
+
+  if ((latOutOfRange && lngCouldBeLatitude) || looksLikeSwappedUsCoordinate) {
+    normalizedLat = lng;
+    normalizedLng = lat;
+  }
+
+  const valid =
+    Math.abs(normalizedLat) <= 90 &&
+    Math.abs(normalizedLng) <= 180 &&
+    !(normalizedLat === 0 && normalizedLng === 0);
+
+  return valid ? { lat: normalizedLat, lng: normalizedLng } : null;
 }
 
 export function resolveCoordinates(input: CoordinateInput): Coordinates | null {
-  const site = input.sites?.find((candidate) => isValidCoordinate(candidate.lat, candidate.lng));
-  if (site && isValidCoordinate(site.lat, site.lng)) {
-    return { lat: site.lat, lng: site.lng, precision: "site" };
+  for (const candidate of input.sites ?? []) {
+    const normalized = normalizeStoredCoordinate(candidate.lat, candidate.lng);
+    if (normalized) {
+      return { ...normalized, precision: "site" };
+    }
   }
 
   const city = normalizeCity(input.city);
