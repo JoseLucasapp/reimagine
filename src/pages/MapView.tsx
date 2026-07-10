@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Compass, FileBarChart2, Save } from "lucide-react";
-import { MapIQCanvas, type MapIQPinData, type MapIQTerritory, type MapIQZipFeature } from "@/components/mapiq/MapIQCanvas";
+import { MapIQCanvas, type MapIQPinData, type MapIQTerritory, type MapIQZipDemographics, type MapIQZipFeature } from "@/components/mapiq/MapIQCanvas";
 import { buildDealCityPins } from "@/components/DealCityMap";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { DEAL_STATUS_ORDER, dealBrands, dealRecords, type DealRecord, type DealStatusNew } from "@/data/dealsData";
@@ -18,8 +18,53 @@ const statuses: DealStatusNew[] = DEAL_STATUS_ORDER;
 const TERRITORY_STORAGE_KEY = "reimagine.map.territories.v2";
 const DEFAULT_TARGET_POPULATION = 100000;
 const CENSUS_API_KEY = import.meta.env.VITE_CENSUS_API_KEY?.trim();
+const CENSUS_API_URL = "https://api.census.gov/data/2022/acs/acs5";
+const CENSUS_VARIABLES = {
+  population: "B01003_001E",
+  medianAge: "B01002_001E",
+  medianHouseholdIncome: "B19013_001E",
+  households: "B11001_001E",
+  ownerOccupied: "B25003_002E",
+  renterOccupied: "B25003_003E",
+} as const;
+const AGE_25_TO_44_VARIABLES = [
+  "B01001_011E",
+  "B01001_012E",
+  "B01001_013E",
+  "B01001_014E",
+  "B01001_035E",
+  "B01001_036E",
+  "B01001_037E",
+  "B01001_038E",
+] as const;
+const AGE_65_PLUS_VARIABLES = [
+  "B01001_020E",
+  "B01001_021E",
+  "B01001_022E",
+  "B01001_023E",
+  "B01001_024E",
+  "B01001_025E",
+  "B01001_044E",
+  "B01001_045E",
+  "B01001_046E",
+  "B01001_047E",
+  "B01001_048E",
+  "B01001_049E",
+] as const;
+const DEMOGRAPHIC_VARIABLES = [
+  ...Object.values(CENSUS_VARIABLES),
+  ...AGE_25_TO_44_VARIABLES,
+  ...AGE_65_PLUS_VARIABLES,
+] as const;
 
-type ZipPopulationMap = Record<string, number | null>;
+type ZipDemographicsMap = Record<string, MapIQZipDemographics | null>;
+type MapViewProps = {
+  requestedDealId?: string;
+  requestedDealIds?: string[];
+  requestedBrandId?: string;
+  embedded?: boolean;
+  enableAdvancedTools?: boolean;
+};
 
 const DEAL_STATUS_COLOR: Record<DealStatusNew, string> = {
   "Kick Off": "#94A3B8",
@@ -79,7 +124,7 @@ function mergeTerritoryZips(current: TerritoryZip[], incoming: TerritoryZip[]): 
   return [...byZip.values()].sort((a, b) => a.zip.localeCompare(b.zip));
 }
 
-async function withPopulationTimeout<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T | null> {
+async function withCensusTimeout<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T | null> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8000);
   try {
@@ -91,66 +136,126 @@ async function withPopulationTimeout<T>(request: (signal: AbortSignal) => Promis
   }
 }
 
-async function fetchCensusApiPopulation(zipCode: string): Promise<number | null> {
-  if (!CENSUS_API_KEY) return null;
-  return withPopulationTimeout(async (signal) => {
+function cleanCensusNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function sumCensusValues(values: Array<number | null>): number | null {
+  const total = values.reduce((sum, value) => sum + (typeof value === "number" ? value : 0), 0);
+  return total > 0 ? total : null;
+}
+
+function variableKey(variable: string): string {
+  return variable.replace("_", "").replace(/E$/, "");
+}
+
+function blankDemographics(): MapIQZipDemographics {
+  return {
+    population: null,
+    medianAge: null,
+    medianHouseholdIncome: null,
+    households: null,
+    age25To44: null,
+    age65Plus: null,
+    ownerOccupied: null,
+    renterOccupied: null,
+  };
+}
+
+function parseCensusApiDemographics(data: unknown): MapIQZipDemographics | null {
+  if (!Array.isArray(data) || !Array.isArray(data[0]) || !Array.isArray(data[1])) return null;
+  const headers = data[0] as string[];
+  const row = data[1] as unknown[];
+  const valueFor = (variable: string) => {
+    const index = headers.indexOf(variable);
+    return index >= 0 ? cleanCensusNumber(row[index]) : null;
+  };
+  return {
+    population: valueFor(CENSUS_VARIABLES.population),
+    medianAge: valueFor(CENSUS_VARIABLES.medianAge),
+    medianHouseholdIncome: valueFor(CENSUS_VARIABLES.medianHouseholdIncome),
+    households: valueFor(CENSUS_VARIABLES.households),
+    age25To44: sumCensusValues(AGE_25_TO_44_VARIABLES.map(valueFor)),
+    age65Plus: sumCensusValues(AGE_65_PLUS_VARIABLES.map(valueFor)),
+    ownerOccupied: valueFor(CENSUS_VARIABLES.ownerOccupied),
+    renterOccupied: valueFor(CENSUS_VARIABLES.renterOccupied),
+  };
+}
+
+async function fetchCensusApiDemographics(zipCode: string): Promise<MapIQZipDemographics | null> {
+  return withCensusTimeout(async (signal) => {
     const params = new URLSearchParams({
-      get: "B01003_001E",
+      get: DEMOGRAPHIC_VARIABLES.join(","),
       for: `zip code tabulation area:${zipCode}`,
-      key: CENSUS_API_KEY,
     });
-    const response = await fetch(`https://api.census.gov/data/2022/acs/acs5?${params.toString()}`, { signal });
+    if (CENSUS_API_KEY) params.set("key", CENSUS_API_KEY);
+    const response = await fetch(`${CENSUS_API_URL}?${params.toString()}`, { signal });
     if (!response.ok || response.redirected) return null;
-    const data = await response.json();
-    const value = Number(data?.[1]?.[0]);
-    return Number.isFinite(value) && value > 0 ? value : null;
+    return parseCensusApiDemographics(await response.json());
   });
 }
 
-async function fetchCensusReporterPopulations(zipCodes: string[]): Promise<ZipPopulationMap> {
+async function fetchCensusReporterDemographics(zipCodes: string[]): Promise<ZipDemographicsMap> {
   const uniqueCodes = Array.from(new Set(zipCodes));
   if (uniqueCodes.length === 0) return {};
 
-  const fallback = Object.fromEntries(uniqueCodes.map((zipCode) => [zipCode, null])) as ZipPopulationMap;
-  const populations = await withPopulationTimeout(async (signal) => {
+  const fallback = Object.fromEntries(uniqueCodes.map((zipCode) => [zipCode, null])) as ZipDemographicsMap;
+  const demographics = await withCensusTimeout(async (signal) => {
     const geoIds = uniqueCodes.map((zipCode) => `86000US${zipCode}`).join(",");
-    const params = new URLSearchParams({ table_ids: "B01003", geo_ids: geoIds });
+    const params = new URLSearchParams({
+      table_ids: "B01003,B01002,B19013,B11001,B25003,B01001",
+      geo_ids: geoIds,
+    });
     const response = await fetch(`https://api.censusreporter.org/1.0/data/show/latest?${params.toString()}`, { signal });
     if (!response.ok) return fallback;
     const data = await response.json();
     return Object.fromEntries(uniqueCodes.map((zipCode) => {
-      const value = Number(data?.data?.[`86000US${zipCode}`]?.B01003?.estimate?.B01003001);
-      return [zipCode, Number.isFinite(value) && value > 0 ? value : null];
-    })) as ZipPopulationMap;
+      const geo = data?.data?.[`86000US${zipCode}`];
+      if (!geo) return [zipCode, null];
+      const valueFor = (table: string, variable: string) => cleanCensusNumber(geo?.[table]?.estimate?.[variableKey(variable)]);
+      const next: MapIQZipDemographics = {
+        population: valueFor("B01003", CENSUS_VARIABLES.population),
+        medianAge: valueFor("B01002", CENSUS_VARIABLES.medianAge),
+        medianHouseholdIncome: valueFor("B19013", CENSUS_VARIABLES.medianHouseholdIncome),
+        households: valueFor("B11001", CENSUS_VARIABLES.households),
+        age25To44: sumCensusValues(AGE_25_TO_44_VARIABLES.map((variable) => valueFor("B01001", variable))),
+        age65Plus: sumCensusValues(AGE_65_PLUS_VARIABLES.map((variable) => valueFor("B01001", variable))),
+        ownerOccupied: valueFor("B25003", CENSUS_VARIABLES.ownerOccupied),
+        renterOccupied: valueFor("B25003", CENSUS_VARIABLES.renterOccupied),
+      };
+      return [zipCode, next];
+    })) as ZipDemographicsMap;
   });
 
-  return populations ?? fallback;
+  return demographics ?? fallback;
 }
 
-async function fetchZipPopulations(zipCodes: string[]): Promise<ZipPopulationMap> {
+async function fetchZipDemographics(zipCodes: string[]): Promise<ZipDemographicsMap> {
   if (typeof fetch === "undefined" || typeof window === "undefined") {
-    return Object.fromEntries(zipCodes.map((zipCode) => [zipCode, null])) as ZipPopulationMap;
+    return Object.fromEntries(zipCodes.map((zipCode) => [zipCode, null])) as ZipDemographicsMap;
   }
 
   const uniqueCodes = Array.from(new Set(zipCodes));
-  const populations: ZipPopulationMap = {};
+  const demographics: ZipDemographicsMap = {};
   const reporterCodes: string[] = [];
 
   await Promise.all(uniqueCodes.map(async (zipCode) => {
-    const censusPopulation = await fetchCensusApiPopulation(zipCode);
-    if (typeof censusPopulation === "number") {
-      populations[zipCode] = censusPopulation;
+    const censusDemographics = await fetchCensusApiDemographics(zipCode);
+    if (censusDemographics?.population != null) {
+      demographics[zipCode] = censusDemographics;
       return;
     }
     reporterCodes.push(zipCode);
   }));
 
-  Object.assign(populations, await fetchCensusReporterPopulations(reporterCodes));
+  Object.assign(demographics, await fetchCensusReporterDemographics(reporterCodes));
   uniqueCodes.forEach((zipCode) => {
-    if (!(zipCode in populations)) populations[zipCode] = null;
+    if (!(zipCode in demographics)) demographics[zipCode] = blankDemographics();
   });
 
-  return populations;
+  return demographics;
 }
 
 function majorityStatus(deals: DealRecord[]): DealStatusNew {
@@ -178,16 +283,26 @@ function territoryCentroid(zipCodes: string[], zipByCode: Map<string, TerritoryZ
   return [lng, lat];
 }
 
-export default function MapView() {
+export default function MapView({
+  requestedDealId: requestedDealIdOverride,
+  requestedDealIds: requestedDealIdsOverride,
+  requestedBrandId: requestedBrandIdOverride,
+  embedded = false,
+  enableAdvancedTools = false,
+}: MapViewProps = {}) {
   const navigate = useNavigate();
   const runtimeDataVersion = useRuntimeDataVersion();
   const [searchParams] = useSearchParams();
-  const requestedDealId = searchParams.get("deal") || "";
-  const requestedBrandId = searchParams.get("brand") || "";
+  const requestedDealId = requestedDealIdOverride ?? searchParams.get("deal") ?? "";
+  const requestedBrandId = requestedBrandIdOverride ?? searchParams.get("brand") ?? "";
+  const requestedDealIdSet = useMemo(
+    () => Array.isArray(requestedDealIdsOverride) ? new Set(requestedDealIdsOverride) : null,
+    [requestedDealIdsOverride],
+  );
   const role = useUserRole();
   const profile = useCurrentProfile();
   const user = useScopedUser();
-  const canUseAdvancedMapTools = role === "admin";
+  const canUseAdvancedMapTools = role === "admin" || enableAdvancedTools;
   const [brandFilter, setBrandFilter] = useState(() => requestedBrandId || "all");
   const [selectedZipCodes, setSelectedZipCodes] = useState<string[]>([]);
   const [territoryName, setTerritoryName] = useState("");
@@ -195,14 +310,14 @@ export default function MapView() {
   const [territoryZips, setTerritoryZips] = useState<TerritoryZip[]>([]);
   const [territoryBoundsLoading, setTerritoryBoundsLoading] = useState(false);
   const [territoryBoundsError, setTerritoryBoundsError] = useState<string | null>(null);
-  const [zipPopulationByCode, setZipPopulationByCode] = useState<Record<string, number | null>>({});
+  const [zipDemographicsByCode, setZipDemographicsByCode] = useState<ZipDemographicsMap>({});
   const [loadingZipCodes, setLoadingZipCodes] = useState<string[]>([]);
   const [savedTerritories, setSavedTerritories] = useState<SavedTerritory[]>([]);
   const [visibleTerritoryIds, setVisibleTerritoryIds] = useState<string[]>([]);
   const [territoriesHydrated, setTerritoriesHydrated] = useState(false);
   const territoryBoundsRequestRef = useRef(0);
   const territoryZipsRef = useRef<TerritoryZip[]>([]);
-  const populationRequestsRef = useRef<Set<string>>(new Set());
+  const demographicRequestsRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -235,15 +350,22 @@ export default function MapView() {
 
   const visibleDeals = useMemo(() => {
     void runtimeDataVersion;
-    let base = getVisibleDealsForUser(user ?? role, dealRecords).filter((deal) => !deal.isOneOff);
+    const hasRequestedDealScope = Boolean(requestedDealId) || Boolean(requestedDealIdSet);
+    let base = getVisibleDealsForUser(user ?? role, dealRecords);
+    if (!hasRequestedDealScope) {
+      base = base.filter((deal) => !deal.isOneOff);
+    }
     if (role === "deal" && profile?.dealId) {
       base = base.filter((deal) => deal.id === profile.dealId);
     }
     if (requestedDealId) {
       base = base.filter((deal) => deal.id === requestedDealId && canAccessDeal(user ?? role, deal));
     }
+    if (requestedDealIdSet) {
+      base = base.filter((deal) => requestedDealIdSet.has(deal.id) && canAccessDeal(user ?? role, deal));
+    }
     return base;
-  }, [profile?.dealId, requestedDealId, role, runtimeDataVersion, user]);
+  }, [profile?.dealId, requestedDealId, requestedDealIdSet, role, runtimeDataVersion, user]);
 
   const visibleBrands = useMemo(() => {
     void runtimeDataVersion;
@@ -331,6 +453,13 @@ export default function MapView() {
     }));
   }, [defaultCenter, savedTerritories, territoryZipByCode, visibleTerritoryIds]);
 
+  const zipPopulationByCode = useMemo<Record<string, number | null>>(() => {
+    return Object.fromEntries(Object.entries(zipDemographicsByCode).map(([zipCode, demographics]) => [
+      zipCode,
+      demographics?.population ?? null,
+    ]));
+  }, [zipDemographicsByCode]);
+
   const handleTerritoryViewportChange = useCallback((bounds: TerritoryBounds) => {
     const requestId = territoryBoundsRequestRef.current + 1;
     territoryBoundsRequestRef.current = requestId;
@@ -372,24 +501,24 @@ export default function MapView() {
 
   useEffect(() => {
     const missingZipCodes = selectedZipCodes.filter((zipCode) => (
-      !(zipCode in zipPopulationByCode) && !populationRequestsRef.current.has(zipCode)
+      !(zipCode in zipDemographicsByCode) && !demographicRequestsRef.current.has(zipCode)
     ));
     if (missingZipCodes.length === 0) return;
 
-    missingZipCodes.forEach((zipCode) => populationRequestsRef.current.add(zipCode));
+    missingZipCodes.forEach((zipCode) => demographicRequestsRef.current.add(zipCode));
     setLoadingZipCodes((current) => Array.from(new Set([...current, ...missingZipCodes])));
 
-    void fetchZipPopulations(missingZipCodes)
-      .then((populations) => {
+    void fetchZipDemographics(missingZipCodes)
+      .then((demographics) => {
         if (!mountedRef.current) return;
-        setZipPopulationByCode((current) => ({ ...current, ...populations }));
+        setZipDemographicsByCode((current) => ({ ...current, ...demographics }));
       })
       .finally(() => {
-        missingZipCodes.forEach((zipCode) => populationRequestsRef.current.delete(zipCode));
+        missingZipCodes.forEach((zipCode) => demographicRequestsRef.current.delete(zipCode));
         if (!mountedRef.current) return;
         setLoadingZipCodes((current) => current.filter((item) => !missingZipCodes.includes(item)));
       });
-  }, [selectedZipCodes, zipPopulationByCode]);
+  }, [selectedZipCodes, zipDemographicsByCode]);
 
   const toggleZip = useCallback((zipCode: string) => {
     setTerritoryName((current) => current.trim() || `Territory ${savedTerritories.length + 1}`);
@@ -435,7 +564,14 @@ export default function MapView() {
   }, []);
 
   return (
-    <div className="animate-fade-in" style={{ height: "calc(100vh - 49px)", minHeight: 640, overflow: "hidden" }}>
+    <div
+      className="animate-fade-in"
+      style={{
+        height: embedded ? "100%" : "calc(100vh - 49px)",
+        minHeight: embedded ? 0 : 640,
+        overflow: "hidden",
+      }}
+    >
       <div className="relative h-full w-full overflow-hidden">
         <MapIQCanvas
           level={1}
@@ -450,6 +586,7 @@ export default function MapView() {
           territoryZips={territoryZips.map(toMapIQZipFeature)}
           selectedZipCodes={selectedZipCodes}
           zipPopulations={zipPopulationByCode}
+          zipDemographics={zipDemographicsByCode}
           loadingZipCodes={loadingZipCodes}
           territoryLoading={territoryBoundsLoading}
           territoryError={territoryBoundsError}

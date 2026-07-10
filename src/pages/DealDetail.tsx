@@ -23,6 +23,7 @@ import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
 import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
 import { dealActionStore, type DealActionItem } from "@/lib/dealActionStore";
+import { MapIQModal } from "@/components/mapiq/MapIQModal";
 
 const ALL_STATUSES: DealStatusNew[] = DEAL_STATUS_ORDER;
 const EMPTY_DEAL_ACTION_ITEMS: DealActionItem[] = [];
@@ -579,6 +580,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
   const [showDocsModal, setShowDocsModal] = useState(false);
   const [showTakeAction, setShowTakeAction] = useState(false);
   const [showLinksEditor, setShowLinksEditor] = useState(false);
+  const [mapModalOpen, setMapModalOpen] = useState(false);
   const role = useUserRole();
   const user = useScopedUser();
   const profile = useCurrentProfile();
@@ -975,17 +977,30 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                   opacity: link.url ? 1 : 0.5,
                 };
                 const isInternalLink = Boolean(link.url?.startsWith("/"));
+                const opensMapModal = link.key === "map";
                 const trigger = link.url ? (
-                  <a
-                    href={link.url}
-                    target={isInternalLink ? "_self" : "_blank"}
-                    rel={isInternalLink ? undefined : "noopener"}
-                    className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
-                    style={triggerStyle}
-                  >
-                    <link.icon className="w-3.5 h-3.5" />
-                    {link.label}
-                  </a>
+                  opensMapModal ? (
+                    <button
+                      type="button"
+                      onClick={() => setMapModalOpen(true)}
+                      className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
+                      style={{ ...triggerStyle, background: "transparent", border: "none" }}
+                    >
+                      <link.icon className="w-3.5 h-3.5" />
+                      {link.label}
+                    </button>
+                  ) : (
+                    <a
+                      href={link.url}
+                      target={isInternalLink ? "_self" : "_blank"}
+                      rel={isInternalLink ? undefined : "noopener"}
+                      className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
+                      style={triggerStyle}
+                    >
+                      <link.icon className="w-3.5 h-3.5" />
+                      {link.label}
+                    </a>
+                  )
                 ) : (
                   <span
                     className="flex items-center gap-1.5 transition-colors hover:text-[var(--text-orange-ui)] whitespace-nowrap"
@@ -1044,6 +1059,14 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
           onSave={handleSaveDealLinks}
         />
       )}
+
+      <MapIQModal
+        open={mapModalOpen}
+        onOpenChange={setMapModalOpen}
+        title={`${dealDisplayName} MapIQ`}
+        description="Advanced MapIQ tools scoped to this deal."
+        dealId={deal.id}
+      />
 
       {/* ═══ PROJECT DETAILS TAB ═══ */}
       {activeTab === "project" && (
@@ -1370,7 +1393,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
       )}
 
       {/* ═══ TOP SITES TAB ═══ */}
-      {activeTab === "topsites" && <TopSitesTab deal={deal} />}
+      {activeTab === "topsites" && <TopSitesTab deal={deal} onOpenMap={() => setMapModalOpen(true)} />}
 
       {/* ═══ LOI COMPARISON TAB ═══ */}
       {activeTab === "loi" && <LOIComparisonTab deal={deal} />}

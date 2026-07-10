@@ -23,6 +23,7 @@ import { useScopedUser, useUserRole, canEditDeal, canViewFinancials, getVisibleB
 import { createDeal, updateDeal } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { toast } from "sonner";
+import { MapIQModal } from "@/components/mapiq/MapIQModal";
 
 type ViewMode = "table" | "kanban" | "map";
 
@@ -56,13 +57,18 @@ interface DealsPageProps {
   brandFilter?: string;
   isOneOff?: boolean;
   onAddDeal?: () => void;
+  forcedView?: Exclude<ViewMode, "map">;
+  hideViewToggle?: boolean;
 }
 
-export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPageProps) {
+export default function DealsPage({ brandFilter, isOneOff, onAddDeal, forcedView, hideViewToggle }: DealsPageProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const initialView = (searchParams.get("view") as ViewMode) || "table";
+  const requestedInitialView = (searchParams.get("view") as ViewMode) || "table";
+  const initialView = requestedInitialView === "map" ? "table" : requestedInitialView;
   const [view, setView] = useState<ViewMode>(["table", "kanban", "map"].includes(initialView) ? initialView : "table");
+  const [openInitialMap, setOpenInitialMap] = useState(requestedInitialView === "map");
+  const [mapModalOpen, setMapModalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [brandFilterState, setBrandFilterState] = useState<string[]>(
@@ -76,6 +82,21 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
   const role = useUserRole();
   const user = useScopedUser();
   const allowEdit = canEditDeal(role);
+  const effectiveView = forcedView ?? view;
+
+  useEffect(() => {
+    if (openInitialMap) {
+      setMapModalOpen(true);
+      setOpenInitialMap(false);
+    }
+  }, [openInitialMap]);
+
+  useEffect(() => {
+    if (view === "map") {
+      setView("table");
+      setMapModalOpen(true);
+    }
+  }, [view]);
 
   const baseDeals = useMemo(() => {
     void runtimeDataVersion;
@@ -109,6 +130,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
     if (stateFilter.length > 0) d = d.filter((x) => stateFilter.includes(x.state));
     return d;
   }, [baseDeals, search, statusFilter, brandFilterState, brokerFilter, stateFilter]);
+  const filteredDealIds = useMemo(() => filtered.map((deal) => deal.id), [filtered]);
 
   const handleAddDeal = () => {
     setEditingDeal(null);
@@ -129,18 +151,26 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex p-0.5 rounded-[11px]" style={{ background: "var(--view-toggle-bg)", border: "1px solid var(--border-subtle)" }}>
-            {([["table", LayoutList], ["kanban", Columns3], ["map", MapIcon]] as const).map(([m, Icon]) => (
-              <button
-                key={m}
-                onClick={() => setView(m)}
-                className="p-2 rounded-[9px] transition-colors"
-                style={view === m ? { background: "var(--view-toggle-active-bg)", color: "var(--view-toggle-active-color)" } : { color: "#94a3b8" }}
-              >
-                <Icon className="w-4 h-4" />
-              </button>
-            ))}
-          </div>
+          {!hideViewToggle && (
+            <div className="flex p-0.5 rounded-[11px]" style={{ background: "var(--view-toggle-bg)", border: "1px solid var(--border-subtle)" }}>
+              {([["table", LayoutList], ["kanban", Columns3], ["map", MapIcon]] as const).map(([m, Icon]) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    if (m === "map") {
+                      setMapModalOpen(true);
+                      return;
+                    }
+                    setView(m);
+                  }}
+                  className="p-2 rounded-[9px] transition-colors"
+                  style={effectiveView === m ? { background: "var(--view-toggle-active-bg)", color: "var(--view-toggle-active-color)" } : { color: "#94a3b8" }}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+          )}
           {allowEdit && (
             <button
               onClick={handleAddDeal}
@@ -192,10 +222,10 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
       </div>
 
       {/* Table View */}
-      {view === "table" && <DealsTable deals={filtered} navigate={navigate} setEditingDeal={setEditingDeal} setShowDrawer={setShowDrawer} allowEdit={allowEdit} />}
+      {effectiveView === "table" && <DealsTable deals={filtered} navigate={navigate} setEditingDeal={setEditingDeal} setShowDrawer={setShowDrawer} allowEdit={allowEdit} />}
 
       {/* Kanban View */}
-      {view === "kanban" && (
+      {effectiveView === "kanban" && (
         <div className="flex gap-4 overflow-x-auto pb-4">
           {KANBAN_COLUMNS.map((col) => {
             const cards = filtered.filter((d) => d.status === col);
@@ -262,10 +292,14 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal }: DealsPag
         </div>
       )}
 
-      {/* Map View */}
-      {view === "map" && (
-        <DealsMapPanel deals={filtered} navigate={navigate} />
-      )}
+      <MapIQModal
+        open={mapModalOpen}
+        onOpenChange={setMapModalOpen}
+        title={brandFilter ? "Brand Deals MapIQ" : "Deals MapIQ"}
+        description="Advanced MapIQ tools scoped to your visible deals."
+        dealIds={filteredDealIds}
+        brandId={brandFilter}
+      />
 
       {/* Add/Edit Drawer */}
       {showDrawer && (

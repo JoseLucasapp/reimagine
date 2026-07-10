@@ -56,6 +56,17 @@ export type MapIQZipFeature = {
     | { type: "MultiPolygon"; coordinates: number[][][][] };
 };
 
+export type MapIQZipDemographics = {
+  population: number | null;
+  medianAge: number | null;
+  medianHouseholdIncome: number | null;
+  households: number | null;
+  age25To44: number | null;
+  age65Plus: number | null;
+  ownerOccupied: number | null;
+  renterOccupied: number | null;
+};
+
 export type MapIQHeaderStat = { label: string; value: number | string; color: string };
 
 export type MapIQSelectionSummary = {
@@ -80,6 +91,7 @@ export type MapIQProps = {
   territoryZips?: MapIQZipFeature[];
   selectedZipCodes?: string[];
   zipPopulations?: Record<string, number | null>;
+  zipDemographics?: Record<string, MapIQZipDemographics | null>;
   loadingZipCodes?: string[];
   territoryLoading?: boolean;
   territoryError?: string | null;
@@ -154,6 +166,48 @@ const EARTH_RADIUS_METERS = 6378137;
 const METERS_PER_MILE = 1609.344;
 type RadiusTool = "radius" | "drive" | "pop";
 
+function isFiniteMetric(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatMetricNumber(value: number | null | undefined): string {
+  return isFiniteMetric(value) ? Math.round(value).toLocaleString() : "—";
+}
+
+function formatMetricDecimal(value: number | null | undefined): string {
+  return isFiniteMetric(value) ? value.toFixed(1) : "—";
+}
+
+function formatMetricCurrency(value: number | null | undefined): string {
+  return isFiniteMetric(value) ? `$${Math.round(value).toLocaleString()}` : "—";
+}
+
+function formatMetricPercent(value: number | null | undefined): string {
+  return isFiniteMetric(value) ? `${Math.round(value)}%` : "—";
+}
+
+function sumMetric(values: Array<number | null | undefined>): number | null {
+  const total = values.reduce((sum, value) => sum + (isFiniteMetric(value) ? value : 0), 0);
+  return total > 0 ? total : null;
+}
+
+function weightedAverageMetric(
+  values: MapIQZipDemographics[],
+  valueFor: (value: MapIQZipDemographics) => number | null,
+  weightFor: (value: MapIQZipDemographics) => number | null,
+): number | null {
+  let weightedTotal = 0;
+  let weightTotal = 0;
+  values.forEach((value) => {
+    const metric = valueFor(value);
+    const weight = weightFor(value);
+    if (!isFiniteMetric(metric) || !isFiniteMetric(weight) || weight <= 0) return;
+    weightedTotal += metric * weight;
+    weightTotal += weight;
+  });
+  return weightTotal > 0 ? weightedTotal / weightTotal : null;
+}
+
 function isRadiusTool(tool: string | null): tool is RadiusTool {
   return tool === "radius" || tool === "drive" || tool === "pop";
 }
@@ -210,6 +264,7 @@ export function MapIQCanvas(props: MapIQProps) {
     territoryZips = [],
     selectedZipCodes,
     zipPopulations: controlledZipPopulations,
+    zipDemographics: controlledZipDemographics,
     loadingZipCodes = [],
     territoryLoading = false,
     territoryError = null,
@@ -303,6 +358,7 @@ export function MapIQCanvas(props: MapIQProps) {
   // ---- Territory Builder state
   const territoryReady = useRef(false);
   const territoryLabelsRef = useRef<Record<string, maplibregl.Marker>>({});
+  const hoveredZipRef = useRef<string | null>(null);
   const [territoryActive, setTerritoryActive] = useState(false);
   const [savedTerritories, setSavedTerritories] = useState<MapIQTerritory[]>(initialTerritories);
   const [selectedZips, setSelectedZips] = useState<string[]>([]);
@@ -314,9 +370,14 @@ export function MapIQCanvas(props: MapIQProps) {
   const [displayPop, setDisplayPop] = useState(0);
   const activeSelectedZips = selectedZipCodes ?? selectedZips;
   const activeZipPopulations = controlledZipPopulations ?? zipPopulations;
+  const activeZipDemographics = controlledZipDemographics ?? {};
   const activeSavedTerritories = controlledSavedTerritories ?? savedTerritories;
   const activeTerritoryName = controlledTerritoryName ?? territoryName;
   const activeTargetPopulation = controlledTargetPopulation ?? targetPopulation;
+
+  const getZipPopulation = useCallback((zip: string) => {
+    return activeZipDemographics[zip]?.population ?? activeZipPopulations[zip] ?? 0;
+  }, [activeZipDemographics, activeZipPopulations]);
 
   useEffect(() => {
     selectedZipsRef.current = activeSelectedZips;
@@ -341,6 +402,18 @@ export function MapIQCanvas(props: MapIQProps) {
     setSelectedZips(next);
   }, [onZipToggle]);
 
+  const setZipHover = useCallback((zip: string | null) => {
+    const map = mapRef.current;
+    if (hoveredZipRef.current === zip) return;
+    hoveredZipRef.current = zip;
+    if (!map || !map.isStyleLoaded()) return;
+    const filter = ["==", ["get", "ZCTA5CE10"], zip ?? ""] as any;
+    try {
+      if (map.getLayer("zip-hover-fill")) map.setFilter("zip-hover-fill", filter);
+      if (map.getLayer("zip-hover-line")) map.setFilter("zip-hover-line", filter);
+    } catch {}
+  }, []);
+
   const ensureTerritoryLayers = useCallback((map: maplibregl.Map) => {
     if (!enableTerritoryBuilder || !map.isStyleLoaded()) return;
     try {
@@ -360,6 +433,27 @@ export function MapIQCanvas(props: MapIQProps) {
         map.addLayer({
           id: "zip-outlines", type: "line", source: "zip-codes",
           paint: { "line-color": "rgba(36,60,81,0)", "line-width": 1, "line-opacity": 1 },
+        });
+      }
+      if (!map.getLayer("zip-hover-fill")) {
+        map.addLayer({
+          id: "zip-hover-fill", type: "fill", source: "zip-codes",
+          filter: ["==", ["get", "ZCTA5CE10"], ""] as any,
+          paint: {
+            "fill-color": isDocumentDark()
+              ? "rgba(91,164,217,0.22)" : "rgba(91,164,217,0.18)",
+            "fill-opacity": 1,
+          },
+        });
+      }
+      if (!map.getLayer("zip-hover-line")) {
+        map.addLayer({
+          id: "zip-hover-line", type: "line", source: "zip-codes",
+          filter: ["==", ["get", "ZCTA5CE10"], ""] as any,
+          paint: {
+            "line-color": isDocumentDark() ? "#7DC4F2" : "#2478B5",
+            "line-width": 2,
+          },
         });
       }
       if (!map.getLayer("territory-fills")) {
@@ -394,7 +488,20 @@ export function MapIQCanvas(props: MapIQProps) {
     const onEnter = () => {
       if (territoryActiveRef.current) map.getCanvas().style.cursor = "pointer";
     };
-    const onLeave = () => { map.getCanvas().style.cursor = ""; };
+    const onMove = (e: maplibregl.MapLayerMouseEvent) => {
+      if (!territoryActiveRef.current) {
+        setZipHover(null);
+        map.getCanvas().style.cursor = "";
+        return;
+      }
+      map.getCanvas().style.cursor = "pointer";
+      const zip = e.features?.[0]?.properties?.ZCTA5CE10 as string | undefined;
+      setZipHover(zip ?? null);
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+      setZipHover(null);
+    };
     const onClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!territoryActiveRef.current || !e.features?.length) return;
       e.preventDefault();
@@ -405,10 +512,11 @@ export function MapIQCanvas(props: MapIQProps) {
     // MapLibre keeps layer-scoped listeners keyed by layerId; after setStyle
     // the layer is recreated so we must re-attach.
     map.on("mouseenter", "zip-fills", onEnter);
+    map.on("mousemove", "zip-fills", onMove);
     map.on("mouseleave", "zip-fills", onLeave);
     map.on("click", "zip-fills", onClick);
     zipListenersBoundRef.current = true;
-  }, [enableTerritoryBuilder, toggleZipSelection]);
+  }, [enableTerritoryBuilder, setZipHover, toggleZipSelection]);
 
   // ---- Draw shape helpers
   const makeCirclePolygon = (center: [number, number], radiusMiles: number, steps = 64) => {
@@ -812,6 +920,9 @@ export function MapIQCanvas(props: MapIQProps) {
 
   const territoryActiveRef = useRef(false);
   useEffect(() => { territoryActiveRef.current = territoryActive; }, [territoryActive]);
+  useEffect(() => {
+    if (!territoryActive) setZipHover(null);
+  }, [setZipHover, territoryActive]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1115,7 +1226,7 @@ export function MapIQCanvas(props: MapIQProps) {
   // Emit selection summary to parent (for report modal, etc.)
   useEffect(() => {
     if (!onSelectionChange) return;
-    const totalPopulation = activeSelectedZips.reduce((s, z) => s + (activeZipPopulations[z] || 0), 0);
+    const totalPopulation = activeSelectedZips.reduce((s, z) => s + getZipPopulation(z), 0);
     const shapes = drawShapes.map((s) => ({ id: s.id, tool: s.tool, label: s.labelText }));
     onSelectionChange({
       zips: activeSelectedZips,
@@ -1123,7 +1234,7 @@ export function MapIQCanvas(props: MapIQProps) {
       shapes,
       hasSelection: activeSelectedZips.length > 0 || drawShapes.length > 0,
     });
-  }, [activeSelectedZips, activeZipPopulations, drawShapes, onSelectionChange]);
+  }, [activeSelectedZips, drawShapes, getZipPopulation, onSelectionChange]);
 
   // Show/hide zip boundaries + selected fills as selection state changes
   useEffect(() => {
@@ -1179,9 +1290,36 @@ export function MapIQCanvas(props: MapIQProps) {
 
   // Population count-up animation
   const totalPop = useMemo(
-    () => activeSelectedZips.reduce((sum, z) => sum + (activeZipPopulations[z] || 0), 0),
-    [activeSelectedZips, activeZipPopulations],
+    () => activeSelectedZips.reduce((sum, z) => sum + getZipPopulation(z), 0),
+    [activeSelectedZips, getZipPopulation],
   );
+  const demographicSummary = useMemo(() => {
+    const selectedDemographics = activeSelectedZips
+      .map((zip) => activeZipDemographics[zip])
+      .filter((value): value is MapIQZipDemographics => Boolean(value));
+    const households = sumMetric(selectedDemographics.map((value) => value.households));
+    const age25To44 = sumMetric(selectedDemographics.map((value) => value.age25To44));
+    const age65Plus = sumMetric(selectedDemographics.map((value) => value.age65Plus));
+    const ownerOccupied = sumMetric(selectedDemographics.map((value) => value.ownerOccupied));
+    const renterOccupied = sumMetric(selectedDemographics.map((value) => value.renterOccupied));
+    const occupiedHousing = (ownerOccupied ?? 0) + (renterOccupied ?? 0);
+    return {
+      medianAge: weightedAverageMetric(
+        selectedDemographics,
+        (value) => value.medianAge,
+        (value) => value.population,
+      ),
+      medianHouseholdIncome: weightedAverageMetric(
+        selectedDemographics,
+        (value) => value.medianHouseholdIncome,
+        (value) => value.households ?? value.population,
+      ),
+      households,
+      age25To44Percent: totalPop > 0 && age25To44 != null ? (age25To44 / totalPop) * 100 : null,
+      age65PlusPercent: totalPop > 0 && age65Plus != null ? (age65Plus / totalPop) * 100 : null,
+      renterPercent: occupiedHousing > 0 && renterOccupied != null ? (renterOccupied / occupiedHousing) * 100 : null,
+    };
+  }, [activeSelectedZips, activeZipDemographics, totalPop]);
   useEffect(() => {
     const start = displayPop;
     const end = totalPop;
@@ -1579,6 +1717,41 @@ export function MapIQCanvas(props: MapIQProps) {
               </span>
             </div>
 
+            {activeSelectedZips.length > 0 && (
+              <div className="mapiq-tp-demographics">
+                <h5>Demographics</h5>
+                <div className="mapiq-tp-demo-grid">
+                  <div className="mapiq-tp-demo-card">
+                    <span>Median Age</span>
+                    <strong>{formatMetricDecimal(demographicSummary.medianAge)}</strong>
+                  </div>
+                  <div className="mapiq-tp-demo-card">
+                    <span>Median Income</span>
+                    <strong>{formatMetricCurrency(demographicSummary.medianHouseholdIncome)}</strong>
+                  </div>
+                  <div className="mapiq-tp-demo-card">
+                    <span>Households</span>
+                    <strong>{formatMetricNumber(demographicSummary.households)}</strong>
+                  </div>
+                  <div className="mapiq-tp-demo-card">
+                    <span>Ages 25-44</span>
+                    <strong>{formatMetricPercent(demographicSummary.age25To44Percent)}</strong>
+                  </div>
+                  <div className="mapiq-tp-demo-card">
+                    <span>Ages 65+</span>
+                    <strong>{formatMetricPercent(demographicSummary.age65PlusPercent)}</strong>
+                  </div>
+                  <div className="mapiq-tp-demo-card">
+                    <span>Renters</span>
+                    <strong>{formatMetricPercent(demographicSummary.renterPercent)}</strong>
+                  </div>
+                </div>
+                {loadingZipCodes.length > 0 && (
+                  <div className="mapiq-tp-demo-note">Loading ACS demographics...</div>
+                )}
+              </div>
+            )}
+
             <div className="mapiq-tp-target-row">
               <span className="mapiq-tp-label" style={{ margin: 0 }}>Target Population</span>
               {editingTarget ? (
@@ -1624,7 +1797,7 @@ export function MapIQCanvas(props: MapIQProps) {
                   <div key={z} className="mapiq-tp-zip-row">
                     <span className="code">{z}</span>
                     <span className="pop">
-                      {loadingZipCodes.includes(z) ? "Loading..." : (activeZipPopulations[z] ?? 0).toLocaleString()}
+                      {loadingZipCodes.includes(z) ? "Loading..." : formatMetricNumber(getZipPopulation(z))}
                     </span>
                     <button className="rm" onClick={() => removeSelectedZip(z)} aria-label={`Remove ${z}`}>
                       <X size={14} />

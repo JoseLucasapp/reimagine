@@ -54,7 +54,7 @@ describe("role permissions", () => {
   it("limits deal-level users to client-facing flows", () => {
     expect(canSeeRoute("deal", "/deals/dl01")).toBe(true);
     expect(canSeeRoute("deal", "/deals")).toBe(false);
-    expect(canSeeRoute("deal", "/map")).toBe(true);
+    expect(canSeeRoute("deal", "/map")).toBe(false);
     expect(canSeeRoute("deal", "/mapiq")).toBe(false);
     expect(canSeeRoute("deal", "/action-items")).toBe(true);
     expect(canSeeRoute("deal", "/brands")).toBe(false);
@@ -66,7 +66,7 @@ describe("role permissions", () => {
 
   it("limits broker users to their assigned broker deals", () => {
     expect(canSeeRoute("broker", "/deals")).toBe(true);
-    expect(canSeeRoute("broker", "/map")).toBe(true);
+    expect(canSeeRoute("broker", "/map")).toBe(false);
     expect(canSeeRoute("broker", "/mapiq")).toBe(false);
     expect(canSeeRoute("broker", "/action-items")).toBe(false);
     expect(canSeeRoute("broker", "/brands")).toBe(false);
@@ -80,6 +80,7 @@ describe("role permissions", () => {
     expect(canSeeRoute(brandUser, "/brands")).toBe(false);
     expect(canSeeRoute(brandUser, "/brands/brand-1/deals")).toBe(true);
     expect(canSeeRoute(brandUser, "/brands/brand-2/deals")).toBe(false);
+    expect(canSeeRoute(brandUser, "/map")).toBe(false);
     expect(canSeeRoute(brandUser, "/mapiq")).toBe(false);
     expect(canSeeRoute(brandUser, "/action-items")).toBe(true);
     expect(canSeeRoute(brandUser, "/bizdev")).toBe(false);

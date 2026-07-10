@@ -2,13 +2,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useSyncExternalStore, useMemo } from "react";
 import { getDealBrandById, getDealRecordsByBrand, DEAL_STATUS_ORDER, daysActive, type DealRecord } from "@/data/dealsData";
 import DealsPage from "./Deals";
-import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2, ExternalLink } from "lucide-react";
+import { ArrowLeft, Send, Handshake, Briefcase, CheckCircle2, ExternalLink, LayoutGrid, Check } from "lucide-react";
 import { TakeActionDrawer, type TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
 import { ActionItemsPanel } from "@/components/ActionItemsPanel";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
 import { canAccessBrand, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const STAGE_DOT_COLORS: Record<string, string> = {
   "Kick Off": "#E18739",
@@ -28,6 +29,21 @@ const glassCard: React.CSSProperties = {
   overflow: "hidden",
 };
 const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
+type BrandLayoutPanel = "list" | "kanban" | "bar" | "line";
+type BrandLayoutOption =
+  | { id: string; label: string; panels: [BrandLayoutPanel] }
+  | { id: string; label: string; panels: [BrandLayoutPanel, BrandLayoutPanel] };
+
+const BRAND_LAYOUT_OPTIONS: BrandLayoutOption[] = [
+  { id: "list", label: "List only", panels: ["list"] },
+  { id: "bar", label: "Bar Chart only", panels: ["bar"] },
+  { id: "line", label: "Line Chart only", panels: ["line"] },
+  { id: "kanban", label: "Kanban only", panels: ["kanban"] },
+  { id: "list+bar", label: "List + Bar Chart", panels: ["list", "bar"] },
+  { id: "list+line", label: "List + Line Chart", panels: ["list", "line"] },
+  { id: "kanban+bar", label: "Kanban + Bar Chart", panels: ["kanban", "bar"] },
+  { id: "kanban+line", label: "Kanban + Line Chart", panels: ["kanban", "line"] },
+];
 
 function parseMetricDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -83,7 +99,29 @@ export default function BrandDeals() {
   const [actionPanelOpen, setActionPanelOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [, setDealVersion] = useState(0);
+  const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
+  const [customLayout, setCustomLayout] = useState<BrandLayoutOption | null>(null);
+  const [pendingLayoutId, setPendingLayoutId] = useState("list");
   const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
+  const selectedLayoutPanels = customLayout?.panels ?? null;
+  const showMetrics = !selectedLayoutPanels || selectedLayoutPanels.some((panel) => panel === "bar" || panel === "line");
+  const showDeals = !selectedLayoutPanels || selectedLayoutPanels.some((panel) => panel === "list" || panel === "kanban");
+  const forcedDealView = selectedLayoutPanels
+    ? selectedLayoutPanels.includes("kanban") && !selectedLayoutPanels.includes("list")
+      ? "kanban"
+      : "table"
+    : undefined;
+
+  const openLayoutPicker = () => {
+    setPendingLayoutId(customLayout?.id ?? "list");
+    setLayoutPickerOpen(true);
+  };
+
+  const applyLayout = () => {
+    const next = BRAND_LAYOUT_OPTIONS.find((option) => option.id === pendingLayoutId) ?? BRAND_LAYOUT_OPTIONS[0];
+    setCustomLayout(next);
+    setLayoutPickerOpen(false);
+  };
 
   useEffect(() => {
     if (!brandId) return;
@@ -200,6 +238,18 @@ export default function BrandDeals() {
             </button>
 
             {/* Take Action button */}
+            {role === "brand" && (
+              <button
+                type="button"
+                onClick={openLayoutPicker}
+                className="cta-secondary flex items-center"
+                style={{ gap: 8 }}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Change Layout
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
@@ -214,9 +264,16 @@ export default function BrandDeals() {
       </div>
 
       {/* ── Brand metrics ── */}
-      <BrandMetricsSection deals={deals} />
+      {showMetrics && <BrandMetricsSection deals={deals} />}
 
-      <DealsPage brandFilter={brandId} onAddDeal={() => setDealVersion((version) => version + 1)} />
+      {showDeals && (
+        <DealsPage
+          brandFilter={brandId}
+          forcedView={forcedDealView}
+          hideViewToggle={Boolean(customLayout)}
+          onAddDeal={() => setDealVersion((version) => version + 1)}
+        />
+      )}
 
       {/* Take Action drawer at brand level */}
       <TakeActionDrawer
@@ -241,8 +298,160 @@ export default function BrandDeals() {
           return match ? `/deals/${match.id}` : null;
         }}
       />
+
+      <BrandLayoutDialog
+        open={layoutPickerOpen}
+        onOpenChange={setLayoutPickerOpen}
+        options={BRAND_LAYOUT_OPTIONS}
+        pendingLayoutId={pendingLayoutId}
+        setPendingLayoutId={setPendingLayoutId}
+        customLayout={customLayout}
+        onReset={() => {
+          setCustomLayout(null);
+          setLayoutPickerOpen(false);
+        }}
+        onApply={applyLayout}
+      />
     </div>
   );
+}
+
+function BrandLayoutDialog({
+  open,
+  onOpenChange,
+  options,
+  pendingLayoutId,
+  setPendingLayoutId,
+  customLayout,
+  onReset,
+  onApply,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  options: BrandLayoutOption[];
+  pendingLayoutId: string;
+  setPendingLayoutId: (id: string) => void;
+  customLayout: BrandLayoutOption | null;
+  onReset: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Customize View</DialogTitle>
+          <DialogDescription>Choose how you want to view this brand.</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col" style={{ gap: 24, marginTop: 8 }}>
+          <div className="grid grid-cols-2 sm:grid-cols-4" style={{ gap: 12 }}>
+            {options.map((option) => {
+              const isActive = pendingLayoutId === option.id;
+              const split = option.panels.length === 2;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setPendingLayoutId(option.id)}
+                  className="flex flex-col items-center transition-all"
+                  style={{
+                    gap: 8,
+                    padding: 12,
+                    borderRadius: 12,
+                    cursor: "pointer",
+                    background: isActive ? "rgba(225,135,57,0.08)" : "var(--bg-surface)",
+                    border: isActive ? "1px solid #E18739" : "1px solid var(--border-subtle)",
+                    boxShadow: isActive ? "0 2px 8px rgba(225,135,57,0.18)" : "none",
+                    position: "relative",
+                  }}
+                >
+                  {isActive && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: 8,
+                        right: 8,
+                        width: 16,
+                        height: 16,
+                        borderRadius: "50%",
+                        background: "#E18739",
+                        color: "white",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Check className="w-3 h-3" />
+                    </span>
+                  )}
+                  <div
+                    aria-hidden
+                    style={{
+                      width: "100%",
+                      height: 64,
+                      borderRadius: 8,
+                      background: "var(--bg-nav-active)",
+                      display: "flex",
+                      gap: 4,
+                      padding: 8,
+                    }}
+                  >
+                    {split ? (
+                      <>
+                        <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[0]) }} />
+                        <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[1]) }} />
+                      </>
+                    ) : (
+                      <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[0]) }} />
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", textAlign: "center" }}>
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center" style={{ gap: 8, marginTop: 8 }}>
+            {customLayout && (
+              <button
+                type="button"
+                onClick={onReset}
+                style={{ padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)", cursor: "pointer" }}
+              >
+                Reset
+              </button>
+            )}
+            <div style={{ flex: 1 }} />
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              style={{ padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onApply}
+              style={{ padding: "10px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: "#243c51", color: "white", border: "none", cursor: "pointer" }}
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function brandLayoutPanelTone(panel: BrandLayoutPanel): string {
+  switch (panel) {
+    case "list": return "rgba(36,60,81,0.55)";
+    case "kanban": return "rgba(36,60,81,0.40)";
+    case "bar": return "rgba(225,135,57,0.65)";
+    case "line": return "rgba(225,135,57,0.45)";
+  }
 }
 
 function BrandMetricsSection({ deals }: { deals: DealRecord[] }) {

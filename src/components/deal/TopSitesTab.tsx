@@ -224,7 +224,7 @@ function ImportSitesDialog({ deal, open, onOpenChange }: { deal: DealRecord; ope
   );
 }
 
-export function TopSitesTab({ deal }: { deal: DealRecord }) {
+export function TopSitesTab({ deal, onOpenMap }: { deal: DealRecord; onOpenMap?: () => void }) {
   const navigate = useNavigate();
   const runtimeVersion = useRuntimeDataVersion();
   const [viewingSiteId, setViewingSiteId] = useState<string | null>(null);
@@ -253,7 +253,7 @@ export function TopSitesTab({ deal }: { deal: DealRecord }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" style={{ padding: "0 24px 24px" }}>
             <ToolCard icon={<BookOpen className="w-6 h-6" style={{ color: "#E18739" }} />} title="Generate Tour Book" description="Select sites, configure, export PDF" onClick={() => navigate(`/tour-book-generator?deal=${deal.id}`)} />
             <ToolCard icon={<FileSpreadsheet className="w-6 h-6" style={{ color: "var(--text-muted)" }} />} title="Import from CSV" description="Bulk-add sites from a spreadsheet" onClick={() => setImportOpen(true)} />
-            <ToolCard icon={<Route className="w-6 h-6" style={{ color: "var(--text-muted)" }} />} title="Build Itinerary" description="Review the full map with routing context" onClick={() => navigate(`/map?deal=${deal.id}`)} />
+            <ToolCard icon={<Route className="w-6 h-6" style={{ color: "var(--text-muted)" }} />} title="Build Itinerary" description="Review the full map with routing context" onClick={() => onOpenMap ? onOpenMap() : navigate(`/map?deal=${deal.id}`)} />
           </div>
         </div>
         <Sheet open={drawerOpen} onOpenChange={(open) => { setDrawerOpen(open); if (!open) setEditingSite(null); }}><SiteForm deal={deal} site={editingSite} onClose={() => { setDrawerOpen(false); setEditingSite(null); }} /></Sheet>
