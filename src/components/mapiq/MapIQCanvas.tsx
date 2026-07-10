@@ -166,6 +166,17 @@ const EARTH_RADIUS_METERS = 6378137;
 const METERS_PER_MILE = 1609.344;
 type RadiusTool = "radius" | "drive" | "pop";
 
+const SITE_LIST_TAB_LABELS: Record<string, string> = {
+  All: "All",
+  "Kick Off": "Kick",
+  "Market Study": "Mkt",
+  "Site Tours": "Tour",
+  "LOI Negotiations": "LOI",
+  "Lease Negotiations": "Lease",
+  Signed: "Signed",
+  "On Hold": "Hold",
+};
+
 function isFiniteMetric(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -1523,7 +1534,7 @@ export function MapIQCanvas(props: MapIQProps) {
 
       {hasLayerPanel && (
         <button
-          className="mapiq-layer-toggle"
+          className="mapiq-layer-toggle mapiq-layer-toggle-layers"
           onClick={() => {
             // If the bottom detail panel is open, close it first so the two overlays never overlap.
             if (bottomState !== "closed") {
@@ -1543,9 +1554,21 @@ export function MapIQCanvas(props: MapIQProps) {
       {siteList && (
         <div className={`mapiq-sitelist${siteListOpen ? " open" : ""}`}>
           <div className="mapiq-sitelist-tabs">
-            {siteList.tabs.map((t) => (
-              <button key={t} className={siteListTab === t ? "active" : ""} onClick={() => setSiteListTab(t)}>{t}</button>
-            ))}
+            {siteList.tabs.map((t) => {
+              const statusColor = t === "All" ? "#243C51" : siteList.rows.find((row) => row.status === t)?.statusColor;
+              return (
+                <button
+                  key={t}
+                  className={siteListTab === t ? "active" : ""}
+                  onClick={() => setSiteListTab(t)}
+                  title={t}
+                  aria-label={`Filter by ${t}`}
+                >
+                  {statusColor && <span className="mapiq-sitelist-tab-dot" style={{ background: statusColor }} />}
+                  <span className="mapiq-sitelist-tab-label">{SITE_LIST_TAB_LABELS[t] ?? t}</span>
+                </button>
+              );
+            })}
           </div>
           <div className="mapiq-sitelist-rows">
             {filteredRows.map((r) => (
@@ -1577,8 +1600,7 @@ export function MapIQCanvas(props: MapIQProps) {
 
       {siteList && (
         <button
-          className="mapiq-layer-toggle"
-          style={{ top: "calc(50% + 56px)" }}
+          className="mapiq-layer-toggle mapiq-layer-toggle-sites"
           onClick={() => {
             if (bottomState !== "closed") {
               setBottomState("closed");

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Clock3, ExternalLink, Inbox, MessageSquare, RefreshCw, Search, Send } from "lucide-react";
 import { toast } from "sonner";
@@ -12,6 +12,36 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 type StatusFilter = "open" | "resolved" | "all";
 type SourceFilter = "all" | AdminActionSource;
+
+const glassCard: CSSProperties = {
+  background: "var(--bg-surface)",
+  border: "1px solid var(--border-subtle)",
+  boxShadow: "var(--shadow-card)",
+  borderRadius: 16,
+  overflow: "hidden",
+  transition: "background 0.30s ease, border-color 0.30s ease, box-shadow 0.30s ease",
+};
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+      {children}
+    </span>
+  );
+}
+
+function getSourceStyles(source: AdminActionSource) {
+  if (source === "deal") {
+    return {
+      background: "rgba(59,130,246,0.15)",
+      color: "#3b82f6",
+    };
+  }
+  return {
+    background: "rgba(225,135,57,0.15)",
+    color: "#E18739",
+  };
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Unknown date";
@@ -219,26 +249,27 @@ export default function AdminActionItems() {
             type="button"
             onClick={() => void loadItems(true)}
             disabled={refreshing}
-            className="inline-flex items-center justify-center gap-2"
+            className="inline-flex items-center justify-center gap-2 transition-all hover:-translate-y-px"
             style={{
               height: 40,
-              padding: "0 14px",
-              borderRadius: 10,
+              padding: "0 16px",
+              borderRadius: 12,
               border: "1px solid var(--border-subtle)",
               background: "var(--bg-surface)",
               color: "var(--text-primary)",
               fontSize: 13,
-              fontWeight: 700,
+              fontWeight: 600,
+              boxShadow: "var(--shadow-card)",
               cursor: refreshing ? "wait" : "pointer",
               opacity: refreshing ? 0.72 : 1,
             }}
           >
-            <RefreshCw style={{ width: 16, height: 16 }} />
+            <RefreshCw style={{ width: 16, height: 16, color: "#E18739" }} />
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3" style={{ gap: 12 }}>
+        <div className="grid grid-cols-1 md:grid-cols-3" style={{ gap: 16 }}>
           {[
             { label: "Open", value: stats.open, icon: Clock3, color: "#E18739" },
             { label: "Resolved", value: stats.resolved, icon: CheckCircle2, color: "#10B981" },
@@ -246,21 +277,25 @@ export default function AdminActionItems() {
           ].map((stat) => (
             <div
               key={stat.label}
+              className="relative transition-all duration-200 hover:-translate-y-px"
               style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "var(--shadow-card)",
-                borderRadius: 16,
-                padding: 18,
+                ...glassCard,
+                background: "var(--stat-card-bg)",
+                border: "0.56px solid var(--stat-card-border)",
+                padding: 24,
+                minHeight: 112,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
               }}
             >
               <div className="flex items-center justify-between">
-                <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-muted)" }}>
                   {stat.label}
                 </span>
                 <stat.icon style={{ width: 18, height: 18, color: stat.color }} />
               </div>
-              <div style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", marginTop: 12 }}>
+              <div style={{ fontSize: 32, fontWeight: 800, color: "var(--stat-value-color)", letterSpacing: "-0.03em", lineHeight: 1, marginTop: 12 }}>
                 {stat.value}
               </div>
             </div>
@@ -269,10 +304,7 @@ export default function AdminActionItems() {
 
         <div
           style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-subtle)",
-            boxShadow: "var(--shadow-card)",
-            borderRadius: 16,
+            ...glassCard,
             padding: 16,
           }}
         >
@@ -297,20 +329,24 @@ export default function AdminActionItems() {
                   type="button"
                   onClick={() => setStatusFilter(value)}
                   style={{
-                    height: 38,
-                    padding: "0 12px",
-                    borderRadius: 10,
-                    border: "1px solid var(--border-subtle)",
-                    background: statusFilter === value ? "#243c51" : "var(--bg-card)",
-                    color: statusFilter === value ? "#ffffff" : "var(--text-secondary)",
-                    fontSize: 13,
-                    fontWeight: 700,
+                    height: 34,
+                    padding: "0 14px",
+                    borderRadius: 999,
+                    border: `1px solid ${statusFilter === value ? "#243c51" : "var(--border-subtle)"}`,
+                    background: statusFilter === value ? "#243c51" : "var(--bg-surface)",
+                    color: statusFilter === value ? "#ffffff" : "var(--text-primary)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
                   }}
                 >
                   {label}
+                  {value === "open" ? ` (${stats.open})` : value === "resolved" ? ` (${stats.resolved})` : ` (${stats.total})`}
                 </button>
               ))}
             </div>
+            <div className="hidden lg:block" style={{ width: 1, height: 24, background: "var(--border-divider)" }} />
             <div className="flex gap-2">
               {sourceOptions.map(([value, label]) => (
                 <button
@@ -318,14 +354,16 @@ export default function AdminActionItems() {
                   type="button"
                   onClick={() => setSourceFilter(value)}
                   style={{
-                    height: 38,
-                    padding: "0 12px",
-                    borderRadius: 10,
+                    height: 34,
+                    padding: "0 14px",
+                    borderRadius: 999,
                     border: "1px solid var(--border-subtle)",
-                    background: sourceFilter === value ? "rgba(225,135,57,0.16)" : "var(--bg-card)",
-                    color: sourceFilter === value ? "#E18739" : "var(--text-secondary)",
-                    fontSize: 13,
-                    fontWeight: 700,
+                    background: sourceFilter === value ? "rgba(225,135,57,0.15)" : "var(--bg-surface)",
+                    color: sourceFilter === value ? "#E18739" : "var(--text-primary)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
                   }}
                 >
                   {label}
@@ -348,42 +386,60 @@ export default function AdminActionItems() {
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.88fr)_minmax(420px,0.62fr)]" style={{ gap: 18, alignItems: "start" }}>
             <section
               style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "var(--shadow-card)",
-                borderRadius: 16,
-                padding: 12,
+                ...glassCard,
+                padding: 0,
               }}
             >
-              <div className="flex flex-col" style={{ gap: 10 }}>
-                {filteredItems.map((item) => {
+              <div className="flex items-center justify-between" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-divider)" }}>
+                <SectionLabel>Requests · {filteredItems.length}</SectionLabel>
+              </div>
+              <div className="flex flex-col">
+                {filteredItems.map((item, index) => {
                   const active = selectedItem?.id === item.id;
+                  const isLast = index === filteredItems.length - 1;
+                  const sourceStyles = getSourceStyles(item.source);
                   return (
                     <button
                       key={`${item.source}-${item.id}`}
                       type="button"
                       onClick={() => setSelectedId(item.id)}
+                      className="text-left transition-colors"
                       style={{
                         textAlign: "left",
-                        borderRadius: 12,
-                        border: active ? "1px solid rgba(225,135,57,0.34)" : "1px solid var(--border-subtle)",
-                        background: active ? "rgba(225,135,57,0.08)" : "var(--bg-card)",
-                        padding: 14,
+                        border: "none",
+                        borderBottom: isLast ? "none" : "1px solid var(--border-divider)",
+                        borderLeft: `3px solid ${active ? "#E18739" : "transparent"}`,
+                        background: active ? "var(--bg-nav-active)" : "transparent",
+                        padding: "14px 20px",
                         cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
                       }}
                     >
                       <div className="flex items-start justify-between" style={{ gap: 12 }}>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
-                            <span style={{ fontSize: 12, fontWeight: 800, color: "#E18739", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            <span
+                              style={{
+                                ...sourceStyles,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.10em",
+                                borderRadius: 999,
+                                padding: "3px 8px",
+                              }}
+                            >
                               {item.sourceLabel}
                             </span>
-                            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatDate(item.timestamp)}</span>
+                            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatDate(item.timestamp)}</span>
                           </div>
-                          <h2 style={{ fontSize: 15, fontWeight: 800, color: "var(--text-primary)", marginTop: 6 }}>
+                          <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginTop: 8 }}>
+                            <MessageSquare style={{ width: 15, height: 15, color: "#E18739", display: "inline", marginRight: 8, verticalAlign: "-2px" }} />
                             {item.title}
                           </h2>
-                          <p className="truncate" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+                          <p className="truncate" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
                             {item.contextName}
                           </p>
                         </div>
@@ -402,12 +458,12 @@ export default function AdminActionItems() {
                       </div>
                       <p
                         style={{
-                          color: "var(--text-secondary)",
-                          fontSize: 13,
+                          color: "var(--text-tertiary)",
+                          fontSize: 12,
                           lineHeight: 1.5,
-                          marginTop: 10,
+                          marginTop: 2,
                           display: "-webkit-box",
-                          WebkitLineClamp: 2,
+                          WebkitLineClamp: 1,
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
                         }}
@@ -422,10 +478,9 @@ export default function AdminActionItems() {
 
             <aside
               style={{
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "var(--shadow-card)",
-                borderRadius: 16,
+                ...glassCard,
+                position: "sticky",
+                top: 16,
                 overflow: "hidden",
               }}
             >
@@ -433,16 +488,28 @@ export default function AdminActionItems() {
                 <>
                   <div
                     className="flex items-start justify-between"
-                    style={{ gap: 16, padding: 20, borderBottom: "1px solid var(--border-divider)" }}
+                    style={{ gap: 16, padding: "18px 20px", borderBottom: "1px solid var(--border-divider)" }}
                   >
                     <div>
                       <div className="flex items-center" style={{ gap: 8 }}>
-                        <MessageSquare style={{ width: 18, height: 18, color: "#E18739" }} />
-                        <span style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)" }}>
+                        <span
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            background: "linear-gradient(135deg, #E18739, #c4622a)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <MessageSquare style={{ width: 16, height: 16, color: "#ffffff" }} />
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)" }}>
                           {selectedItem.sourceLabel} Request
                         </span>
                       </div>
-                      <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)", marginTop: 10 }}>
+                      <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 10 }}>
                         {selectedItem.title}
                       </h2>
                     </div>

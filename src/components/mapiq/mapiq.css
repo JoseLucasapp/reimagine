@@ -122,6 +122,8 @@
   transition: all .2s ease;
 }
 .mapiq-layer-toggle:hover { color: #243C51; box-shadow: 0 6px 22px rgba(36,60,81,0.16); }
+.mapiq-layer-toggle-layers { top: 50%; }
+.mapiq-layer-toggle-sites { top: calc(50% + 56px); }
 
 .mapiq-layer-panel {
   position: absolute; left: 16px; top: 76px; bottom: 16px;
@@ -473,7 +475,7 @@
 
 /* ---------- Site list ---------- */
 .mapiq-sitelist {
-  position: absolute; left: 16px; top: calc(50% + 30px);
+  position: absolute; left: 72px; top: calc(50% + 30px);
   width: 280px;
   background: #fff;
   border-radius: 14px;
@@ -488,20 +490,61 @@
   transition: all .25s cubic-bezier(0.34,1.56,0.64,1);
 }
 .mapiq-sitelist.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+
+@media (max-width: 720px) {
+  .mapiq-sitelist {
+    left: 72px;
+    right: 16px;
+    top: calc(50% + 30px);
+    width: auto;
+  }
+}
 .mapiq-sitelist-tabs {
   display: flex; gap: 4px; padding: 8px;
   border-bottom: 1px solid rgba(36,60,81,0.06);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107,114,128,0.42) transparent;
+  flex: 0 0 auto;
+  min-height: 48px;
+  background: #fff;
+  position: relative;
+  z-index: 2;
 }
+.mapiq-sitelist-tabs::-webkit-scrollbar { height: 6px; }
+.mapiq-sitelist-tabs::-webkit-scrollbar-track { background: transparent; }
+.mapiq-sitelist-tabs::-webkit-scrollbar-thumb {
+  background: rgba(107,114,128,0.32);
+  border-radius: 999px;
+}
+.mapiq-sitelist-tabs::-webkit-scrollbar-thumb:hover { background: rgba(225,135,57,0.48); }
 .mapiq-sitelist-tabs button {
-  flex: 1; min-width: 0;
+  flex: 0 0 auto; min-width: 0;
   height: 28px; padding: 0 8px;
   border-radius: 8px; border: 0;
   background: transparent;
   font-size: 11px; font-weight: 600; color: #6B7280;
   cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  white-space: nowrap;
 }
 .mapiq-sitelist-tabs button.active { background: rgba(36,60,81,0.08); color: #243C51; }
-.mapiq-sitelist-rows { overflow-y: auto; }
+.mapiq-sitelist-tab-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mapiq-sitelist-tab-label {
+  max-width: 46px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapiq-sitelist-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .mapiq-sitelist-row {
   padding: 10px 12px; cursor: pointer;
   border-bottom: 1px solid rgba(36,60,81,0.05);

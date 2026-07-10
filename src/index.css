@@ -55,6 +55,9 @@ select {
     --bg-nav-hover: rgba(36, 60, 81, 0.05);
     --bg-table-alt: rgba(36, 60, 81, 0.025);
     --bg-table-header: rgba(36, 60, 81, 0.04);
+    --bg-table-header-solid: #eef3f6;
+    --bg-table-row-solid: rgba(255, 255, 255, 0.88);
+    --bg-table-row-alt-solid: rgba(248, 251, 253, 0.92);
     --stat-value-color: #243c51;
     --view-toggle-bg: rgba(255, 255, 255, 0.60);
     --view-toggle-active-bg: rgba(36, 60, 81, 0.08);
@@ -208,6 +211,9 @@ select {
     --bg-nav-hover: rgba(255, 255, 255, 0.06);
     --bg-table-alt: rgba(255, 255, 255, 0.03);
     --bg-table-header: rgba(255, 255, 255, 0.05);
+    --bg-table-header-solid: #23313b;
+    --bg-table-row-solid: #182731;
+    --bg-table-row-alt-solid: #1c2d38;
     --stat-value-color: #f0f4f8;
     --view-toggle-bg: rgba(255, 255, 255, 0.06);
     --view-toggle-active-bg: rgba(255, 255, 255, 0.12);
@@ -458,6 +464,35 @@ select {
   .glass-table tbody td {
     font-size: 14px;
     color: var(--text-primary);
+  }
+
+  .space-req-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 8px;
+    border: 0;
+    background: transparent;
+    cursor: col-resize;
+    z-index: 4;
+  }
+
+  .space-req-resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 9px;
+    bottom: 9px;
+    left: 3px;
+    width: 2px;
+    border-radius: 999px;
+    background: transparent;
+    transition: background 0.15s ease;
+  }
+
+  .space-req-resize-handle:hover::after,
+  .space-req-resize-handle:focus-visible::after {
+    background: rgba(225, 135, 57, 0.72);
   }
 
   /* Glass input */

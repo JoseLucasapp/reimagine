@@ -1,29 +1,34 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Download, Check, X, Pencil } from "lucide-react";
 import { spaceRequirements, SpaceRequirement } from "@/data/spaceReqData";
 import { dealBrands } from "@/data/dealsData";
-import { cn } from "@/lib/utils";
 import { createSpaceRequirement, updateSpaceRequirement } from "@/application/data/runtimeMutations";
 import { toast } from "sonner";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 
-const columns: { key: keyof SpaceRequirement; label: string; width: string }[] = [
-  { key: "spaceType", label: "Space Type", width: "w-28" },
-  { key: "minSF", label: "Min SF", width: "w-20" },
-  { key: "maxSF", label: "Max SF", width: "w-20" },
-  { key: "idealSF", label: "Ideal SF", width: "w-20" },
-  { key: "minStorefrontWidth", label: "Storefront", width: "w-24" },
-  { key: "power", label: "Power", width: "w-32" },
-  { key: "hvac", label: "HVAC", width: "w-32" },
-  { key: "gas", label: "Gas", width: "w-20" },
-  { key: "waterLineSize", label: "Water", width: "w-20" },
-  { key: "sewerLineSize", label: "Sewer", width: "w-20" },
-  { key: "slab", label: "Slab", width: "w-28" },
-  { key: "greaseTrap", label: "Grease", width: "w-20" },
-  { key: "secondFloor", label: "2nd Floor", width: "w-24" },
-  { key: "parking", label: "Parking", width: "w-48" },
+const columns: { key: keyof SpaceRequirement; label: string; defaultWidth: number }[] = [
+  { key: "spaceType", label: "Space Type", defaultWidth: 150 },
+  { key: "minSF", label: "Min SF", defaultWidth: 90 },
+  { key: "maxSF", label: "Max SF", defaultWidth: 90 },
+  { key: "idealSF", label: "Ideal SF", defaultWidth: 90 },
+  { key: "minStorefrontWidth", label: "Storefront", defaultWidth: 118 },
+  { key: "power", label: "Power", defaultWidth: 190 },
+  { key: "hvac", label: "HVAC", defaultWidth: 180 },
+  { key: "gas", label: "Gas", defaultWidth: 90 },
+  { key: "waterLineSize", label: "Water", defaultWidth: 90 },
+  { key: "sewerLineSize", label: "Sewer", defaultWidth: 90 },
+  { key: "slab", label: "Slab", defaultWidth: 150 },
+  { key: "greaseTrap", label: "Grease", defaultWidth: 100 },
+  { key: "secondFloor", label: "2nd Floor", defaultWidth: 120 },
+  { key: "parking", label: "Parking", defaultWidth: 260 },
 ];
+
+const MIN_COLUMN_WIDTH = 72;
+const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  brandName: 190,
+  ...Object.fromEntries(columns.map((column) => [column.key, column.defaultWidth])),
+};
 
 export default function SpaceRequirementsPage() {
   const navigate = useNavigate();
@@ -32,10 +37,41 @@ export default function SpaceRequirementsPage() {
   const [editCell, setEditCell] = useState<{ rowId: string; col: keyof SpaceRequirement } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingAdd, setSavingAdd] = useState(false);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => ({ ...DEFAULT_COLUMN_WIDTHS }));
 
   useEffect(() => {
     setData([...spaceRequirements]);
   }, [runtimeDataVersion]);
+
+  const getColumnWidth = useCallback(
+    (key: string) => columnWidths[key] ?? DEFAULT_COLUMN_WIDTHS[key] ?? 120,
+    [columnWidths],
+  );
+
+  const startColumnResize = useCallback((key: string, event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = columnWidths[key] ?? DEFAULT_COLUMN_WIDTHS[key] ?? 120;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const nextWidth = Math.max(MIN_COLUMN_WIDTH, startWidth + moveEvent.clientX - startX);
+      setColumnWidths((prev) => ({ ...prev, [key]: nextWidth }));
+    };
+
+    const handleMouseUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [columnWidths]);
 
   const startEdit = (rowId: string, col: keyof SpaceRequirement, value: SpaceRequirement[keyof SpaceRequirement]) => { setEditCell({ rowId, col }); setEditValue(String(value)); };
   const saveEdit = useCallback(async () => {
@@ -109,6 +145,8 @@ export default function SpaceRequirementsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const tableWidth = getColumnWidth("brandName") + columns.reduce((total, column) => total + getColumnWidth(String(column.key)), 0);
+
   return (
     <div className="animate-fade-in">
     <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 18, maxWidth: 1600, margin: "0 auto" }}>
@@ -129,28 +167,61 @@ export default function SpaceRequirementsPage() {
 
       <div className="glass-table">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="table-fixed border-separate border-spacing-0" style={{ width: tableWidth, minWidth: "100%" }}>
             <thead>
               <tr>
-                <th className="text-left px-4 py-3 sticky left-0 z-20 min-w-[160px]" style={{ background: "var(--bg-table-header)", borderRight: "1px solid var(--border-divider)" }}>Brand</th>
+                <th
+                  className="text-left px-4 py-3 sticky left-0 z-30"
+                  style={{
+                    width: getColumnWidth("brandName"),
+                    minWidth: getColumnWidth("brandName"),
+                    background: "var(--bg-table-header-solid)",
+                    boxShadow: "1px 0 0 var(--border-divider), 8px 0 14px -8px rgba(36,60,81,0.28)",
+                    color: "var(--text-primary)",
+                    position: "sticky",
+                  }}
+                >
+                  Brand
+                  <ColumnResizeHandle onMouseDown={(event) => startColumnResize("brandName", event)} />
+                </th>
                 {columns.map((col) => (
-                  <th key={col.key} className={cn("text-left px-3 py-3 whitespace-nowrap", col.width)}>{col.label}</th>
+                  <th
+                    key={col.key}
+                    className="text-left px-3 py-3 whitespace-nowrap bg-[var(--bg-table-header-solid)] relative"
+                    style={{
+                      width: getColumnWidth(String(col.key)),
+                      minWidth: getColumnWidth(String(col.key)),
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {col.label}
+                    <ColumnResizeHandle onMouseDown={(event) => startColumnResize(String(col.key), event)} />
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {data.map((row, idx) => (
                 <tr key={row.id}>
-                  <td className="px-4 py-3 sticky left-0 z-10" style={{ background: "var(--bg-card)", borderRight: "1px solid var(--border-divider)" }}>
+                  <td
+                    className="px-4 py-3 sticky left-0 z-30 overflow-hidden"
+                    style={{
+                      width: getColumnWidth("brandName"),
+                      minWidth: getColumnWidth("brandName"),
+                      background: idx % 2 === 0 ? "var(--bg-table-row-solid)" : "var(--bg-table-row-alt-solid)",
+                      boxShadow: "1px 0 0 var(--border-divider), 8px 0 14px -8px rgba(36,60,81,0.28)",
+                    }}
+                  >
                     {editCell?.rowId === row.id && editCell.col === "brandName" ? (
                       <InlineEdit value={editValue} onChange={setEditValue} onSave={saveEdit} onCancel={cancelEdit} />
                     ) : (
                       <button
                         onClick={() => row.brandId ? navigate(`/brands`) : startEdit(row.id, "brandName", row.brandName)}
-                        className="text-sm font-semibold text-left group flex items-center gap-1.5"
+                        className="text-sm font-semibold text-left group flex items-center gap-1.5 max-w-full"
                         style={{ color: "var(--text-primary)" }}
+                        title={row.brandName}
                       >
-                        {row.brandName}
+                        <span className="truncate">{row.brandName}</span>
                         <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
                       </button>
                     )}
@@ -159,11 +230,24 @@ export default function SpaceRequirementsPage() {
                     const val = row[col.key];
                     const isEditing = editCell?.rowId === row.id && editCell.col === col.key;
                     return (
-                      <td key={col.key} className={cn("px-3 py-3", col.width)}>
+                      <td
+                        key={col.key}
+                        className="px-3 py-3 overflow-hidden"
+                        style={{
+                          width: getColumnWidth(String(col.key)),
+                          minWidth: getColumnWidth(String(col.key)),
+                          background: idx % 2 === 0 ? "var(--bg-table-row-solid)" : "var(--bg-table-row-alt-solid)",
+                        }}
+                      >
                         {isEditing ? (
                           <InlineEdit value={editValue} onChange={setEditValue} onSave={saveEdit} onCancel={cancelEdit} />
                         ) : (
-                          <button onClick={() => startEdit(row.id, col.key, val)} className="text-sm text-left w-full group flex items-center gap-1 transition-colors" style={{ color: "var(--text-secondary)" }}>
+                          <button
+                            onClick={() => startEdit(row.id, col.key, val)}
+                            className="text-sm text-left w-full group flex items-center gap-1 transition-colors"
+                            style={{ color: "var(--text-secondary)" }}
+                            title={String(val)}
+                          >
                             <span className="truncate">{String(val)}</span>
                             <Pencil className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-30 transition-opacity" />
                           </button>
@@ -179,6 +263,21 @@ export default function SpaceRequirementsPage() {
       </div>
     </div>
     </div>
+  );
+}
+
+function ColumnResizeHandle({ onMouseDown }: { onMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Resize column"
+      className="space-req-resize-handle"
+      onMouseDown={onMouseDown}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    />
   );
 }
 
