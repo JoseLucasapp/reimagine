@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
-import { User, Menu, Search, X } from "lucide-react";
+import { User, Menu, Search, X, Settings as SettingsIcon, LogOut } from "lucide-react";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationsPopover } from "./NotificationsPopover";
 import { dealRecords, getDealBrandById, dealBrands, getDealRecordById } from "@/data/dealsData";
@@ -8,6 +8,7 @@ import { useIsCompact } from "@/hooks/use-mobile";
 import { useRecentDealsForBrand } from "@/hooks/useRecentDeals";
 import { DealStatusBadge } from "@/components/DealStatusBadge";
 import { useCurrentProfile } from "@/hooks/useUserRole";
+import { signOutOfSupabase } from "@/infrastructure/supabase/auth";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -159,6 +160,124 @@ function BrandCrumbWithRecents({ crumb }: { crumb: Crumb }) {
   );
 }
 
+function UserProfileMenu({
+  displayName,
+  displayEmail,
+  initial,
+  compact = false,
+}: {
+  displayName: string;
+  displayEmail: string;
+  initial: string;
+  compact?: boolean;
+}) {
+  const navigate = useNavigate();
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, []);
+
+  const openSettings = () => {
+    setOpen(false);
+    navigate("/settings");
+  };
+
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    await signOutOfSupabase();
+  };
+
+  return (
+    <div ref={ref} className="relative flex items-center gap-[8px]">
+      <button
+        type="button"
+        aria-label="User menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center justify-center"
+        style={{
+          width: compact ? 28 : 32,
+          height: compact ? 28 : 32,
+          borderRadius: compact ? "50%" : 8,
+          background: compact ? "rgba(36,60,81,0.08)" : "var(--bg-card)",
+          backdropFilter: compact ? undefined : "blur(12px)",
+          border: compact ? "none" : "1px solid var(--border-subtle)",
+          boxShadow: compact ? undefined : "0 1px 4px rgba(36,60,81,0.06)",
+          color: "var(--text-tertiary)",
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        {compact ? initial : <User className="w-4 h-4" />}
+      </button>
+
+      {!compact && (
+        <div className="flex flex-col">
+          <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{displayName}</p>
+          <p className="text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>{displayEmail}</p>
+        </div>
+      )}
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute z-50"
+          style={{
+            left: 0,
+            top: compact ? "calc(100% + 12px)" : "calc(100% + 14px)",
+            width: compact ? 220 : "100%",
+            minWidth: compact ? 220 : 210,
+            maxWidth: compact ? 220 : 260,
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 14,
+            boxShadow: "0 12px 34px rgba(0,0,0,0.22)",
+            padding: 10,
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={openSettings}
+            className="flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left text-sm"
+            style={{ color: "var(--text-primary)" }}
+          >
+            <SettingsIcon className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
+            Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={logout}
+            disabled={signingOut}
+            className="flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left text-sm disabled:opacity-60"
+            style={{ color: "#b91c1c" }}
+          >
+            <LogOut className="h-4 w-4" />
+            {signingOut ? "Logging out..." : "Logout"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface HeaderBarProps {
   onMobileMenuToggle?: () => void;
 }
@@ -230,17 +349,7 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
             <Search className="w-4 h-4" />
           </button>
           <NotificationsPopover mobile />
-          <button
-            aria-label="User profile"
-            className="flex items-center justify-center"
-            style={{
-              width: 28, height: 28, borderRadius: "50%",
-              background: "rgba(36,60,81,0.08)",
-              color: "var(--text-tertiary)", fontSize: 12, fontWeight: 700,
-            }}
-          >
-            {initial}
-          </button>
+          <UserProfileMenu displayName={displayName} displayEmail={displayEmail} initial={initial} compact />
         </div>
       </header>
     );
@@ -302,24 +411,7 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
         <NotificationsPopover />
 
         <div className="flex items-center gap-[8px] pl-[12px]" style={{ borderLeft: "1px solid var(--border-subtle)" }}>
-          <button
-            aria-label="User profile"
-            className="flex items-center justify-center"
-            style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: "var(--bg-card)",
-              backdropFilter: "blur(12px)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "0 1px 4px rgba(36,60,81,0.06)",
-              color: "var(--text-tertiary)",
-            }}
-          >
-            <User className="w-4 h-4" />
-          </button>
-          <div className="flex flex-col">
-            <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{displayName}</p>
-            <p className="text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>{displayEmail}</p>
-          </div>
+          <UserProfileMenu displayName={displayName} displayEmail={displayEmail} initial={initial} />
         </div>
       </div>
     </header>

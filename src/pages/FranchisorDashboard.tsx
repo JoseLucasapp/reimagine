@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { dealBrands, dealRecords, type DealRecord } from "@/data/dealsData";
 import { brandActionStore, type BrandActionItem } from "@/lib/brandActionStore";
-import { getVisibleBrandsForUser, getVisibleDealsForUser, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
+import { getVisibleBrandsForUser, getVisibleDealsForUser, useCurrentProfile, useRealUserRole, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 
 const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
@@ -30,6 +30,7 @@ export default function FranchisorDashboard() {
   const runtimeDataVersion = useRuntimeDataVersion();
   const user = useScopedUser();
   const role = useUserRole();
+  const realRole = useRealUserRole();
   const profile = useCurrentProfile();
   const [selectedBrandId, setSelectedBrandId] = useState("all");
   const [actionPanelOpen, setActionPanelOpen] = useState(false);
@@ -50,10 +51,20 @@ export default function FranchisorDashboard() {
       setSelectedBrandId(profile.brandId);
       return;
     }
+    if (realRole === "admin" && role === "brand") {
+      if (!visibleBrands.length) {
+        if (selectedBrandId !== "all") setSelectedBrandId("all");
+        return;
+      }
+      if (selectedBrandId === "all" || !visibleBrands.some((brand) => brand.id === selectedBrandId)) {
+        setSelectedBrandId(visibleBrands[0].id);
+      }
+      return;
+    }
     if (selectedBrandId !== "all" && !visibleBrands.some((brand) => brand.id === selectedBrandId)) {
       setSelectedBrandId("all");
     }
-  }, [profile?.brandId, role, selectedBrandId, visibleBrands]);
+  }, [profile?.brandId, realRole, role, selectedBrandId, visibleBrands]);
 
   const scopedDeals = useMemo(() => {
     if (selectedBrandId === "all") return visibleDeals;
@@ -106,7 +117,8 @@ export default function FranchisorDashboard() {
     });
   };
 
-  const missingBrandScope = role === "brand" && !profile?.brandId;
+  const isAdminBrandPreview = realRole === "admin" && role === "brand";
+  const missingBrandScope = role === "brand" && !isAdminBrandPreview && !profile?.brandId;
 
   if (role === "brand" && profile?.brandId) {
     return <Navigate to={`/brands/${profile.brandId}/deals`} replace />;
@@ -139,11 +151,11 @@ export default function FranchisorDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {role === "admin" && (
+            {(role === "admin" || isAdminBrandPreview) && (
               <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
-                <SelectTrigger className="w-52 glass-input"><SelectValue placeholder="All brands" /></SelectTrigger>
+                <SelectTrigger className="w-52 glass-input"><SelectValue placeholder="Select brand" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All brands</SelectItem>
+                  {role === "admin" ? <SelectItem value="all">All brands</SelectItem> : <SelectItem value="all" disabled>Select a brand</SelectItem>}
                   {visibleBrands.map((brand) => <SelectItem key={brand.id} value={brand.id}>{brand.name}</SelectItem>)}
                 </SelectContent>
               </Select>

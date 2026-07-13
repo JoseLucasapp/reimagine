@@ -83,8 +83,9 @@ export interface SearchResult {
 }
 
 export function globalSearch(query: string, scopedDeals = dealRecords, scopedBrands = dealBrands): SearchResult[] {
-  if (!query || query.length < 2) return [];
-  const q = query.toLowerCase();
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return [];
+  const q = trimmedQuery.toLowerCase();
   const results: SearchResult[] = [];
 
   scopedBrands.forEach((b) => {

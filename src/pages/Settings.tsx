@@ -131,6 +131,7 @@ export default function SettingsPage() {
 
         <section
           style={{
+            order: 2,
             background: "var(--bg-surface)",
             border: "1px solid var(--border-subtle)",
             boxShadow: "var(--shadow-card)",
@@ -239,6 +240,7 @@ export default function SettingsPage() {
 
         <section
           style={{
+            order: 3,
             background: "var(--bg-surface)",
             border: "1px solid var(--border-subtle)",
             boxShadow: "var(--shadow-card)",
@@ -297,6 +299,7 @@ export default function SettingsPage() {
         {!canPreview && (
           <section
             style={{
+              order: 4,
               background: "var(--bg-surface)",
               border: "1px solid var(--border-subtle)",
               boxShadow: "var(--shadow-card)",
@@ -332,6 +335,7 @@ export default function SettingsPage() {
         {canPreview && (
           <section
             style={{
+              order: 1,
               background: "var(--bg-surface)",
               border: "1px solid var(--border-subtle)",
               boxShadow: "var(--shadow-card)",

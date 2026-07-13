@@ -467,6 +467,28 @@ function DealsMapPanel({ deals, navigate }: { deals: DealRecord[]; navigate: (pa
 // ===== DEALS TABLE =====
 const ROWS_PER_PAGE = 10;
 
+function getVisiblePageItems(currentPage: number, totalPages: number): Array<number | "ellipsis-start" | "ellipsis-end"> {
+  if (totalPages <= 9) return Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  const pages = new Set<number>([1, totalPages]);
+  for (let pageNumber = currentPage - 2; pageNumber <= currentPage + 2; pageNumber += 1) {
+    if (pageNumber > 1 && pageNumber < totalPages) pages.add(pageNumber);
+  }
+
+  const sorted = [...pages].sort((a, b) => a - b);
+  const items: Array<number | "ellipsis-start" | "ellipsis-end"> = [];
+
+  sorted.forEach((pageNumber, index) => {
+    const previous = sorted[index - 1];
+    if (previous && pageNumber - previous > 1) {
+      items.push(previous === 1 ? "ellipsis-start" : "ellipsis-end");
+    }
+    items.push(pageNumber);
+  });
+
+  return items;
+}
+
 function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer, allowEdit }: {
   deals: DealRecord[];
   navigate: (path: string) => void;
@@ -483,6 +505,7 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer, allowEdit 
 
   const safePage = Math.min(page, Math.max(totalPages, 1));
   const paginated = deals.slice((safePage - 1) * ROWS_PER_PAGE, safePage * ROWS_PER_PAGE);
+  const visiblePageItems = getVisiblePageItems(safePage, totalPages);
 
   const COL_HEADERS = ["Brand", "Deal / Franchisee", "City, State", "Broker", "Date Started", "Days Active", "Status", "Last Update", "Docs", ""];
 
@@ -586,34 +609,57 @@ function DealsTable({ deals, navigate, setEditingDeal, setShowDrawer, allowEdit 
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid var(--border-divider)" }}>
+        <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between" style={{ borderTop: "1px solid var(--border-divider)" }}>
           <span className="text-xs" style={{ color: "var(--text-faint)" }}>
             Showing {(safePage - 1) * ROWS_PER_PAGE + 1}–{Math.min(safePage * ROWS_PER_PAGE, deals.length)} of {deals.length}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             <button
               disabled={safePage <= 1}
               onClick={() => setPage(safePage - 1)}
-              className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ color: safePage <= 1 ? "var(--text-faint)" : "var(--text-secondary)", cursor: safePage <= 1 ? "default" : "pointer" }}
-            >···</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPage(p)}
-                className="w-8 h-8 rounded-[8px] text-xs font-semibold transition-colors"
-                style={p === safePage
-                  ? { background: "#243c51", color: "#fff" }
-                  : { background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-divider)" }
-                }
-              >{p}</button>
-            ))}
+              className="h-8 rounded-[8px] px-3 text-xs font-semibold transition-colors"
+              style={{
+                border: "1px solid var(--border-divider)",
+                color: safePage <= 1 ? "var(--text-faint)" : "var(--text-secondary)",
+                cursor: safePage <= 1 ? "default" : "pointer",
+              }}
+            >
+              Previous
+            </button>
+            {visiblePageItems.map((item, index) => {
+              if (typeof item !== "number") {
+                return (
+                  <span key={`${item}-${index}`} className="flex h-8 w-8 items-center justify-center text-xs" style={{ color: "var(--text-faint)" }}>
+                    ...
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={item}
+                  onClick={() => setPage(item)}
+                  className="h-8 min-w-[32px] rounded-[8px] px-2 text-xs font-semibold transition-colors"
+                  style={item === safePage
+                    ? { background: "#243c51", color: "#fff" }
+                    : { background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border-divider)" }
+                  }
+                >
+                  {item}
+                </button>
+              );
+            })}
             <button
               disabled={safePage >= totalPages}
               onClick={() => setPage(safePage + 1)}
-              className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ color: safePage >= totalPages ? "var(--text-faint)" : "var(--text-secondary)", cursor: safePage >= totalPages ? "default" : "pointer" }}
-            >···</button>
+              className="h-8 rounded-[8px] px-3 text-xs font-semibold transition-colors"
+              style={{
+                border: "1px solid var(--border-divider)",
+                color: safePage >= totalPages ? "var(--text-faint)" : "var(--text-secondary)",
+                cursor: safePage >= totalPages ? "default" : "pointer",
+              }}
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
