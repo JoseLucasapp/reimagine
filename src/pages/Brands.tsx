@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ArrowRight, BarChart3, LayoutList, Columns3, Building2, Handshake, CheckCircle2, Plus, FileBarChart2, CalendarIcon, ChevronDown, Check, Link as LinkIcon, ExternalLink, MapPin } from "lucide-react";
+import { Search, ArrowRight, BarChart3, LayoutList, Columns3, Building2, Handshake, CheckCircle2, Plus, FileBarChart2, CalendarIcon, ChevronDown, Check, Link as LinkIcon, ExternalLink, MapPin, Eye, EyeOff, Trash2 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from "recharts";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DEAL_STATUS_ORDER } from "@/data/dealsData";
@@ -12,15 +12,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { brandDetails as baseBrandDetails, brandCategories as baseBrandCategories, type BrandDetail } from "@/data/brandsData";
-import { dealRecords, dealBrands, type DealRecord } from "@/data/dealsData";
+import { dealRecords, dealBrands, type BrandStatus, type DealRecord } from "@/data/dealsData";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { createBrand } from "@/application/data/runtimeMutations";
+import { createBrand, removeBrand, setBrandHidden } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
+import { getStoredSession } from "@/application/auth/session";
 
 /* ── GLASS CARD — matches Dashboard exactly ── */
 const glassCard: React.CSSProperties = {
@@ -34,6 +35,42 @@ const glassCard: React.CSSProperties = {
 
 type BrandView = "overview" | "list" | "kanban" | "bar" | "line";
 type ChartRow = Record<string, string | number | undefined>;
+
+const BRAND_STATUS_OPTIONS: { value: BrandStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "prospect", label: "Prospect" },
+];
+
+function BrandStatusBadge({ status }: { status: BrandStatus }) {
+  const prospect = status === "prospect";
+  return (
+    <span
+      className="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-[20px] text-[11px] font-semibold uppercase tracking-wide"
+      style={{
+        color: prospect ? "#F59E0B" : "#10B981",
+        background: prospect ? "rgba(245, 158, 11, 0.14)" : "rgba(16, 185, 129, 0.14)",
+        border: `1px solid ${prospect ? "rgba(245, 158, 11, 0.24)" : "rgba(16, 185, 129, 0.24)"}`,
+      }}
+    >
+      {prospect ? "Prospect" : "Active"}
+    </span>
+  );
+}
+
+function BrandVisibilityBadge() {
+  return (
+    <span
+      className="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-[20px] text-[11px] font-semibold uppercase tracking-wide"
+      style={{
+        color: "#94A3B8",
+        background: "rgba(148, 163, 184, 0.14)",
+        border: "1px solid rgba(148, 163, 184, 0.24)",
+      }}
+    >
+      Hidden
+    </span>
+  );
+}
 
 type ChartPayload = {
   value?: string | number | null;
@@ -154,9 +191,13 @@ function wasDealActiveAtMonthEnd(deal: DealRecord, endOfMonth: Date): boolean {
 
 export default function BrandsPage() {
   const navigate = useNavigate();
+  const isAdmin = getStoredSession()?.profile.role === "admin";
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState<string[]>([]);
+  const [brandStatusFilter, setBrandStatusFilter] = useState<string[]>([]);
   const [dealFilter, setDealFilter] = useState("all");
+  const [showHidden, setShowHidden] = useState(false);
+  const [brandActionBusyId, setBrandActionBusyId] = useState<string | null>(null);
   const [chartStatusFilter, setChartStatusFilter] = useState<string[]>([]);
   const [chartLimit, setChartLimit] = useState("15");
   const [chartMinDeals, setChartMinDeals] = useState("1");
@@ -165,7 +206,7 @@ export default function BrandsPage() {
   const runtimeDataVersion = useRuntimeDataVersion();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savingBrand, setSavingBrand] = useState(false);
-  const [form, setForm] = useState({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
+  const [form, setForm] = useState({ name: "", category: "", status: "active" as BrandStatus, franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
 
   // Layout customizer state
   type PanelType = "list" | "kanban" | "bar" | "line";
@@ -201,7 +242,7 @@ export default function BrandsPage() {
 
   const openReportModal = () => {
     setReportSections(REPORT_SECTIONS);
-    setReportBrands(brandDetails.map((b) => b.id));
+    setReportBrands(listedBrandDetails.map((b) => b.id));
     setReportRange(undefined);
     setReportOpen(true);
   };
@@ -257,7 +298,7 @@ export default function BrandsPage() {
     return Array.from(new Set([...baseBrandCategories, ...baseBrandDetails.map(b => b.category).filter(Boolean)]));
   }, [runtimeDataVersion]);
 
-  const resetForm = () => setForm({ name: "", category: "", franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
+  const resetForm = () => setForm({ name: "", category: "", status: "active" as BrandStatus, franchisorLink: LINK_DEFAULT, logoColor: "#E18739" });
 
   const handleAddBrand = async () => {
     const name = form.name.trim();
@@ -267,6 +308,7 @@ export default function BrandsPage() {
       await createBrand({
         name,
         category: form.category,
+        status: form.status,
         franchisorLink: form.franchisorLink,
         logoColor: form.logoColor,
       });
@@ -282,47 +324,89 @@ export default function BrandsPage() {
     }
   };
 
+  const handleToggleBrandHidden = async (brand: BrandDetail) => {
+    const nextHidden = !brand.isHidden;
+    setBrandActionBusyId(brand.id);
+    try {
+      await setBrandHidden(brand.id, nextHidden);
+      toast.success(`${brand.name} ${nextHidden ? "hidden" : "visible again"}`);
+    } catch (err) {
+      toast.error("Unable to update brand visibility", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    } finally {
+      setBrandActionBusyId(null);
+    }
+  };
+
+  const handleRemoveBrand = async (brand: BrandDetail) => {
+    const brandDeals = dealRecords.filter((deal) => deal.brandId === brand.id && !deal.isOneOff);
+    const confirmed = window.confirm(
+      `Remove ${brand.name}? This will permanently delete the brand and ${brandDeals.length} linked deal${brandDeals.length === 1 ? "" : "s"}. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setBrandActionBusyId(brand.id);
+    try {
+      await removeBrand(brand.id);
+      toast.success(`${brand.name} removed`);
+    } catch (err) {
+      toast.error("Unable to remove brand", {
+        description: err instanceof Error ? err.message : "Check your Supabase permissions and try again.",
+      });
+    } finally {
+      setBrandActionBusyId(null);
+    }
+  };
+
+  const hiddenBrandCount = brandDetails.filter((brand) => brand.isHidden).length;
+  const listedBrandDetails = useMemo(() => {
+    return brandDetails.filter((brand) => (isAdmin && showHidden) || !brand.isHidden);
+  }, [brandDetails, isAdmin, showHidden]);
+  const listedBrandIds = useMemo(() => new Set(listedBrandDetails.map((brand) => brand.id)), [listedBrandDetails]);
+
   const filtered = useMemo(() => {
-    return brandDetails.filter((b) => {
+    return listedBrandDetails.filter((b) => {
       if (catFilter.length > 0 && !catFilter.includes(b.category)) return false;
+      if (brandStatusFilter.length > 0 && !brandStatusFilter.includes(b.status)) return false;
       if (dealFilter === "active" && b.activeDeals === 0) return false;
       if (dealFilter === "none" && b.activeDeals > 0) return false;
       if (search) return b.name.toLowerCase().includes(search.toLowerCase());
       return true;
     });
-  }, [search, catFilter, dealFilter, brandDetails]);
+  }, [search, catFilter, brandStatusFilter, dealFilter, listedBrandDetails]);
 
   const overviewStats = useMemo(() => {
     void runtimeDataVersion;
-    const allDeals = dealRecords.filter(d => !d.isOneOff);
+    const allDeals = dealRecords.filter(d => !d.isOneOff && listedBrandIds.has(d.brandId));
     const activeThisMonth = allDeals.filter((d) => d.status !== "Signed" && d.status !== "On Hold" && isCurrentMonth(dealActivityDate(d))).length;
     const signedThisMonth = allDeals.filter((d) => d.status === "Signed" && isCurrentMonth(d.dateLeaseSigned)).length;
     const activeBrandsThisMonth = new Set(allDeals.filter((d) => isCurrentMonth(dealActivityDate(d))).map((d) => d.brandId)).size;
     return {
-      totalBrands: dealBrands.length,
+      totalBrands: listedBrandDetails.length,
       activeDeals: allDeals.filter(d => d.status !== "Signed").length,
       dealsSigned: allDeals.filter(d => d.status === "Signed").length,
       activeBrandsThisMonth,
       activeThisMonth,
       signedThisMonth,
     };
-  }, [runtimeDataVersion]);
+  }, [listedBrandDetails.length, listedBrandIds, runtimeDataVersion]);
 
   const brandDealCounts = useMemo(() => {
     void runtimeDataVersion;
-    return dealBrands.map(b => {
+    return dealBrands.filter((brand) => listedBrandIds.has(brand.id)).map(b => {
       const deals = dealRecords.filter(d => d.brandId === b.id && !d.isOneOff);
       return { name: b.name, count: deals.length, color: b.logoColor, id: b.id };
     }).sort((a, b) => b.count - a.count);
-  }, [runtimeDataVersion]);
+  }, [listedBrandIds, runtimeDataVersion]);
 
   const statusCounts = useMemo(() => {
     void runtimeDataVersion;
-    const allDeals = dealRecords.filter(d => !d.isOneOff);
+    const allDeals = dealRecords.filter(d => !d.isOneOff && listedBrandIds.has(d.brandId));
     const counts: Record<string, number> = {};
     allDeals.forEach(d => { counts[d.status] = (counts[d.status] || 0) + 1; });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [runtimeDataVersion]);
+  }, [listedBrandIds, runtimeDataVersion]);
 
   const maxDeals = Math.max(...brandDealCounts.map(b => b.count), 1);
   const maxStatus = Math.max(...statusCounts.map(s => s[1]), 1);
@@ -360,6 +444,7 @@ export default function BrandsPage() {
   const hasChartFilters =
     search.trim().length > 0 ||
     catFilter.length > 0 ||
+    brandStatusFilter.length > 0 ||
     dealFilter !== "all" ||
     chartStatusFilter.length > 0 ||
     chartLimit !== "15" ||
@@ -368,6 +453,7 @@ export default function BrandsPage() {
   const resetChartFilters = () => {
     setSearch("");
     setCatFilter([]);
+    setBrandStatusFilter([]);
     setDealFilter("all");
     setChartStatusFilter([]);
     setChartLimit("15");
@@ -426,7 +512,7 @@ export default function BrandsPage() {
 
   // ── Panel renderers (used by both single-view and custom split layouts) ──
   const renderListPanel = () => {
-    const listGridColumns = "minmax(240px,2fr) minmax(152px,0.7fr) 72px 72px minmax(380px,2.4fr) 96px";
+    const listGridColumns = `minmax(240px,2fr) minmax(152px,0.7fr) 72px 72px minmax(380px,2.4fr) ${isAdmin ? "160px" : "96px"}`;
     const STATUS_PILL: Record<string, { label: string; cls: string }> = {
       "Signed": { label: "Signed", cls: "pill-signed" },
       "Lease Negotiations": { label: "Lease", cls: "pill-leases" },
@@ -457,7 +543,7 @@ export default function BrandsPage() {
           <div className="text-right">Deals</div>
           <div className="text-right">Sites</div>
           <div>Stages</div>
-          <div className="text-right">Action</div>
+          <div className="text-right">Actions</div>
         </div>
 
         {filtered.map((brand) => {
@@ -490,10 +576,12 @@ export default function BrandsPage() {
                   {brand.name}
                 </div>
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex max-w-full items-center whitespace-nowrap px-2.5 py-0.5 rounded-[20px] text-[11px] font-semibold uppercase tracking-wide pill-intro-call">
                   {brand.category}
                 </span>
+                <BrandStatusBadge status={brand.status} />
+                {brand.isHidden && <BrandVisibilityBadge />}
               </div>
               <div className="text-right text-[13px] font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
                 {dealCount}
@@ -518,7 +606,7 @@ export default function BrandsPage() {
                   })
                 )}
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <button
                   onClick={(e) => { e.stopPropagation(); navigate(brand.internalLink); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[11px] font-semibold uppercase tracking-wide transition-colors hover:bg-[var(--bg-hover)]"
@@ -526,6 +614,7 @@ export default function BrandsPage() {
                 >
                   View <ArrowRight className="w-3 h-3" />
                 </button>
+                {renderBrandAdminActions(brand)}
               </div>
             </div>
           );
@@ -567,7 +656,11 @@ export default function BrandsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{brand.name}</p>
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{brand.category}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{brand.category}</span>
+                          <BrandStatusBadge status={brand.status} />
+                          {brand.isHidden && <BrandVisibilityBadge />}
+                        </div>
                       </div>
                       <span style={{ width: 10, height: 10, borderRadius: "50%", background: brand.logoColor, flexShrink: 0 }} />
                     </div>
@@ -729,6 +822,35 @@ export default function BrandsPage() {
     if (p === "kanban") return renderKanbanPanel();
     return renderChartPanel(p, inSplit);
   };
+  const renderBrandAdminActions = (brand: BrandDetail) => {
+    if (!isAdmin) return null;
+    const busy = brandActionBusyId === brand.id;
+    return (
+      <>
+        <button
+          disabled={busy}
+          onClick={(e) => { e.stopPropagation(); void handleToggleBrandHidden(brand); }}
+          className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+          style={{ border: "1px solid var(--border-subtle)", color: "var(--text-muted)", opacity: busy ? 0.6 : 1 }}
+          aria-label={`${brand.isHidden ? "Unhide" : "Hide"} ${brand.name}`}
+          title={brand.isHidden ? "Unhide brand" : "Hide brand"}
+        >
+          {brand.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+        </button>
+        {/*<button
+          disabled={busy}
+          onClick={(e) => { e.stopPropagation(); void handleRemoveBrand(brand); }}
+          className="w-8 h-8 rounded-[8px] flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+          style={{ border: "1px solid rgba(220, 38, 38, 0.24)", color: "#DC2626", opacity: busy ? 0.6 : 1 }}
+          aria-label={`Remove ${brand.name}`}
+          title="Remove brand"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+          */}
+        </>
+    );
+  };
   const showChartFilters =
     (!customLayout && (view === "bar" || view === "line")) ||
     Boolean(customLayout?.panels.some((panel) => panel === "bar" || panel === "line"));
@@ -761,6 +883,21 @@ export default function BrandsPage() {
             >
               <FileBarChart2 className="w-4 h-4" />
               Report
+            </button>
+          )}
+          {isAdmin && hiddenBrandCount > 0 && (
+            <button
+              onClick={() => setShowHidden((value) => !value)}
+              className="flex items-center transition-all"
+              style={{
+                gap: 6, padding: "8px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                background: showHidden ? "rgba(148, 163, 184, 0.18)" : "var(--bg-surface)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-subtle)", cursor: "pointer",
+              }}
+            >
+              {showHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showHidden ? "Hide hidden" : `Show hidden (${hiddenBrandCount})`}
             </button>
           )}
           <button
@@ -850,6 +987,12 @@ export default function BrandsPage() {
               value={catFilter}
               onChange={setCatFilter}
               options={brandCategories.map((c) => ({ value: c, label: c }))}
+            />
+            <MultiSelectFilter
+              label="Brand Status"
+              value={brandStatusFilter}
+              onChange={setBrandStatusFilter}
+              options={BRAND_STATUS_OPTIONS}
             />
             <Select value={dealFilter} onValueChange={setDealFilter}>
               <SelectTrigger className="w-44 glass-input"><SelectValue placeholder="All Deal Counts" /></SelectTrigger>
@@ -943,7 +1086,7 @@ export default function BrandsPage() {
       {/* ═══ OVERVIEW VIEW — brand cards grid only ═══ */}
       {!customLayout && view === "overview" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: 16, alignItems: "start" }}>
-          {brandDetails.map((brand) => {
+          {filtered.map((brand) => {
             const deals = dealRecords.filter((d) => d.brandId === brand.id && !d.isOneOff);
             const dealCount = deals.length;
             const siteCount = deals.reduce((s, d) => s + (d.storeCount || 0), 0);
@@ -980,9 +1123,13 @@ export default function BrandsPage() {
                       {dealCount} deal{dealCount !== 1 ? "s" : ""} · {siteCount} site{siteCount !== 1 ? "s" : ""}
                     </p>
                   </div>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-[20px] text-[11px] font-semibold uppercase tracking-wide pill-intro-call shrink-0">
-                    {brand.category}
-                  </span>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-[20px] text-[11px] font-semibold uppercase tracking-wide pill-intro-call">
+                      {brand.category}
+                    </span>
+                    <BrandStatusBadge status={brand.status} />
+                    {brand.isHidden && <BrandVisibilityBadge />}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -1028,6 +1175,7 @@ export default function BrandsPage() {
                   >
                     <MapPin className="w-3.5 h-3.5" />
                   </button>
+                  {renderBrandAdminActions(brand)}
                 </div>
 
                 <button
@@ -1080,6 +1228,12 @@ export default function BrandsPage() {
               onChange={setCatFilter}
               options={brandCategories.map((c) => ({ value: c, label: c }))}
             />
+            <MultiSelectFilter
+              label="Brand Status"
+              value={brandStatusFilter}
+              onChange={setBrandStatusFilter}
+              options={BRAND_STATUS_OPTIONS}
+            />
             <Select value={dealFilter} onValueChange={setDealFilter}>
               <SelectTrigger className="w-44 glass-input"><SelectValue placeholder="All Deal Counts" /></SelectTrigger>
               <SelectContent>
@@ -1122,6 +1276,19 @@ export default function BrandsPage() {
             <datalist id="brand-cat-suggestions">
               {baseBrandCategories.map(c => <option key={c} value={c} />)}
             </datalist>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="brand-status">Brand Status</Label>
+            <Select value={form.status} onValueChange={(value) => setForm({ ...form, status: value as BrandStatus })}>
+              <SelectTrigger id="brand-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BRAND_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="brand-link">Franchisor Link</Label>
@@ -1182,10 +1349,10 @@ export default function BrandsPage() {
               label="Brands"
               value={reportBrands}
               onChange={setReportBrands}
-              options={brandDetails.map((b) => ({ value: b.id, label: b.name }))}
+              options={listedBrandDetails.map((b) => ({ value: b.id, label: b.name }))}
             />
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {reportBrands.length === brandDetails.length ? "All brands selected" : `${reportBrands.length} of ${brandDetails.length} selected`}
+              {reportBrands.length === listedBrandDetails.length ? "All brands selected" : `${reportBrands.length} of ${listedBrandDetails.length} selected`}
             </span>
           </div>
 

@@ -12,6 +12,7 @@ import {
   dealRecords,
   emptyDealDocuments,
   normalizeDealStatus,
+  type BrandStatus,
   type DealBrand,
   type DealDocuments,
   type DealNote,
@@ -26,7 +27,19 @@ import {
   type SecondFloor,
   type SpaceRequirement,
 } from "@/data/spaceReqData";
-import { getSitesByDeal, replaceMapDealRuntime, replaceSiteRuntime, type Deal as MapDeal, type DealStage, type Site, type SiteFile, type SiteLoiTerms } from "@/data/mapRuntimeData";
+import {
+  brands as mapBrands,
+  deals as mapDeals,
+  getSitesByDeal,
+  replaceMapDealRuntime,
+  replaceMapRuntimeData,
+  replaceSiteRuntime,
+  type Deal as MapDeal,
+  type DealStage,
+  type Site,
+  type SiteFile,
+  type SiteLoiTerms,
+} from "@/data/mapRuntimeData";
 import type { TakeActionAudience, TakeActionStatus } from "@/domain/entities";
 import { supabaseRequest, type JsonObject } from "@/infrastructure/supabase/client";
 import { notifyRuntimeDataChanged } from "@/application/data/runtimeStore";
@@ -35,6 +48,8 @@ import { sendTakeActionNotification } from "@/lib/takeActionNotifications";
 type BrandRow = {
   id: string;
   name: string;
+  status?: BrandStatus | null;
+  is_hidden?: boolean | null;
   category: string;
   logo_color: string | null;
   corporate_link: string | null;
@@ -218,6 +233,7 @@ type SiteRow = {
 export type BrandMutationInput = {
   name: string;
   category: string;
+  status?: BrandStatus;
   logoColor: string;
   franchisorLink?: string;
   corporateLink?: string;
@@ -401,6 +417,15 @@ async function patchReturning<T>(table: string, id: string, body: JsonObject): P
   return one(rows, table);
 }
 
+async function deleteById(table: string, id: string): Promise<void> {
+  const query = new URLSearchParams({ id: `eq.${id}` });
+  await supabaseRequest<unknown>(`/rest/v1/${table}`, {
+    method: "DELETE",
+    query,
+    accessToken: accessToken(),
+  });
+}
+
 async function deleteDealDocuments(dealId: string, keys: DealDocumentKey[]): Promise<void> {
   if (keys.length === 0) return;
 
@@ -419,6 +444,8 @@ function mapBrand(row: BrandRow): DealBrand {
   return {
     id: row.id,
     name: row.name,
+    status: row.status === "prospect" ? "prospect" : "active",
+    isHidden: Boolean(row.is_hidden),
     category: row.category,
     logoColor: row.logo_color ?? "#E18739",
     corporateLink: row.corporate_link ?? "#",
@@ -677,6 +704,8 @@ function brandBody(input: BrandMutationInput): JsonObject {
   return {
     name: input.name.trim(),
     category: input.category.trim() || "Uncategorized",
+    status: input.status ?? "active",
+    is_hidden: false,
     logo_color: input.logoColor.trim() || "#E18739",
     corporate_link: linkToNull(link) ?? "#",
   };
@@ -874,6 +903,27 @@ export async function createBrand(input: BrandMutationInput): Promise<DealBrand>
   const brand = mapBrand(row);
   upsertBrandRuntime(brand);
   return brand;
+}
+
+export async function setBrandHidden(id: string, isHidden: boolean): Promise<DealBrand> {
+  const row = await patchReturning<BrandRow>("brands", id, { is_hidden: isHidden });
+  const brand = mapBrand(row);
+  upsertBrandRuntime(brand);
+  return brand;
+}
+
+export async function removeBrand(id: string): Promise<void> {
+  await deleteById("brands", id);
+  const removedDealIds = new Set(dealRecords.filter((record) => record.brandId === id).map((record) => record.id));
+  dealBrands.splice(0, dealBrands.length, ...dealBrands.filter((brand) => brand.id !== id));
+  dealRecords.splice(0, dealRecords.length, ...dealRecords.filter((record) => record.brandId !== id));
+  spaceRequirements.splice(0, spaceRequirements.length, ...spaceRequirements.filter((record) => record.brandId !== id));
+  replaceMapRuntimeData({
+    brands: mapBrands.filter((brand) => brand.id !== id),
+    deals: mapDeals.filter((deal) => !removedDealIds.has(deal.id) && deal.brandId !== id),
+  });
+  rebuildBrandRuntimeData();
+  notifyRuntimeDataChanged();
 }
 
 export async function createProspect(input: ProspectMutationInput): Promise<BizDevRecord> {

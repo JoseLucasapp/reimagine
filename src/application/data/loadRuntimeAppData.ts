@@ -6,6 +6,7 @@ import {
   emptyDealDocuments,
   normalizeDealStatus,
   replaceDealRuntimeData,
+  type BrandStatus,
   type DealBrand,
   type DealDocuments,
   type DealNote,
@@ -30,6 +31,8 @@ type RuntimeLoadOptions = {
 type BrandRow = {
   id: string;
   name: string;
+  status?: BrandStatus | null;
+  is_hidden?: boolean | null;
   category: string;
   logo_color: string | null;
   corporate_link: string | null;
@@ -235,6 +238,8 @@ function mapBrand(row: BrandRow): DealBrand {
   return {
     id: row.id,
     name: row.name,
+    status: row.status === "prospect" ? "prospect" : "active",
+    isHidden: Boolean(row.is_hidden),
     category: row.category,
     logoColor: row.logo_color ?? "#E18739",
     corporateLink: row.corporate_link ?? "#",
@@ -560,9 +565,12 @@ export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLo
     readTable<DealDocumentRow>("deal_documents", accessToken),
   ]);
 
+  const visibleBrandRows = currentUser?.role === "admin" ? brandRows : brandRows.filter((row) => !row.is_hidden);
+  const visibleBrandIds = new Set(visibleBrandRows.map((row) => row.id));
+  const visibleDealRows = dealRows.filter((row) => visibleBrandIds.has(row.brand_id));
   const shouldScopeCoreData = Boolean(currentUser && currentUser.role !== "broker");
-  const scopedDealRows = shouldScopeCoreData ? getVisibleDealsForUser(currentUser, dealRows) : dealRows;
-  const scopedBrandRows = shouldScopeCoreData ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows) : brandRows;
+  const scopedDealRows = shouldScopeCoreData ? getVisibleDealsForUser(currentUser, visibleDealRows) : visibleDealRows;
+  const scopedBrandRows = shouldScopeCoreData ? getVisibleBrandsForUser(currentUser, visibleBrandRows, scopedDealRows) : visibleBrandRows;
   const visibleDealIds = new Set(scopedDealRows.map((row) => row.id));
   const scopedNoteRows = noteRows.filter((row) => visibleDealIds.has(row.deal_id));
   const scopedDocumentRows = documentRows.filter((row) => visibleDealIds.has(row.deal_id));

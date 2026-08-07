@@ -5,6 +5,9 @@
 alter table public.profiles
   add column if not exists broker_name text;
 
+alter table public.brands
+  add column if not exists is_hidden boolean not null default false;
+
 create or replace function public.normalize_user_role(value text)
 returns public.user_role
 language sql
@@ -37,6 +40,12 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role()::text = 'admin' then true
+    when exists (
+      select 1
+      from public.brands b
+      where b.id = brand_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role()::text = 'broker' then true
     when public.current_user_role()::text = 'brand' then brand_uuid = public.current_profile_brand_id()
     when public.current_user_role()::text = 'deal' then exists (
@@ -57,6 +66,13 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role()::text = 'admin' then true
+    when exists (
+      select 1
+      from public.deals d
+      join public.brands b on b.id = d.brand_id
+      where d.id = deal_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role()::text = 'broker' then true
     when public.current_user_role()::text = 'brand' then exists (
       select 1 from public.deals d
@@ -78,6 +94,22 @@ using (
   or lower(coalesce(email, '')) like '%@reimaginecre.com'
 );
 
+alter table public.brands
+  add column if not exists status text not null default 'active';
+
+alter table public.brands
+  add column if not exists is_hidden boolean not null default false;
+
+alter table public.brands
+  drop constraint if exists brands_status_check;
+
+alter table public.brands
+  add constraint brands_status_check
+  check (status in ('active', 'prospect'));
+
+create index if not exists brands_is_hidden_idx
+  on public.brands (is_hidden);
+
 -- Keep The NOW Massage and IMAGE Studios available for import testing.
 delete from public.brands b
 where lower(trim(b.name)) in (
@@ -94,23 +126,41 @@ or (
 
 update public.brands
 set name = 'Demo – Flex/Retail',
+    status = 'prospect',
     updated_at = now()
 where lower(trim(name)) = 'united defense tactical';
 
 update public.brands
 set name = 'Demo – Retail/Med Office/Office',
+    status = 'prospect',
     updated_at = now()
 where lower(trim(name)) in ('gameday', 'game day');
 
 update public.brands
 set name = 'Demo – Med Office',
+    status = 'prospect',
     updated_at = now()
 where lower(trim(name)) = 'nora';
 
 update public.brands
 set name = 'Demo – Small Retail',
+    status = 'prospect',
     updated_at = now()
 where lower(trim(name)) = 'sit still';
+
+update public.brands
+set status = 'prospect',
+    updated_at = now()
+where lower(trim(name)) in (
+  'demo - flex/retail',
+  'demo – flex/retail',
+  'demo - retail/med office/office',
+  'demo – retail/med office/office',
+  'demo - med office',
+  'demo – med office',
+  'demo - small retail',
+  'demo – small retail'
+);
 
 -- Brand/franchisor test login.
 update public.profiles p

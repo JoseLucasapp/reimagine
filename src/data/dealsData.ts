@@ -90,6 +90,8 @@ export interface DealRecord {
 export interface DealBrand {
   id: string;
   name: string;
+  status: BrandStatus;
+  isHidden: boolean;
   logoColor: string;
   category: string;
   corporateLink: string;
@@ -100,6 +102,8 @@ export interface DealBrand {
   sourceSheet?: string | null;
   sourceRow?: number | null;
 }
+
+export type BrandStatus = "active" | "prospect";
 
 export const emptyDealDocuments: DealDocuments = {
   engagementLetter: null,
@@ -129,6 +133,21 @@ export function getDealRecordById(id: string): DealRecord | undefined {
   return dealRecords.find((d) => d.id === id);
 }
 
+export function getBrandStatus(brandId: string): BrandStatus {
+  return getDealBrandById(brandId)?.status ?? "active";
+}
+
+export function isProspectBrand(brandId: string): boolean {
+  return getBrandStatus(brandId) === "prospect";
+}
+
+// Prospect/demo brands are static samples, so their stage counters should not keep aging every day.
+const PROSPECT_COUNTER_REFERENCE_MS = new Date("2026-07-13T12:00:00.000Z").getTime();
+
+export function dealTimingReferenceMs(deal: DealRecord): number {
+  return isProspectBrand(deal.brandId) ? PROSPECT_COUNTER_REFERENCE_MS : Date.now();
+}
+
 export function getDealRecordsByBrand(brandId: string): DealRecord[] {
   return dealRecords.filter((d) => d.brandId === brandId);
 }
@@ -149,7 +168,7 @@ export function daysToSign(d: DealRecord): number | null {
 
 export function daysActive(d: DealRecord): number {
   const start = d.dateIntroCall ? new Date(d.dateIntroCall) : new Date();
-  return Math.round((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, Math.round((dealTimingReferenceMs(d) - start.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 export const dealStatusColors: Record<DealStatusNew, { bg: string; text: string; dot: string }> = {

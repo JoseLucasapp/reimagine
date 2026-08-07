@@ -5,6 +5,9 @@
 alter table public.profiles
   add column if not exists email text;
 
+alter table public.brands
+  add column if not exists is_hidden boolean not null default false;
+
 create unique index if not exists profiles_email_unique_idx
   on public.profiles (lower(email))
   where email is not null;
@@ -113,6 +116,12 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when exists (
+      select 1
+      from public.brands b
+      where b.id = brand_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role() = 'brand' then brand_uuid = public.current_profile_brand_id()
     when public.current_user_role() = 'deal' then exists (
       select 1 from public.deals d
@@ -132,6 +141,13 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when exists (
+      select 1
+      from public.deals d
+      join public.brands b on b.id = d.brand_id
+      where d.id = deal_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role() = 'brand' then exists (
       select 1 from public.deals d
       where d.id = deal_uuid

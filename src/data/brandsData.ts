@@ -1,8 +1,10 @@
-import { dealBrands, dealRecords } from "./dealsData";
+import { dealBrands, dealRecords, type BrandStatus } from "./dealsData";
 
 export interface BrandDetail {
   id: string;
   name: string;
+  status: BrandStatus;
+  isHidden: boolean;
   logoColor: string;
   category: string;
   activeDeals: number;
@@ -37,6 +39,8 @@ export function rebuildBrandRuntimeData(): void {
     return {
       id: b.id,
       name: b.name,
+      status: b.status,
+      isHidden: b.isHidden,
       logoColor: b.logoColor,
       category: b.category,
       activeDeals: deals.filter((d) => d.status !== "Signed").length,

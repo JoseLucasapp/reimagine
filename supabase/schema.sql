@@ -83,6 +83,8 @@ create table public.brands (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   category text not null,
+  status text not null default 'active' check (status in ('active', 'prospect')),
+  is_hidden boolean not null default false,
   logo_color text not null default '#E18739',
   corporate_link text not null default '#',
   created_at timestamptz not null default now(),
@@ -308,6 +310,7 @@ create table public.ai_feedback (
 );
 
 create index brands_name_idx on public.brands (name);
+create index brands_is_hidden_idx on public.brands (is_hidden);
 create index profiles_role_idx on public.profiles (role);
 create index profiles_brand_id_idx on public.profiles (brand_id);
 create index profiles_deal_id_idx on public.profiles (deal_id);
@@ -483,6 +486,11 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when exists (
+      select 1 from public.brands b
+      where b.id = brand_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role() = 'broker' then exists (
       select 1
       from public.deals d,
@@ -509,6 +517,13 @@ as $$
   select case
     when auth.role() <> 'authenticated' then false
     when public.current_user_role() = 'admin' then true
+    when exists (
+      select 1
+      from public.deals d
+      join public.brands b on b.id = d.brand_id
+      where d.id = deal_uuid
+        and b.is_hidden
+    ) then false
     when public.current_user_role() = 'broker' then exists (
       select 1
       from public.deals d,

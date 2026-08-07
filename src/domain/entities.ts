@@ -13,10 +13,13 @@ export type DealStage =
 
 export type TakeActionAudience = "internal" | "franchisor" | "franchisee";
 export type TakeActionStatus = "open" | "in_progress" | "resolved" | "archived";
+export type BrandStatus = "active" | "prospect";
 
 export type Brand = {
   id: string;
   name: string;
+  status: BrandStatus;
+  isHidden: boolean;
   category: string;
   logoColor: string;
   corporateLink: string;

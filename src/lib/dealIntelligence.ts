@@ -1,6 +1,6 @@
 // ===== DEAL INTELLIGENCE — Pure frontend AI-like features =====
 
-import { DealRecord, DealStatusNew, dealRecords, getDealBrandById } from "@/data/dealsData";
+import { DealRecord, DealStatusNew, dealRecords, dealTimingReferenceMs, getDealBrandById } from "@/data/dealsData";
 
 // ===== 1. DEAL HEALTH SCORE =====
 
@@ -21,16 +21,17 @@ const STAGE_BENCHMARKS: Record<DealStatusNew, number> = {
   "On Hold": 999,
 };
 
-function daysSince(dateStr: string): number {
-  return Math.max(0, Math.round((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)));
+function daysSince(dateStr: string, referenceMs = Date.now()): number {
+  return Math.max(0, Math.round((referenceMs - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 export function calculateDealHealth(deal: DealRecord): DealHealthResult {
   let score = 100;
   const reasons: string[] = [];
+  const referenceMs = dealTimingReferenceMs(deal);
 
   const lastNoteDate = deal.notes[0]?.date;
-  const lastUpdatedDays = lastNoteDate ? daysSince(lastNoteDate) : 999;
+  const lastUpdatedDays = lastNoteDate ? daysSince(lastNoteDate, referenceMs) : 999;
 
   if (lastUpdatedDays <= 7) {
     score += 10;
@@ -58,7 +59,7 @@ export function calculateDealHealth(deal: DealRecord): DealHealthResult {
   }
 
   if (deal.status === "LOI Negotiations" && deal.dateIntroCall) {
-    const daysInPipeline = daysSince(deal.dateIntroCall);
+    const daysInPipeline = daysSince(deal.dateIntroCall, referenceMs);
     if (daysInPipeline > 30) {
       score -= 10;
       reasons.push("In LOI Negotiations stage for 30+ days");
@@ -66,7 +67,7 @@ export function calculateDealHealth(deal: DealRecord): DealHealthResult {
   }
 
   if (deal.status === "Lease Negotiations" && deal.dateIntroCall) {
-    const daysInPipeline = daysSince(deal.dateIntroCall);
+    const daysInPipeline = daysSince(deal.dateIntroCall, referenceMs);
     if (daysInPipeline > 45) {
       score -= 10;
       reasons.push("In Lease Negotiations stage for 45+ days");
@@ -354,8 +355,9 @@ export function getDealNudges(): DealNudgeItem[] {
 
 export function getTimeInStage(deal: DealRecord): number {
   const lastNote = deal.notes[0];
-  if (!lastNote) return deal.dateIntroCall ? daysSince(deal.dateIntroCall) : 0;
-  return daysSince(lastNote.date);
+  const referenceMs = dealTimingReferenceMs(deal);
+  if (!lastNote) return deal.dateIntroCall ? daysSince(deal.dateIntroCall, referenceMs) : 0;
+  return daysSince(lastNote.date, referenceMs);
 }
 
 export function getStageBenchmark(status: DealStatusNew): number {
