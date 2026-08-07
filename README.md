@@ -1,5 +1,4 @@
 # Reimagine IQ Portal
-
 Commercial real estate SaaS portal for Reimagine CRE. The application replaces the spreadsheet-based workflow with a typed React/TypeScript portal for Dashboard, Brands, Deals, Prospects/BizDev, Tour Book generation, role-based access and Take Action flows.
 
 The visual implementation keeps the uploaded Lovable/prototype UI as the source of truth and adds production-oriented engineering around it: strict TypeScript, linting, tests, Supabase persistence, clean domain/application/infrastructure boundaries and verification scripts.
