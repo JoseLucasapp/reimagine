@@ -29,7 +29,7 @@ const glassCard: React.CSSProperties = {
   overflow: "hidden",
 };
 const EMPTY_ACTION_ITEMS: BrandActionItem[] = [];
-type BrandLayoutPanel = "list" | "kanban" | "bar" | "line";
+type BrandLayoutPanel = "list" | "kanban" | "bar" | "line" | "map";
 type BrandLayoutOption =
   | { id: string; label: string; panels: [BrandLayoutPanel] }
   | { id: string; label: string; panels: [BrandLayoutPanel, BrandLayoutPanel] };
@@ -39,6 +39,7 @@ const BRAND_LAYOUT_OPTIONS: BrandLayoutOption[] = [
   { id: "bar", label: "Bar Chart only", panels: ["bar"] },
   { id: "line", label: "Line Chart only", panels: ["line"] },
   { id: "kanban", label: "Kanban only", panels: ["kanban"] },
+  { id: "map", label: "Map only", panels: ["map"] },
   { id: "list+bar", label: "List + Bar Chart", panels: ["list", "bar"] },
   { id: "list+line", label: "List + Line Chart", panels: ["list", "line"] },
   { id: "kanban+bar", label: "Kanban + Bar Chart", panels: ["kanban", "bar"] },
@@ -105,9 +106,11 @@ export default function BrandDeals() {
   const takeActionLabel = role === "deal" ? "Request from Reimagine" : "Take Action";
   const selectedLayoutPanels = customLayout?.panels ?? null;
   const showMetrics = !selectedLayoutPanels || selectedLayoutPanels.some((panel) => panel === "bar" || panel === "line");
-  const showDeals = !selectedLayoutPanels || selectedLayoutPanels.some((panel) => panel === "list" || panel === "kanban");
+  const showDeals = !selectedLayoutPanels || selectedLayoutPanels.some((panel) => panel === "list" || panel === "kanban" || panel === "map");
   const forcedDealView = selectedLayoutPanels
-    ? selectedLayoutPanels.includes("kanban") && !selectedLayoutPanels.includes("list")
+    ? selectedLayoutPanels.includes("map") && !selectedLayoutPanels.includes("list") && !selectedLayoutPanels.includes("kanban")
+      ? "map"
+      : selectedLayoutPanels.includes("kanban") && !selectedLayoutPanels.includes("list")
       ? "kanban"
       : "table"
     : undefined;
@@ -348,6 +351,7 @@ function BrandLayoutDialog({
             {options.map((option) => {
               const isActive = pendingLayoutId === option.id;
               const split = option.panels.length === 2;
+              const secondaryPanel = option.panels[1];
               return (
                 <button
                   key={option.id}
@@ -399,7 +403,9 @@ function BrandLayoutDialog({
                     {split ? (
                       <>
                         <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[0]) }} />
-                        <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[1]) }} />
+                        {secondaryPanel && (
+                          <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(secondaryPanel) }} />
+                        )}
                       </>
                     ) : (
                       <div style={{ flex: 1, borderRadius: 4, background: brandLayoutPanelTone(option.panels[0]) }} />
@@ -451,6 +457,7 @@ function brandLayoutPanelTone(panel: BrandLayoutPanel): string {
     case "kanban": return "rgba(36,60,81,0.40)";
     case "bar": return "rgba(225,135,57,0.65)";
     case "line": return "rgba(225,135,57,0.45)";
+    case "map": return "rgba(30,91,168,0.50)";
   }
 }
 

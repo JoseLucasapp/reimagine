@@ -504,7 +504,7 @@ function applySecondaryRuntimeData(
   currentUser?: SessionProfile | null,
 ): void {
   const visibleDealIds = new Set(dealRecords.map((deal) => deal.id));
-  const scopedProspectRows = currentUser?.role === "admin" ? prospectRows : [];
+  const scopedProspectRows = currentUser?.role === "admin" || currentUser?.role === "broker" ? prospectRows : [];
   const scopedSiteRows = siteRows.filter((row) => visibleDealIds.has(row.deal_id));
   const scopedSpaceRows = currentUser
     ? spaceRows.filter((row) => canAccessBrand(currentUser, row.brand_id))
@@ -560,8 +560,9 @@ export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLo
     readTable<DealDocumentRow>("deal_documents", accessToken),
   ]);
 
-  const scopedDealRows = currentUser ? getVisibleDealsForUser(currentUser, dealRows) : dealRows;
-  const scopedBrandRows = currentUser ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows) : brandRows;
+  const shouldScopeCoreData = Boolean(currentUser && currentUser.role !== "broker");
+  const scopedDealRows = shouldScopeCoreData ? getVisibleDealsForUser(currentUser, dealRows) : dealRows;
+  const scopedBrandRows = shouldScopeCoreData ? getVisibleBrandsForUser(currentUser, brandRows, scopedDealRows) : brandRows;
   const visibleDealIds = new Set(scopedDealRows.map((row) => row.id));
   const scopedNoteRows = noteRows.filter((row) => visibleDealIds.has(row.deal_id));
   const scopedDocumentRows = documentRows.filter((row) => visibleDealIds.has(row.deal_id));

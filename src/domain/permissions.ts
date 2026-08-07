@@ -32,7 +32,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
   admin: ["/", "/brand", "/deal", "/brands", "/bizdev", "/deals", "/mapiq", "/action-items", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
-  broker: ["/", "/deals", "/settings", "/tour-book-generator"],
+  broker: ["/", "/brand", "/brands", "/bizdev", "/deals", "/action-items", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
   brand: ["/", "/brand", "/deals", "/action-items", "/space-requirements", "/settings", "/tour-book-generator"],
   deal: ["/", "/deal", "/action-items", "/settings", "/tour-book-generator"],
 };
@@ -89,7 +89,7 @@ export function canAccessBrand(userOrRole: ScopedUser | UserRole | null | undefi
   if (user.role === "admin") return true;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return true;
   if (user.role === "brand") return user.brandId === brandId;
-  if (user.role === "broker") return false;
+  if (user.role === "broker") return true;
   return user.brandId === brandId;
 }
 
@@ -98,7 +98,7 @@ export function canAccessDeal(userOrRole: ScopedUser | UserRole | null | undefin
   const user = asUser(userOrRole);
   if (user.role === "admin") return true;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return true;
-  if (user.role === "broker") return brokerMatchesDeal(user, deal);
+  if (user.role === "broker") return true;
   if (user.role === "brand") return Boolean(user.brandId && dealBrandId(deal) === user.brandId);
   return Boolean(user.dealId && deal.id === user.dealId);
 }
@@ -153,8 +153,13 @@ export function canSeeRoute(userOrRole: ScopedUser | UserRole, path: string): bo
   return ROLE_ROUTES[user.role].some((route) => path === route || (route !== "/" && path.startsWith(`${route}/`)));
 }
 
+function isReimagineCreEmail(email: string | null | undefined): boolean {
+  return (email ?? "").trim().toLowerCase().endsWith("@reimaginecre.com");
+}
+
 export function canViewBrokerFiles(userOrRole: ScopedUser | UserRole): boolean {
-  return asUser(userOrRole).role === "admin";
+  const user = asUser(userOrRole);
+  return user.role === "admin" || isReimagineCreEmail(user.email);
 }
 
 export function canViewFinancials(userOrRole: ScopedUser | UserRole): boolean {

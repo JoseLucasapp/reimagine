@@ -19,12 +19,11 @@ export function BrokerFilesCard({ deal }: { deal: DealRecord }) {
         }}>Reimagine Only</span>
       </div>
 
-      {/* Content with blur overlay */}
       <div className="relative" style={{ borderRadius: 12 }}>
         <div className="flex flex-col gap-2">
           {[
-            { label: "Co-Broker", value: deal.cobroker || "Tom Harris" },
-            { label: "Co-Broker %", value: deal.cobrokerPercent || "25%" },
+            { label: "Co-Broker", value: deal.cobroker || "—" },
+            { label: "Co-Broker %", value: deal.cobrokerPercent || "—" },
             { label: "Estimated Total", value: `$${deal.estimatedCommission.toLocaleString()}` },
           ].map(item => (
             <div key={item.label} className="flex items-center justify-between" style={{ padding: "4px 0" }}>
@@ -32,15 +31,6 @@ export function BrokerFilesCard({ deal }: { deal: DealRecord }) {
               <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{item.value}</span>
             </div>
           ))}
-        </div>
-
-        {/* Frosted overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{
-          borderRadius: 12, background: "hsl(var(--background))",
-          gap: 8,
-        }}>
-          <Lock className="w-6 h-6" style={{ color: "var(--text-muted)" }} />
-          <span style={{ fontSize: 14, color: "var(--text-muted)" }}>Visible to Reimagine team only</span>
         </div>
       </div>
     </div>

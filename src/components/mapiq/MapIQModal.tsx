@@ -9,6 +9,7 @@ type MapIQModalProps = {
   dealId?: string;
   dealIds?: string[];
   brandId?: string;
+  enableAdvancedTools?: boolean;
 };
 
 export function MapIQModal({
@@ -19,6 +20,7 @@ export function MapIQModal({
   dealId,
   dealIds,
   brandId,
+  enableAdvancedTools = false,
 }: MapIQModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -48,7 +50,7 @@ export function MapIQModal({
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           <MapView
             embedded
-            enableAdvancedTools
+            enableAdvancedTools={enableAdvancedTools}
             requestedDealId={dealId}
             requestedDealIds={dealIds}
             requestedBrandId={brandId}

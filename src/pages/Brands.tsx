@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ArrowRight, BarChart3, LayoutList, Columns3, Building2, Handshake, CheckCircle2, Plus, FileBarChart2, CalendarIcon, ChevronDown, LayoutGrid, Check, Link as LinkIcon, ExternalLink, MapPin } from "lucide-react";
+import { Search, ArrowRight, BarChart3, LayoutList, Columns3, Building2, Handshake, CheckCircle2, Plus, FileBarChart2, CalendarIcon, ChevronDown, Check, Link as LinkIcon, ExternalLink, MapPin } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from "recharts";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DEAL_STATUS_ORDER } from "@/data/dealsData";
@@ -186,10 +186,6 @@ export default function BrandsPage() {
   const [layoutPickerOpen, setLayoutPickerOpen] = useState(false);
   const [pendingLayoutId, setPendingLayoutId] = useState<string>("list");
 
-  const openLayoutPicker = () => {
-    setPendingLayoutId(customLayout?.id ?? "list");
-    setLayoutPickerOpen(true);
-  };
   const applyLayout = () => {
     const next = LAYOUT_OPTIONS.find((l) => l.id === pendingLayoutId) ?? LAYOUT_OPTIONS[0];
     setCustomLayout(next);
@@ -767,23 +763,6 @@ export default function BrandsPage() {
               Report
             </button>
           )}
-          <button
-            onClick={openLayoutPicker}
-            className="flex items-center transition-all"
-            style={{
-              gap: 8, padding: "8px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-              background: customLayout ? "var(--view-toggle-active-bg)" : "var(--bg-surface)",
-              color: customLayout ? "var(--view-toggle-active-color)" : "var(--text-primary)",
-              border: customLayout ? "none" : "1px solid var(--border-subtle)",
-              cursor: "pointer",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
-            onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Change Layout
-          </button>
-
           <button
             onClick={() => setDrawerOpen(true)}
             className="flex items-center transition-all"

@@ -57,7 +57,7 @@ interface DealsPageProps {
   brandFilter?: string;
   isOneOff?: boolean;
   onAddDeal?: () => void;
-  forcedView?: Exclude<ViewMode, "map">;
+  forcedView?: ViewMode;
   hideViewToggle?: boolean;
 }
 
@@ -100,7 +100,7 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal, forcedView
 
   const baseDeals = useMemo(() => {
     void runtimeDataVersion;
-    let d = getVisibleDealsForUser(user ?? role, dealRecords);
+    let d = role === "broker" ? dealRecords : getVisibleDealsForUser(user ?? role, dealRecords);
     if (isOneOff) d = d.filter((x) => x.isOneOff);
     else if (brandFilter) d = d.filter((x) => x.brandId === brandFilter && !x.isOneOff);
     else d = d.filter((x) => !x.isOneOff);
@@ -236,7 +236,10 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal, forcedView
                   <DealStatusBadge status={col} />
                   <span className="text-xs font-semibold" style={{ color: "#94a3b8" }}>{cards.length}</span>
                 </div>
-                <div className="space-y-2.5">
+                <div
+                  className="space-y-2.5 overflow-y-auto pr-1"
+                  style={cards.length > 8 ? { maxHeight: 720 } : undefined}
+                >
                   {cards.map((deal) => {
                     const brand = getDealBrandById(deal.brandId);
                     return (
@@ -292,13 +295,16 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal, forcedView
         </div>
       )}
 
+      {effectiveView === "map" && <DealsMapPanel deals={filtered} navigate={navigate} />}
+
       <MapIQModal
         open={mapModalOpen}
         onOpenChange={setMapModalOpen}
         title={brandFilter ? "Brand Deals MapIQ" : "Deals MapIQ"}
-        description="Advanced MapIQ tools scoped to your visible deals."
+        description={role === "admin" ? "Advanced MapIQ tools scoped to your visible deals." : "MapIQ tools scoped to your visible deals."}
         dealIds={filteredDealIds}
         brandId={brandFilter}
+        enableAdvancedTools={role === "admin"}
       />
 
       {/* Add/Edit Drawer */}

@@ -203,52 +203,66 @@ function UserProfileMenu({
   };
 
   return (
-    <div ref={ref} className="relative flex items-center gap-[8px]">
+    <div ref={ref} className="relative flex items-center" style={{ zIndex: 220 }}>
       <button
         type="button"
         aria-label="User menu"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center justify-center"
+        className="flex items-center transition-colors"
         style={{
-          width: compact ? 28 : 32,
-          height: compact ? 28 : 32,
-          borderRadius: compact ? "50%" : 8,
-          background: compact ? "rgba(36,60,81,0.08)" : "var(--bg-card)",
-          backdropFilter: compact ? undefined : "blur(12px)",
-          border: compact ? "none" : "1px solid var(--border-subtle)",
-          boxShadow: compact ? undefined : "0 1px 4px rgba(36,60,81,0.06)",
-          color: "var(--text-tertiary)",
-          fontSize: 12,
-          fontWeight: 700,
+          gap: 8,
+          minHeight: compact ? 28 : 40,
+          maxWidth: compact ? 32 : 260,
+          borderRadius: compact ? "50%" : 10,
+          background: "transparent",
+          border: "none",
+          padding: compact ? 0 : "4px 6px",
+          cursor: "pointer",
+          textAlign: "left",
         }}
       >
-        {compact ? initial : <User className="w-4 h-4" />}
-      </button>
+        <span
+          className="flex shrink-0 items-center justify-center"
+          style={{
+            width: compact ? 28 : 32,
+            height: compact ? 28 : 32,
+            borderRadius: compact ? "50%" : 8,
+            background: compact ? "rgba(36,60,81,0.08)" : "var(--bg-card)",
+            backdropFilter: compact ? undefined : "blur(12px)",
+            border: compact ? "none" : "1px solid var(--border-subtle)",
+            boxShadow: compact ? undefined : "0 1px 4px rgba(36,60,81,0.06)",
+            color: "var(--text-tertiary)",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {compact ? initial : <User className="w-4 h-4" />}
+        </span>
 
-      {!compact && (
-        <div className="flex flex-col">
-          <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{displayName}</p>
-          <p className="text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>{displayEmail}</p>
-        </div>
-      )}
+        {!compact && (
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-[12px] font-semibold" style={{ color: "var(--text-primary)", lineHeight: 1.4 }}>{displayName}</span>
+            <span className="truncate text-[12px]" style={{ color: "var(--text-muted)", lineHeight: 1.4 }}>{displayEmail}</span>
+          </span>
+        )}
+      </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute z-50"
+          className="absolute"
           style={{
-            left: 0,
-            top: compact ? "calc(100% + 12px)" : "calc(100% + 14px)",
-            width: compact ? 220 : "100%",
-            minWidth: compact ? 220 : 210,
-            maxWidth: compact ? 220 : 260,
+            right: 0,
+            top: compact ? "calc(100% + 12px)" : "calc(100% + 10px)",
+            width: compact ? 220 : 250,
             background: "var(--bg-surface)",
             border: "1px solid var(--border-subtle)",
             borderRadius: 14,
-            boxShadow: "0 12px 34px rgba(0,0,0,0.22)",
+            boxShadow: "0 18px 42px rgba(0,0,0,0.30)",
             padding: 10,
+            zIndex: 1000,
           }}
         >
           <button
@@ -306,6 +320,7 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
           WebkitBackdropFilter: "blur(20px) saturate(160%)",
           borderBottom: "0.56px solid var(--border-header)",
           transition: "background 0.30s ease",
+          zIndex: 120,
         }}
       >
         {/* Search overlay */}
@@ -365,6 +380,7 @@ export function HeaderBar({ onMobileMenuToggle }: HeaderBarProps) {
         WebkitBackdropFilter: "blur(20px) saturate(160%)",
         borderBottom: "0.56px solid var(--border-header)",
         transition: "background 0.30s ease",
+        zIndex: 120,
       }}
     >
       <nav className="flex items-center gap-[8px] text-[12px] min-w-0">

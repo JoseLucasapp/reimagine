@@ -3,7 +3,7 @@ import { FileText, Check, Building2, Lock, X } from "lucide-react";
 import { DealRecord, daysToSign } from "@/data/dealsData";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BrokerFilesCard } from "@/components/deal/BrokerFilesCard";
-import { useUserRole, isAdminRole } from "@/hooks/useUserRole";
+import { canViewBrokerFiles as canViewBrokerFilesForUser, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
 
 interface DealSummaryTabProps {
@@ -23,7 +23,8 @@ function fileNameFromUrl(value: string): string {
 export function DealSummaryTab({ deal }: DealSummaryTabProps) {
   const [showBrokerFiles, setShowBrokerFiles] = useState(false);
   const role = useUserRole();
-  const canViewBrokerFiles = isAdminRole(role);
+  const user = useScopedUser();
+  const canViewBrokerFiles = canViewBrokerFilesForUser(user ?? role);
   const isSigned = deal.status === "Signed";
   const days = daysToSign(deal);
   const sites = getSitesByDeal(deal.id);

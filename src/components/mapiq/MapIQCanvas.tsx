@@ -198,7 +198,7 @@ function formatMetricPercent(value: number | null | undefined): string {
 }
 
 function sumMetric(values: Array<number | null | undefined>): number | null {
-  const total = values.reduce((sum, value) => sum + (isFiniteMetric(value) ? value : 0), 0);
+  const total = values.reduce<number>((sum, value) => sum + (isFiniteMetric(value) ? value : 0), 0);
   return total > 0 ? total : null;
 }
 
@@ -1031,9 +1031,6 @@ export function MapIQCanvas(props: MapIQProps) {
       el.appendChild(label);
 
       if (pin.kind !== "context") {
-        const pulse = document.createElement("div");
-        pulse.className = "mapiq-pin-pulse";
-        el.appendChild(pulse);
         shell.addEventListener("click", (e) => {
           e.stopPropagation();
           setSelectedId(pin.id);

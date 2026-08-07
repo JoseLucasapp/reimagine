@@ -828,9 +828,8 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
   };
   const effectiveMarketStudyUrl = cleanUrl(deal.marketStudyLink);
   const userMapUrl = cleanUrl(deal.mapLink);
-  const internalDealMapUrl = `/map?deal=${encodeURIComponent(deal.id)}`;
-  const effectiveMapUrl =
-    userMapUrl?.startsWith("/map") ? userMapUrl : internalDealMapUrl;
+  const internalDealMapUrl = role === "deal" ? undefined : `/map?deal=${encodeURIComponent(deal.id)}`;
+  const effectiveMapUrl = userMapUrl ?? internalDealMapUrl;
 
   const tourBookUrl = cleanUrl(deal.tourBookLink) ?? `/tour-book-generator?deal=${deal.id}`;
 
@@ -977,7 +976,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                   opacity: link.url ? 1 : 0.5,
                 };
                 const isInternalLink = Boolean(link.url?.startsWith("/"));
-                const opensMapModal = link.key === "map";
+                const opensMapModal = link.key === "map" && Boolean(link.url?.startsWith("/map"));
                 const trigger = link.url ? (
                   opensMapModal ? (
                     <button
@@ -1064,8 +1063,9 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
         open={mapModalOpen}
         onOpenChange={setMapModalOpen}
         title={`${dealDisplayName} MapIQ`}
-        description="Advanced MapIQ tools scoped to this deal."
+        description={role === "admin" ? "Advanced MapIQ tools scoped to this deal." : "MapIQ tools scoped to this deal."}
         dealId={deal.id}
+        enableAdvancedTools={role === "admin"}
       />
 
       {/* ═══ PROJECT DETAILS TAB ═══ */}
@@ -1393,7 +1393,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
       )}
 
       {/* ═══ TOP SITES TAB ═══ */}
-      {activeTab === "topsites" && <TopSitesTab deal={deal} onOpenMap={() => setMapModalOpen(true)} />}
+      {activeTab === "topsites" && <TopSitesTab deal={deal} onOpenMap={role === "deal" ? undefined : () => setMapModalOpen(true)} />}
 
       {/* ═══ LOI COMPARISON TAB ═══ */}
       {activeTab === "loi" && <LOIComparisonTab deal={deal} />}

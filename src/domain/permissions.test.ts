@@ -64,13 +64,14 @@ describe("role permissions", () => {
     expect(roleToHomeRoute("deal")).toBe("/deal");
   });
 
-  it("limits broker users to their assigned broker deals", () => {
+  it("gives broker users internal routes while keeping an assigned-deal helper for dashboards", () => {
+    expect(canSeeRoute("broker", "/")).toBe(true);
     expect(canSeeRoute("broker", "/deals")).toBe(true);
     expect(canSeeRoute("broker", "/map")).toBe(false);
     expect(canSeeRoute("broker", "/mapiq")).toBe(false);
-    expect(canSeeRoute("broker", "/action-items")).toBe(false);
-    expect(canSeeRoute("broker", "/brands")).toBe(false);
-    expect(canSeeRoute("broker", "/bizdev")).toBe(false);
+    expect(canSeeRoute("broker", "/action-items")).toBe(true);
+    expect(canSeeRoute("broker", "/brands")).toBe(true);
+    expect(canSeeRoute("broker", "/bizdev")).toBe(true);
     expect(roleToHomeRoute("broker")).toBe("/deals");
     expect(getVisibleDealsForUser(brokerUser, deals).map((deal) => deal.id)).toEqual(["deal-1", "deal-3"]);
   });
@@ -105,7 +106,7 @@ describe("role permissions", () => {
     expect(canAccessBrand(brandUser, "brand-1")).toBe(true);
     expect(canAccessBrand(brandUser, "brand-2")).toBe(false);
     expect(canAccessDeal(brokerUser, deals[0])).toBe(true);
-    expect(canAccessDeal(brokerUser, deals[1])).toBe(false);
+    expect(canAccessDeal(brokerUser, deals[1])).toBe(true);
     expect(canAccessDeal(dealUser, deals[1])).toBe(true);
     expect(canAccessDeal(dealUser, deals[0])).toBe(false);
   });

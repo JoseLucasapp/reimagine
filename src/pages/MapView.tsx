@@ -143,7 +143,7 @@ function cleanCensusNumber(value: unknown): number | null {
 }
 
 function sumCensusValues(values: Array<number | null>): number | null {
-  const total = values.reduce((sum, value) => sum + (typeof value === "number" ? value : 0), 0);
+  const total = values.reduce<number>((sum, value) => sum + (typeof value === "number" ? value : 0), 0);
   return total > 0 ? total : null;
 }
 
@@ -351,7 +351,7 @@ export default function MapView({
   const visibleDeals = useMemo(() => {
     void runtimeDataVersion;
     const hasRequestedDealScope = Boolean(requestedDealId) || Boolean(requestedDealIdSet);
-    let base = getVisibleDealsForUser(user ?? role, dealRecords);
+    let base = role === "broker" ? dealRecords : getVisibleDealsForUser(user ?? role, dealRecords);
     if (!hasRequestedDealScope) {
       base = base.filter((deal) => !deal.isOneOff);
     }
@@ -388,10 +388,18 @@ export default function MapView({
   }, [brandFilter, profile?.brandId, role, visibleBrands]);
 
   const filteredDeals = useMemo(() => {
+    const shouldStartEmpty =
+      role === "admin" &&
+      !embedded &&
+      !requestedDealId &&
+      !requestedDealIdSet &&
+      !requestedBrandId &&
+      brandFilter === "all";
+    if (shouldStartEmpty) return [];
     let next = visibleDeals;
     if (brandFilter !== "all") next = next.filter((deal) => deal.brandId === brandFilter);
     return next;
-  }, [brandFilter, visibleDeals]);
+  }, [brandFilter, embedded, requestedBrandId, requestedDealId, requestedDealIdSet, role, visibleDeals]);
 
   const cityPinResult = useMemo(() => buildDealCityPins(filteredDeals), [filteredDeals]);
 
@@ -442,6 +450,7 @@ export default function MapView({
   const territoryZipByCode = useMemo(() => new Map(territoryZips.map((zip) => [zip.zip, zip])), [territoryZips]);
 
   const defaultCenter = pins[0]?.lngLat ?? ([-96.797, 32.8198] as [number, number]);
+  const showBrandSelector = role === "admin" && !embedded && !requestedDealId && !requestedDealIdSet && !requestedBrandId;
   const mapIQTerritories = useMemo<MapIQTerritory[]>(() => {
     return savedTerritories.map((territory) => ({
       id: territory.id,
@@ -605,7 +614,34 @@ export default function MapView({
           contextBadge={
             <div className="mapiq-context-pill">
               <Compass size={16} color="#E18739" />
-              <span>MapIQ — Market Research</span>
+              {showBrandSelector ? (
+                <>
+                  <span>Brand</span>
+                  <select
+                    value={brandFilter}
+                    onChange={(event) => setBrandFilter(event.target.value)}
+                    aria-label="Select brand for MapIQ"
+                    style={{
+                      minWidth: 190,
+                      maxWidth: 260,
+                      border: "none",
+                      outline: "none",
+                      background: "transparent",
+                      color: brandFilter === "all" ? "#64748B" : "#1B2326",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="all" style={{ color: "#64748B", background: "#FFFFFF" }}>Select a brand</option>
+                    {visibleBrands.map((brand) => (
+                      <option key={brand.id} value={brand.id} style={{ color: "#1B2326", background: "#FFFFFF" }}>{brand.name}</option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <span>MapIQ — Market Research</span>
+              )}
             </div>
           }
           actions={canUseAdvancedMapTools ? [

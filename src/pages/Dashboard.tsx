@@ -5,16 +5,13 @@ import {
   Building2, Handshake, CheckCircle2, Clock, PauseCircle,
   ArrowRight, Plus, RefreshCw,
 } from "lucide-react";
-import {
-  getDashboardStats, getRecentActivity, getDealsByStatusCounts,
-  getBrandSummaries, DealStatus,
-} from "@/data/dashboardData";
+import type { DealStatus, RecentActivity } from "@/data/dashboardData";
 import { dealRecords, getDealBrandById, KANBAN_COLUMNS, type DealRecord } from "@/data/dealsData";
 import { cn } from "@/lib/utils";
-import { calculateDealHealth, getDealNudges } from "@/lib/dealIntelligence";
-import { getFollowUpQueue } from "@/lib/dealIntelligence";
+import { getDealNudges } from "@/lib/dealIntelligence";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
 import { generateAiInsight, getLatestAiInsight } from "@/application/ai/aiService";
+import { getVisibleDealsForUser, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 
 /* ── GLASS CARD STYLE ── */
 const glassCard: React.CSSProperties = {
@@ -27,8 +24,26 @@ const glassCard: React.CSSProperties = {
   transition: "background 0.30s ease, border-color 0.30s ease, box-shadow 0.30s ease",
 };
 
+type DashboardStats = {
+  totalActiveBrands: number;
+  totalDeals: number;
+  dealsSigned: number;
+  dealsInProgress: number;
+  dealsOnHold: number;
+  totalCommission: number;
+};
+
+type BrandSummary = {
+  id: string;
+  name: string;
+  logoColor: string;
+  activeDeals: number;
+  totalSites: number;
+  stages: DealStatus[];
+};
+
 const statCardConfig: {
-  key: keyof ReturnType<typeof getDashboardStats>;
+  key: keyof DashboardStats;
   label: string;
   icon: React.ElementType;
   isCurrency?: boolean;
@@ -44,16 +59,6 @@ const STATUS_BAR_COLORS: Record<string, string> = {
   "Signed": "#10b981", "Lease Negotiations": "#3b82f6",
   "Market Study": "#8b5cf6", "Site Tours": "#14b8a6", "LOI Negotiations": "#6366f1",
   "Kick Off": "#94a3b8", "On Hold": "#E18739",
-};
-
-const STATUS_CHART_COLORS: Record<string, string> = {
-  "Signed": "#E18739",
-  "In Progress": "#E18739",
-  "Market Study": "#E18739",
-  "On Hold": "#E18739",
-  "Kick Off": "#E18739",
-  "Site Tours": "#E18739",
-  "LOI Negotiations": "#E18739",
 };
 
 const BRAND_GRADIENTS = [
@@ -141,7 +146,65 @@ function isSameWeek(date: Date | null, reference = new Date()): boolean {
   return date >= start && date < end;
 }
 
-type DashboardMonthlyStats = Record<keyof ReturnType<typeof getDashboardStats>, number>;
+type DashboardMonthlyStats = Record<keyof DashboardStats, number>;
+
+function getScopedDashboardStats(deals: DealRecord[]): DashboardStats {
+  const active = deals.filter((deal) => !deal.isOneOff);
+  return {
+    totalActiveBrands: new Set(active.map((deal) => deal.brandId)).size,
+    totalDeals: active.length,
+    dealsSigned: active.filter((deal) => deal.status === "Signed").length,
+    dealsInProgress: active.filter((deal) => deal.status !== "Signed" && deal.status !== "On Hold").length,
+    dealsOnHold: active.filter((deal) => deal.status === "On Hold").length,
+    totalCommission: active.reduce((sum, deal) => sum + deal.estimatedCommission, 0),
+  };
+}
+
+function getScopedRecentActivity(deals: DealRecord[]): RecentActivity[] {
+  return deals
+    .filter((deal) => !deal.isOneOff)
+    .map((deal) => {
+      const brand = getDealBrandById(deal.brandId);
+      const lastNote = deal.notes[0];
+      return {
+        id: deal.id,
+        brandName: brand?.name ?? "Unknown",
+        franchiseeName: deal.franchisee,
+        location: `${deal.city}, ${deal.state}`,
+        status: deal.status,
+        lastNote: lastNote?.text || "",
+        date: lastNote?.date || deal.dateLeaseSigned || deal.dateIntroCall || "",
+      };
+    })
+    .sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0))
+    .slice(0, 10);
+}
+
+function getScopedDealsByStatusCounts(deals: DealRecord[]): { status: DealStatus; count: number }[] {
+  const counts: Record<string, number> = {};
+  KANBAN_COLUMNS.forEach((status) => { counts[status] = 0; });
+  deals.filter((deal) => !deal.isOneOff).forEach((deal) => {
+    counts[deal.status] = (counts[deal.status] || 0) + 1;
+  });
+  return KANBAN_COLUMNS.map((status) => ({ status, count: counts[status] || 0 }));
+}
+
+function getScopedBrandSummaries(deals: DealRecord[]): BrandSummary[] {
+  const activeDeals = deals.filter((deal) => !deal.isOneOff);
+  const brandIds = Array.from(new Set(activeDeals.map((deal) => deal.brandId)));
+  return brandIds.map((brandId) => {
+    const brand = getDealBrandById(brandId);
+    const brandDeals = activeDeals.filter((deal) => deal.brandId === brandId);
+    return {
+      id: brandId,
+      name: brand?.name ?? "Unknown",
+      logoColor: brand?.logoColor ?? "#243c51",
+      activeDeals: brandDeals.length,
+      totalSites: brandDeals.reduce((sum, deal) => sum + deal.storeCount, 0),
+      stages: [...new Set(brandDeals.map((deal) => deal.status))],
+    };
+  });
+}
 
 function getMonthlyDashboardStats(deals: DealRecord[]): DashboardMonthlyStats {
   const activeDeals = deals.filter((deal) => !deal.isOneOff);
@@ -251,44 +314,22 @@ function normalizeAiDashboardNudges(output: unknown): DashboardNudgeCard[] {
 export default function Dashboard() {
   const navigate = useNavigate();
   const runtimeDataVersion = useRuntimeDataVersion();
-  const stats = useMemo(() => { void runtimeDataVersion; return getDashboardStats(); }, [runtimeDataVersion]);
-  const monthlyStats = useMemo(() => { void runtimeDataVersion; return getMonthlyDashboardStats(dealRecords); }, [runtimeDataVersion]);
-  const recentActivity = useMemo(() => { void runtimeDataVersion; return getRecentActivity(); }, [runtimeDataVersion]);
-  const statusCounts = useMemo(() => { void runtimeDataVersion; return getDealsByStatusCounts(); }, [runtimeDataVersion]);
-  const brandSummaries = useMemo(() => { void runtimeDataVersion; return getBrandSummaries(); }, [runtimeDataVersion]);
-
-  const brokerLeaderboard = useMemo(() => {
+  const role = useUserRole();
+  const user = useScopedUser();
+  const dashboardDeals = useMemo(() => {
     void runtimeDataVersion;
-    const grouped = new Map<string, { deals: number; commission: number }>();
-    for (const deal of dealRecords) {
-      if (!deal.broker) continue;
-      const current = grouped.get(deal.broker) ?? { deals: 0, commission: 0 };
-      current.deals += 1;
-      current.commission += deal.estimatedCommission;
-      grouped.set(deal.broker, current);
-    }
-
-    return [...grouped.entries()]
-      .map(([name, values], index) => ({
-        rank: index + 1,
-        initials: name
-          .split(/\s+/)
-          .map((part) => part[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase(),
-        name,
-        deals: values.deals,
-        commission: values.commission,
-        accent: ["#E18739", "#7bafc8", "#94a3b8"][index % 3],
-      }))
-      .sort((a, b) => b.commission - a.commission)
-      .map((broker, index) => ({ ...broker, rank: index + 1 }))
-      .slice(0, 3);
-  }, [runtimeDataVersion]);
+    const activeDeals = dealRecords.filter((deal) => !deal.isOneOff);
+    if (role === "admin") return activeDeals;
+    return getVisibleDealsForUser(user ?? role, activeDeals);
+  }, [role, runtimeDataVersion, user]);
+  const stats = useMemo(() => getScopedDashboardStats(dashboardDeals), [dashboardDeals]);
+  const monthlyStats = useMemo(() => getMonthlyDashboardStats(dashboardDeals), [dashboardDeals]);
+  const recentActivity = useMemo(() => getScopedRecentActivity(dashboardDeals), [dashboardDeals]);
+  const statusCounts = useMemo(() => getScopedDealsByStatusCounts(dashboardDeals), [dashboardDeals]);
+  const brandSummaries = useMemo(() => getScopedBrandSummaries(dashboardDeals), [dashboardDeals]);
 
   const pipelineStages = useMemo(() => statusCounts.map(({ status, count }) => {
-    const stageDeals = dealRecords.filter((deal) => deal.status === status && !deal.isOneOff);
+    const stageDeals = dashboardDeals.filter((deal) => deal.status === status && !deal.isOneOff);
     const worstDeal = [...stageDeals].sort((a, b) => getDaysInStage(b) - getDaysInStage(a))[0];
     const worstBrand = worstDeal ? getDealBrandById(worstDeal.brandId)?.name ?? worstDeal.franchisee : null;
 
@@ -300,25 +341,28 @@ export default function Dashboard() {
       worstDays: worstDeal ? getDaysInStage(worstDeal) : 0,
       dotColor: STATUS_BAR_COLORS[status] ?? "#94a3b8",
     };
-  }), [statusCounts]);
+  }), [dashboardDeals, statusCounts]);
 
   const pipelineTotal = pipelineStages.reduce((total, stage) => total + stage.count, 0);
 
   const fallbackDashboardNudges = useMemo<DashboardNudgeCard[]>(() => {
-    void runtimeDataVersion;
-    return getDealNudges().slice(0, 4).map((item) => {
-      const deal = dealRecords.find((record) => record.id === item.id);
-      return {
-        id: `fallback-nudge-${item.id}`,
-        brand: item.title.split(" — ")[0] ?? "Deal",
-        location: deal ? `${deal.city}, ${deal.state}` : "",
-        suggestion: item.suggestion,
-        action: item.action,
-        url: item.actionUrl,
-        source: "fallback",
-      };
-    });
-  }, [runtimeDataVersion]);
+    const visibleDealIds = new Set(dashboardDeals.map((deal) => deal.id));
+    return getDealNudges()
+      .filter((item) => visibleDealIds.has(item.id))
+      .slice(0, 4)
+      .map((item) => {
+        const deal = dashboardDeals.find((record) => record.id === item.id);
+        return {
+          id: `fallback-nudge-${item.id}`,
+          brand: item.title.split(" — ")[0] ?? "Deal",
+          location: deal ? `${deal.city}, ${deal.state}` : "",
+          suggestion: item.suggestion,
+          action: item.action,
+          url: item.actionUrl,
+          source: "fallback",
+        };
+      });
+  }, [dashboardDeals]);
 
   const [aiDashboardNudges, setAiDashboardNudges] = useState<DashboardNudgeCard[] | null>(null);
   const [dashboardAiLoading, setDashboardAiLoading] = useState(false);
@@ -356,15 +400,18 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    void runtimeDataVersion;
+    if (role !== "admin") {
+      setAiDashboardNudges(null);
+      setDashboardAiError(null);
+      return;
+    }
     void loadDashboardAiNudges(false);
-  }, [loadDashboardAiNudges, runtimeDataVersion]);
+  }, [loadDashboardAiNudges, role, runtimeDataVersion]);
 
-  const dashboardNudges = aiDashboardNudges?.length ? aiDashboardNudges : fallbackDashboardNudges;
+  const dashboardNudges = role === "admin" && aiDashboardNudges?.length ? aiDashboardNudges : fallbackDashboardNudges;
 
   const forecast = useMemo(() => {
-    void runtimeDataVersion;
-    const active = dealRecords.filter((deal) => !deal.isOneOff);
+    const active = dashboardDeals.filter((deal) => !deal.isOneOff);
     const signedDeals = active.filter((deal) => deal.status === "Signed");
     const onHoldDeals = active.filter((deal) => deal.status === "On Hold");
     const pipelineDeals = active.filter((deal) =>
@@ -386,7 +433,7 @@ export default function Dashboard() {
       projected: Math.round(projected),
       pipelineCount: pipelineDeals.length,
     };
-  }, [runtimeDataVersion]);
+  }, [dashboardDeals]);
 
   const fcTotal = forecast.confirmed + forecast.projected;
   const fcConfPct = fcTotal > 0 ? (forecast.confirmed / fcTotal) * 100 : 50;
@@ -410,16 +457,30 @@ export default function Dashboard() {
 
   const chartMax = Math.max(...chartRows.map((r) => r.count), 1);
   const chartTotal = chartRows.reduce((a, r) => a + r.count, 0);
+  const chartValueRows = useMemo(() => {
+    const valueFor = (statuses: string[]) => dashboardDeals
+      .filter((deal) => statuses.includes(deal.status) && !deal.isOneOff)
+      .reduce((sum, deal) => sum + deal.estimatedCommission, 0);
+    return [
+      { label: "Signed", value: valueFor(["Signed"]), key: "Signed" },
+      { label: "In Progress", value: valueFor(["Lease Negotiations", "Site Tours"]), key: "In Progress" },
+      { label: "LOI Negotiations", value: valueFor(["LOI Negotiations"]), key: "LOI Negotiations" },
+      { label: "Mkt Study", value: valueFor(["Market Study"]), key: "Market Study" },
+      { label: "On-Hold", value: valueFor(["On Hold"]), key: "On Hold" },
+      { label: "Intro Call", value: valueFor(["Kick Off"]), key: "Kick Off" },
+    ];
+  }, [dashboardDeals]);
+  const chartValueMax = Math.max(...chartValueRows.map((row) => row.value), 1);
+  const chartValueTotal = chartValueRows.reduce((sum, row) => sum + row.value, 0);
 
   const brandCards = useMemo(() => {
-    void runtimeDataVersion;
     return brandSummaries.map((brand) => {
-      const brandDeals = dealRecords.filter((d) => d.brandId === brand.id && !d.isOneOff);
+      const brandDeals = dashboardDeals.filter((d) => d.brandId === brand.id && !d.isOneOff);
       const stageCounts: Record<string, number> = {};
       brandDeals.forEach((d) => { stageCounts[d.status] = (stageCounts[d.status] || 0) + 1; });
       return { ...brand, stageCounts };
     });
-  }, [brandSummaries, runtimeDataVersion]);
+  }, [brandSummaries, dashboardDeals]);
 
   const formatCurrency = (val: number) => {
     if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
@@ -427,7 +488,7 @@ export default function Dashboard() {
     return `${val}`;
   };
 
-  const totalActiveDeals = dealRecords.filter((d) => !d.isOneOff).length;
+  const totalActiveDeals = dashboardDeals.filter((d) => !d.isOneOff).length;
 
   return (
     <div className="animate-fade-in dark:!bg-transparent">
@@ -450,16 +511,18 @@ export default function Dashboard() {
             ⚡ AI Follow-Up Queue
             {dashboardAiError ? <span style={{ marginLeft: 8, letterSpacing: "0", textTransform: "none", color: "var(--text-tertiary)" }}>{dashboardAiError}</span> : null}
           </span>
-          <button
-            type="button"
-            onClick={() => void loadDashboardAiNudges(true)}
-            disabled={dashboardAiLoading}
-            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ borderColor: "var(--border-subtle)", color: "var(--text-primary)", background: "var(--bg-surface)" }}
-          >
-            <RefreshCw className={cn("h-3 w-3", dashboardAiLoading && "animate-spin")} />
-            {dashboardAiLoading ? "Generating" : "Regenerate AI"}
-          </button>
+          {role === "admin" && (
+            <button
+              type="button"
+              onClick={() => void loadDashboardAiNudges(true)}
+              disabled={dashboardAiLoading}
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ borderColor: "var(--border-subtle)", color: "var(--text-primary)", background: "var(--bg-surface)" }}
+            >
+              <RefreshCw className={cn("h-3 w-3", dashboardAiLoading && "animate-spin")} />
+              {dashboardAiLoading ? "Generating" : "Regenerate AI"}
+            </button>
+          )}
         </div>
         <div
           className="flex overflow-x-auto ai-nudge-row"
@@ -573,7 +636,7 @@ export default function Dashboard() {
             <style>{`.deal-activity-scroll::-webkit-scrollbar{width:3px}.deal-activity-scroll::-webkit-scrollbar-thumb{background:rgba(36,60,81,0.12);border-radius:4px}.deal-activity-scroll::-webkit-scrollbar-track{background:transparent}`}</style>
             {recentActivity.slice(0, 8).map((activity, idx, arr) => {
               const pillClass = STATUS_PILL_CLASS[activity.status] || "pill-intro-call";
-              const deal = dealRecords.find((d) => d.id === activity.id);
+              const deal = dashboardDeals.find((d) => d.id === activity.id);
               const daysInStage = deal ? getDaysInStage(deal) : 0;
               const stageColor = getStageTimingColor(activity.status, daysInStage);
               const stageBg = getStageTimingBg(activity.status, daysInStage);
@@ -698,36 +761,34 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Card C: Top Brokers — target ~162px */}
+          {/* Card C: Pipeline Value by Status */}
           <div style={{ ...glassCard, padding: "16px 20px" }}>
             <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase" as const, color: "var(--text-muted)", marginBottom: 8, display: "block" }}>
-              Top Brokers — This Month
+              Pipeline Value by Status
             </span>
-            {brokerLeaderboard.map((broker) => (
-              <div
-                key={broker.rank}
-                className="flex items-center"
-                style={{ gap: 10, padding: "8px 0", borderBottom: broker.rank < 3 ? "1px solid var(--border-divider)" : "none" }}
-              >
-                <span className="shrink-0" style={{ width: 18, fontSize: 14, fontWeight: 700, color: broker.rank === 1 ? "#E18739" : "var(--text-muted)" }}>
-                  #{broker.rank}
+            {chartValueRows.map((row) => {
+              const pct = Math.max((row.value / chartValueMax) * 100, row.value > 0 ? 4 : 0);
+              return (
+                <div key={row.key} className="flex items-center gap-2.5" style={{ marginBottom: 9 }}>
+                  <span className="shrink-0" style={{ width: 128, fontSize: 12, fontWeight: 500, lineHeight: 1.15, color: "var(--text-tertiary)" }}>{row.label}</span>
+                  <div className="flex-1 overflow-hidden" style={{ height: 8, background: "var(--border-divider)", borderRadius: 4 }}>
+                    <div className="h-full transition-all duration-500" style={{ width: `${pct}%`, background: "#E18739", borderRadius: 4 }} />
+                  </div>
+                  <span className="shrink-0 text-right" style={{ width: 72, fontSize: 14, fontWeight: 700, color: "var(--stat-value-color)" }}>
+                    ${formatCurrency(row.value).replace("$", "")}
+                  </span>
+                </div>
+              );
+            })}
+            <div style={{ borderTop: "1px solid var(--border-divider)", marginTop: 2, paddingTop: 8 }}>
+              <div className="flex items-center justify-between">
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  ${formatCurrency(chartValueTotal).replace("$", "")} total value
                 </span>
-                <div className="shrink-0 flex items-center justify-center text-white" style={{ width: 28, height: 28, borderRadius: "50%", fontSize: 12, fontWeight: 700, background: "linear-gradient(135deg, #243c51, #1a5276)" }}>
-                  {broker.initials}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="truncate" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{broker.name}</p>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)" }}>{broker.deals} deals</p>
-                </div>
+                <button onClick={() => navigate("/deals")} style={{ fontSize: 12, fontWeight: 600, color: "var(--text-orange-ui)" }} className="hover:opacity-75 transition-opacity">
+                  View Deals →
+                </button>
               </div>
-            ))}
-            <div style={{ borderTop: "1px solid var(--border-divider)", marginTop: 6, paddingTop: 6, textAlign: "right" }}>
-              <p style={{ fontSize: 12, color: "var(--text-muted)" }}>Current period</p>
-            </div>
-            <div style={{ borderTop: "1px solid var(--border-divider)", marginTop: 6, paddingTop: 8 }}>
-              <button onClick={() => navigate("/deals")} style={{ fontSize: 12, fontWeight: 600, color: "var(--text-orange-ui)" }} className="hover:opacity-75 transition-opacity">
-                View Full Leaderboard →
-              </button>
             </div>
           </div>
         </div>

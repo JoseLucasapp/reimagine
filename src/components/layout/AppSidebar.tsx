@@ -56,8 +56,8 @@ export function AppSidebar({ collapsed, onToggle, onNavigate }: AppSidebarProps)
   const showLabels = !effectiveCollapsed;
   const scopedGroup1 = group1.flatMap((item) => {
     if (role === "broker") {
-      // Brokers should land on Deals and must not see Dashboard in navigation.
-      if (item.to === "/") return [];
+      if (item.to === "/") return [{ ...item, to: "/deals" }];
+      if (item.to === "/deals") return [];
       return [item];
     }
     if (role === "brand") {
