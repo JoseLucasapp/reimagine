@@ -611,12 +611,31 @@ select {
   }
 
   /* Status pills — using CSS variables */
+  .pill-signed,
+  .pill-leases,
+  .pill-lease,
+  .pill-loi,
+  .pill-loi-neg,
+  .pill-market-study,
+  .pill-prop-tour,
+  .pill-site-tours,
+  .pill-on-hold,
+  .pill-intro-call,
+  .pill-sales-call {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
   .pill-signed {
     background: var(--pill-signed-bg);
     color: var(--status-signed-text);
   }
 
-  .pill-leases {
+  .pill-leases,
+  .pill-lease {
     background: var(--pill-leases-bg);
     color: var(--status-leases-text);
   }
@@ -636,7 +655,8 @@ select {
     color: var(--status-market-text);
   }
 
-  .pill-prop-tour {
+  .pill-prop-tour,
+  .pill-site-tours {
     background: var(--pill-tour-bg);
     color: var(--status-tour-text);
   }

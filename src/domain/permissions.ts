@@ -28,17 +28,20 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   broker: "Broker",
   brand: "Brand Level",
   deal: "Deal Level",
+  mapiq: "MapIQ Only",
 };
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
-  admin: ["/", "/brand", "/deal", "/brands", "/bizdev", "/deals", "/mapiq", "/action-items", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
+  admin: ["/", "/brand", "/deal", "/brands", "/bizdev", "/deals", "/mapiq", "/users", "/account-requests", "/action-items", "/map", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
   broker: ["/", "/brand", "/brands", "/bizdev", "/deals", "/action-items", "/space-requirements", "/one-off", "/settings", "/tour-book-generator"],
   brand: ["/", "/brand", "/deals", "/action-items", "/space-requirements", "/settings", "/tour-book-generator"],
   deal: ["/", "/deal", "/action-items", "/settings", "/tour-book-generator"],
+  mapiq: ["/map", "/mapiq", "/settings"],
 };
 
 export function parseUserRole(value: string | null | undefined): UserRole {
-  if (value === "admin" || value === "broker" || value === "brand" || value === "deal") return value;
+  if (value === "admin" || value === "broker" || value === "brand" || value === "deal" || value === "mapiq") return value;
+  if (value === "map_iq" || value === "mapiq_only") return "mapiq";
   if (value === "reimagine_broker") return "broker";
   if (value === "franchisor") return "brand";
   if (value === "franchisee") return "deal";
@@ -46,9 +49,9 @@ export function parseUserRole(value: string | null | undefined): UserRole {
 }
 
 export function roleToHomeRoute(role: UserRole): string {
-  if (role === "broker") return "/deals";
   if (role === "brand") return "/brand";
   if (role === "deal") return "/deal";
+  if (role === "mapiq") return "/map";
   return "/";
 }
 
@@ -87,6 +90,7 @@ export function canAccessBrand(userOrRole: ScopedUser | UserRole | null | undefi
   if (!userOrRole || !brandId) return false;
   const user = asUser(userOrRole);
   if (user.role === "admin") return true;
+  if (user.role === "mapiq") return true;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return true;
   if (user.role === "brand") return user.brandId === brandId;
   if (user.role === "broker") return true;
@@ -97,6 +101,7 @@ export function canAccessDeal(userOrRole: ScopedUser | UserRole | null | undefin
   if (!userOrRole || !deal) return false;
   const user = asUser(userOrRole);
   if (user.role === "admin") return true;
+  if (user.role === "mapiq") return true;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return true;
   if (user.role === "broker") return true;
   if (user.role === "brand") return Boolean(user.brandId && dealBrandId(deal) === user.brandId);
@@ -107,6 +112,7 @@ export function getVisibleDealsForUser<T extends DealLike>(userOrRole: ScopedUse
   if (!userOrRole) return [];
   const user = asUser(userOrRole);
   if (user.role === "admin") return deals;
+  if (user.role === "mapiq") return deals;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return deals;
   if (user.role === "broker") return deals.filter((deal) => brokerMatchesDeal(user, deal));
   if (user.role === "brand") return deals.filter((deal) => Boolean(user.brandId && dealBrandId(deal) === user.brandId));
@@ -121,6 +127,7 @@ export function getVisibleBrandsForUser<TBrand extends BrandLike, TDeal extends 
   if (!userOrRole) return [];
   const user = asUser(userOrRole);
   if (user.role === "admin") return brands;
+  if (user.role === "mapiq") return brands;
   if (isUnscopedAdminPreview(user) && !user.brandId && !user.dealId) return brands;
 
   if (user.role === "brand") {

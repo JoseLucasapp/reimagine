@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, UserPlus } from "lucide-react";
 import reimagineLogo from "@/assets/reimagine-logo-full.png";
 import type { AuthSession } from "@/application/auth/session";
 import { getRuntimeConfig } from "@/config/env";
 import { signInWithSupabase } from "@/infrastructure/supabase/auth";
+import { createAccountRequest, requestedAccountRoleLabels, type RequestedAccountRole } from "@/lib/accountRequestStore";
 
 interface LoginPageProps {
   onLogin: (session: AuthSession) => void;
@@ -16,6 +17,28 @@ type FieldProps = {
   type?: string;
   autoComplete?: string;
   onChange: (value: string) => void;
+};
+
+type LoginMode = "login" | "request";
+
+type AccountRequestForm = {
+  fullName: string;
+  email: string;
+  requestedRole: RequestedAccountRole;
+  company: string;
+  brandName: string;
+  dealName: string;
+  message: string;
+};
+
+const emptyAccountRequestForm: AccountRequestForm = {
+  fullName: "",
+  email: "",
+  requestedRole: "brand",
+  company: "",
+  brandName: "",
+  dealName: "",
+  message: "",
 };
 
 const fieldStyle: React.CSSProperties = {
@@ -54,9 +77,11 @@ function AuthField({ label, value, placeholder, type = "text", autoComplete, onC
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
+  const [mode, setMode] = useState<LoginMode>("login");
   const [credential, setCredential] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [requestForm, setRequestForm] = useState<AccountRequestForm>(emptyAccountRequestForm);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +89,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const resetFeedback = () => {
     setError("");
     setMessage("");
+  };
+
+  const updateRequest = <K extends keyof AccountRequestForm>(key: K, value: AccountRequestForm[K]) => {
+    setRequestForm((current) => ({ ...current, [key]: value }));
   };
 
   const handleLogin = async () => {
@@ -85,6 +114,30 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     resetFeedback();
     setIsSubmitting(true);
     void handleLogin().finally(() => setIsSubmitting(false));
+  };
+
+  const handleRequestSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    resetFeedback();
+    if (!requestForm.fullName.trim() || !requestForm.email.trim()) {
+      setError("Name and email are required.");
+      return;
+    }
+    if (!getRuntimeConfig().isSupabaseConfigured) {
+      setError("Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    void createAccountRequest(requestForm)
+      .then(() => {
+        setRequestForm(emptyAccountRequestForm);
+        setMessage("Request submitted. A Reimagine admin will review it before access is created.");
+      })
+      .catch((requestError) => {
+        setError(requestError instanceof Error ? requestError.message : "Unable to submit account request.");
+      })
+      .finally(() => setIsSubmitting(false));
   };
 
   return (
@@ -129,186 +182,218 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <img src={reimagineLogo} alt="Reimagine" style={{ height: 32 }} />
           </div>
 
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6, lineHeight: 1.2 }}>
-            Welcome back
-          </h1>
-          <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 28 }}>Enter your details to access your account</p>
+          {mode === "login" ? (
+            <>
+              <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6, lineHeight: 1.2 }}>
+                Welcome back
+              </h1>
+              <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 28 }}>Enter your details to access your account</p>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
-            <AuthField
-              label="Username"
-              value={credential}
-              onChange={setCredential}
-              placeholder="Username"
-              autoComplete="username"
-            />
-
-            <div className="flex flex-col gap-1.5">
-              <label style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  style={{ ...fieldStyle, padding: "11px 40px 11px 14px" }}
-                  onFocus={(event) => {
-                    event.currentTarget.style.borderColor = "rgba(36,60,81,0.40)";
-                  }}
-                  onBlur={(event) => {
-                    event.currentTarget.style.borderColor = "rgba(36,60,81,0.15)";
-                  }}
+              <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
+                <AuthField
+                  label="Username"
+                  value={credential}
+                  onChange={setCredential}
+                  placeholder="Username"
+                  autoComplete="username"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  style={{ fontSize: 14, color: "#6B7280", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}
-                  onClick={() => setMessage("Password reset is managed by the Reimagine admin team.")}
-                  onMouseEnter={(event) => {
-                    event.currentTarget.style.color = "#243c51";
-                  }}
-                  onMouseLeave={(event) => {
-                    event.currentTarget.style.color = "#6B7280";
-                  }}
-                >
-                  Forgot password?
-                </button>
-              </div>
-            </div>
 
-            {error && (
-              <div
-                role="alert"
+                <div className="flex flex-col gap-1.5">
+                  <label style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      style={{ ...fieldStyle, padding: "11px 40px 11px 14px" }}
+                      onFocus={(event) => {
+                        event.currentTarget.style.borderColor = "rgba(36,60,81,0.40)";
+                      }}
+                      onBlur={(event) => {
+                        event.currentTarget.style.borderColor = "rgba(36,60,81,0.15)";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      style={{ fontSize: 14, color: "#6B7280", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}
+                      onClick={() => setMessage("Password reset is managed by the Reimagine admin team.")}
+                      onMouseEnter={(event) => {
+                        event.currentTarget.style.color = "#243c51";
+                      }}
+                      onMouseLeave={(event) => {
+                        event.currentTarget.style.color = "#6B7280";
+                      }}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                </div>
+
+                <AuthFeedback error={error} message={message} />
+
+                <PrimaryAuthButton submitting={isSubmitting} submittingLabel="LOGGING IN..." label="LOGIN" />
+              </form>
+
+              <button
+                type="button"
+                onClick={() => { resetFeedback(); setMode("request"); }}
+                className="mt-5 flex w-full items-center justify-center gap-2"
                 style={{
-                  fontSize: 13,
-                  color: "#b42318",
-                  background: "#FEF3F2",
-                  border: "1px solid #FECDCA",
-                  padding: "8px 12px",
-                  borderRadius: 8,
+                  height: 42,
+                  borderRadius: 10,
+                  border: "1px solid var(--border-input)",
+                  background: "var(--bg-surface)",
+                  color: "#374151",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
                 }}
               >
-                {error}
-              </div>
-            )}
-            {message && (
-              <div
-                role="status"
-                style={{
-                  fontSize: 13,
-                  color: "#065f46",
-                  background: "#ecfdf3",
-                  border: "1px solid #abefc6",
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                }}
+                <UserPlus className="h-4 w-4" />
+                Request access
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => { resetFeedback(); setMode("login"); }}
+                className="mb-5 inline-flex items-center gap-2"
+                style={{ background: "none", border: "none", padding: 0, color: "#6B7280", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
               >
-                {message}
-              </div>
-            )}
+                <ArrowLeft className="h-4 w-4" />
+                Back to login
+              </button>
+              <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6, lineHeight: 1.2 }}>
+                Request access
+              </h1>
+              <p style={{ fontSize: 14, color: "#6B7280", marginBottom: 24 }}>Submit your account details for admin review.</p>
 
-            <button
-              type="submit"
-              className="w-full"
-              disabled={isSubmitting}
-              style={{
-                background: "#243c51",
-                color: "#ffffff",
-                padding: "12px 0",
-                borderRadius: 10,
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                border: "none",
-                cursor: isSubmitting ? "wait" : "pointer",
-                boxShadow: "0 4px 14px rgba(36,60,81,0.25)",
-                transition: "background 0.2s",
-                marginTop: 2,
-                opacity: isSubmitting ? 0.75 : 1,
-              }}
-              onMouseEnter={(event) => {
-                event.currentTarget.style.background = "#1a2f3f";
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.background = "#243c51";
-              }}
-            >
-              {isSubmitting ? "LOGGING IN..." : "LOGIN"}
-            </button>
-          </form>
+              <form onSubmit={handleRequestSubmit} className="flex flex-col gap-[14px]">
+                <AuthField label="Full name" value={requestForm.fullName} onChange={(value) => updateRequest("fullName", value)} placeholder="Your name" autoComplete="name" />
+                <AuthField label="Email" value={requestForm.email} onChange={(value) => updateRequest("email", value)} placeholder="you@example.com" autoComplete="email" />
+                <div className="flex flex-col gap-1.5">
+                  <label style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>Requested role</label>
+                  <select
+                    value={requestForm.requestedRole}
+                    onChange={(event) => updateRequest("requestedRole", event.target.value as RequestedAccountRole)}
+                    style={fieldStyle}
+                  >
+                    {(["brand", "deal", "broker"] as RequestedAccountRole[]).map((requestRole) => (
+                      <option key={requestRole} value={requestRole}>{requestedAccountRoleLabels[requestRole]}</option>
+                    ))}
+                  </select>
+                </div>
+                <AuthField label="Company" value={requestForm.company} onChange={(value) => updateRequest("company", value)} placeholder="Company or team" autoComplete="organization" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <AuthField label="Brand" value={requestForm.brandName} onChange={(value) => updateRequest("brandName", value)} placeholder="Brand name" />
+                  <AuthField label="Deal" value={requestForm.dealName} onChange={(value) => updateRequest("dealName", value)} placeholder="Deal/site name" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label style={{ fontSize: 14, fontWeight: 500, color: "#374151" }}>Notes</label>
+                  <textarea
+                    value={requestForm.message}
+                    onChange={(event) => updateRequest("message", event.target.value)}
+                    placeholder="Add any context for the admin..."
+                    rows={4}
+                    style={{ ...fieldStyle, resize: "vertical", minHeight: 92 }}
+                  />
+                </div>
 
-          <div className="flex items-center" style={{ gap: 12, margin: "22px 0" }}>
-            <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
-            <span style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
-            <div className="flex-1" style={{ height: 1, background: "rgba(36,60,81,0.08)" }} />
-          </div>
+                <AuthFeedback error={error} message={message} />
 
-          <div className="flex flex-col gap-2.5">
-            <SocialButton label="Continue with Google" provider="google" onClick={() => setError("Google SSO is not configured yet.")} />
-            <SocialButton label="Continue with Microsoft" provider="microsoft" onClick={() => setError("Microsoft SSO is not configured yet.")} />
-          </div>
+                <PrimaryAuthButton submitting={isSubmitting} submittingLabel="SUBMITTING..." label="SUBMIT REQUEST" />
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function SocialButton({ label, provider, onClick }: { label: string; provider: "google" | "microsoft"; onClick: () => void }) {
+function AuthFeedback({ error, message }: { error: string; message: string }) {
+  return (
+    <>
+      {error && (
+        <div
+          role="alert"
+          style={{
+            fontSize: 13,
+            color: "#b42318",
+            background: "#FEF3F2",
+            border: "1px solid #FECDCA",
+            padding: "8px 12px",
+            borderRadius: 8,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {message && (
+        <div
+          role="status"
+          className="flex items-start gap-2"
+          style={{
+            fontSize: 13,
+            color: "#065f46",
+            background: "#ecfdf3",
+            border: "1px solid #abefc6",
+            padding: "8px 12px",
+            borderRadius: 8,
+          }}
+        >
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{message}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PrimaryAuthButton({ submitting, submittingLabel, label }: { submitting: boolean; submittingLabel: string; label: string }) {
   return (
     <button
-      type="button"
-      onClick={onClick}
-      className="w-full flex items-center justify-center"
+      type="submit"
+      className="w-full"
+      disabled={submitting}
       style={{
-        gap: 10,
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border-input)",
+        background: "#243c51",
+        color: "#ffffff",
+        padding: "12px 0",
         borderRadius: 10,
-        padding: "10px 0",
         fontSize: 14,
-        fontWeight: 500,
-        color: "#374151",
-        cursor: "pointer",
-        transition: "background 0.15s, border-color 0.15s",
-        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        border: "none",
+        cursor: submitting ? "wait" : "pointer",
+        boxShadow: "0 4px 14px rgba(36,60,81,0.25)",
+        transition: "background 0.2s",
+        marginTop: 2,
+        opacity: submitting ? 0.75 : 1,
       }}
       onMouseEnter={(event) => {
-        event.currentTarget.style.background = "var(--bg-nav-hover)";
-        event.currentTarget.style.borderColor = "var(--border-card)";
+        event.currentTarget.style.background = "#1a2f3f";
       }}
       onMouseLeave={(event) => {
-        event.currentTarget.style.background = "var(--bg-surface)";
-        event.currentTarget.style.borderColor = "var(--border-input)";
+        event.currentTarget.style.background = "#243c51";
       }}
     >
-      {provider === "google" ? (
-        <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-          <path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-          <path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.76-4.59l-7.98-6.19A23.99 23.99 0 000 24c0 3.77.9 7.34 2.44 10.51l8.09-5.92z" />
-          <path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-        </svg>
-      ) : (
-        <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true">
-          <path fill="#f35325" d="M1 1h10v10H1z" />
-          <path fill="#81bc06" d="M12 1h10v10H12z" />
-          <path fill="#05a6f0" d="M1 12h10v10H1z" />
-          <path fill="#ffba08" d="M12 12h10v10H12z" />
-        </svg>
-      )}
-      {label}
+      {submitting ? submittingLabel : label}
     </button>
   );
 }

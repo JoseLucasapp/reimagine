@@ -18,6 +18,8 @@ const pageTitles: Record<string, string> = {
   "/bizdev": "Prospects",
   "/deals": "Deals",
   "/action-items": "Action Items",
+  "/account-requests": "Account Requests",
+  "/users": "Users",
   "/mapiq": "MapIQ",
   "/map": "MapIQ",
   "/space-requirements": "Space Requirements",

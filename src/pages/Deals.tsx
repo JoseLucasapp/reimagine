@@ -237,8 +237,8 @@ export default function DealsPage({ brandFilter, isOneOff, onAddDeal, forcedView
                   <span className="text-xs font-semibold" style={{ color: "#94a3b8" }}>{cards.length}</span>
                 </div>
                 <div
-                  className="space-y-2.5 overflow-y-auto pr-1"
-                  style={cards.length > 8 ? { maxHeight: 720 } : undefined}
+                  className="themed-scrollbar space-y-2.5 overflow-y-auto pr-1"
+                  style={{ maxHeight: "min(640px, calc(100vh - 330px))" }}
                 >
                   {cards.map((deal) => {
                     const brand = getDealBrandById(deal.brandId);

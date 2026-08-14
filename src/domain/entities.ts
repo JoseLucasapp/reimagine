@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "broker" | "brand" | "deal";
+export type UserRole = "admin" | "broker" | "brand" | "deal" | "mapiq";
 
 export type LegacyUserRole = "franchisor" | "franchisee";
 

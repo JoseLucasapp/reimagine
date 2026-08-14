@@ -302,7 +302,8 @@ export default function MapView({
   const role = useUserRole();
   const profile = useCurrentProfile();
   const user = useScopedUser();
-  const canUseAdvancedMapTools = role === "admin" || enableAdvancedTools;
+  const isStandaloneMapAdmin = role === "admin" || role === "mapiq";
+  const canUseAdvancedMapTools = isStandaloneMapAdmin || enableAdvancedTools;
   const [brandFilter, setBrandFilter] = useState(() => requestedBrandId || "all");
   const [selectedZipCodes, setSelectedZipCodes] = useState<string[]>([]);
   const [territoryName, setTerritoryName] = useState("");
@@ -389,7 +390,7 @@ export default function MapView({
 
   const filteredDeals = useMemo(() => {
     const shouldStartEmpty =
-      role === "admin" &&
+      isStandaloneMapAdmin &&
       !embedded &&
       !requestedDealId &&
       !requestedDealIdSet &&
@@ -399,7 +400,7 @@ export default function MapView({
     let next = visibleDeals;
     if (brandFilter !== "all") next = next.filter((deal) => deal.brandId === brandFilter);
     return next;
-  }, [brandFilter, embedded, requestedBrandId, requestedDealId, requestedDealIdSet, role, visibleDeals]);
+  }, [brandFilter, embedded, isStandaloneMapAdmin, requestedBrandId, requestedDealId, requestedDealIdSet, visibleDeals]);
 
   const cityPinResult = useMemo(() => buildDealCityPins(filteredDeals), [filteredDeals]);
 
@@ -450,7 +451,7 @@ export default function MapView({
   const territoryZipByCode = useMemo(() => new Map(territoryZips.map((zip) => [zip.zip, zip])), [territoryZips]);
 
   const defaultCenter = pins[0]?.lngLat ?? ([-96.797, 32.8198] as [number, number]);
-  const showBrandSelector = role === "admin" && !embedded && !requestedDealId && !requestedDealIdSet && !requestedBrandId;
+  const showBrandSelector = isStandaloneMapAdmin && !embedded && !requestedDealId && !requestedDealIdSet && !requestedBrandId;
   const mapIQTerritories = useMemo<MapIQTerritory[]>(() => {
     return savedTerritories.map((territory) => ({
       id: territory.id,

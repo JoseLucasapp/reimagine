@@ -35,6 +35,11 @@ type SupabaseAuthResponse = {
   };
 };
 
+type SupabaseUserResponse = {
+  id?: unknown;
+  email?: unknown;
+};
+
 type ProfileRow = {
   id: string;
   email?: string | null;
@@ -175,6 +180,37 @@ export async function changeSupabasePassword(currentPassword: string, newPasswor
       return { ok: false, message: error.message };
     }
     return { ok: false, message: "Unable to update password. Please try again." };
+  }
+}
+
+export async function completeSupabasePasswordSetup(accessToken: string, refreshToken: string | null, newPassword: string): Promise<AuthResult> {
+  try {
+    const user = await supabaseRequest<SupabaseUserResponse>("/auth/v1/user", {
+      method: "PUT",
+      accessToken,
+      body: { password: newPassword } satisfies JsonObject,
+    });
+    if (typeof user.id !== "string") {
+      return { ok: false, message: "Password setup response was invalid." };
+    }
+    const authEmail = typeof user.email === "string" ? user.email : null;
+    const profile = await fetchCurrentProfile(accessToken, user.id, authEmail);
+    return {
+      ok: true,
+      session: {
+        accessToken,
+        refreshToken,
+        userId: user.id,
+        email: profile.email ?? authEmail,
+        role: profile.role,
+        profile,
+      },
+    };
+  } catch (error) {
+    if (error instanceof Error && !error.message.includes("Supabase request failed")) {
+      return { ok: false, message: error.message };
+    }
+    return { ok: false, message: "Unable to set password. The link may be expired or already used." };
   }
 }
 

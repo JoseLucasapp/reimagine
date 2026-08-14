@@ -188,15 +188,25 @@ where lower(p.email) = 'jjhill41@yahoo.com'
   and lower(d.city) = 'summerlin'
   and lower(d.state) = 'nv';
 
--- Internal broker test login replacing the old jhill broker test account.
--- Dashboard is client-filtered to this broker code, while RLS permits broader
--- internal access elsewhere.
-update public.profiles
+-- Internal broker test logins. Dashboards are client-filtered by broker code,
+-- while RLS permits broader internal access elsewhere.
+with broker_mappings(email, full_name, username, broker_name) as (
+  values
+    ('jwright@reimaginecre.com', 'Jeremy Wright', 'jwright', 'JW'),
+    ('cwilmes@reimaginecre.com', 'Carly Wilmes', 'cwilmes', 'CW'),
+    ('gneedleman@reimaginecre.com', 'Greg Needleman', 'gneedleman', 'GN'),
+    ('rmoore@reimaginecre.com', 'Ryan Moore', 'rmoore', 'RM'),
+    ('erosen@reimaginecre.com', 'Eric Rosen', 'erosen', 'ER'),
+    ('qcleveland@reimaginecre.com', 'Quinn Cleveland', 'qcleveland', 'QC'),
+    ('jhill@reimaginecre.com', 'Jackson Hill', 'jhill', 'JH')
+)
+update public.profiles p
 set role = 'broker',
-    full_name = coalesce(full_name, 'Quinn Cleveland'),
-    username = coalesce(username, 'qcleveland'),
-    broker_name = 'QC',
+    full_name = coalesce(nullif(p.full_name, ''), m.full_name),
+    username = coalesce(nullif(p.username, ''), m.username),
+    broker_name = m.broker_name,
     brand_id = null,
     deal_id = null,
     updated_at = now()
-where lower(email) = 'qcleveland@reimaginecre.com';
+from broker_mappings m
+where lower(p.email) = m.email;

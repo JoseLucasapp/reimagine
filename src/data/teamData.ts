@@ -1,6 +1,6 @@
 import type { UserRole } from "@/domain/entities";
 
-export type TeamMemberRole = "Admin" | "Broker" | "Brand Level" | "Deal Level";
+export type TeamMemberRole = "Admin" | "Broker" | "Brand Level" | "Deal Level" | "MapIQ Only";
 
 export interface TeamMember {
   id: string;
@@ -17,6 +17,7 @@ const roleLabels: Record<UserRole, TeamMemberRole> = {
   broker: "Broker",
   brand: "Brand Level",
   deal: "Deal Level",
+  mapiq: "MapIQ Only",
 };
 
 function initialsForName(name: string): string {
@@ -30,7 +31,7 @@ export function replaceTeamRuntimeData(
   const next = profiles
     .filter((profile) => {
       const email = profile.email?.trim().toLowerCase();
-      return Boolean(email && (profile.role === "admin" || profile.role === "broker" || email.endsWith("@reimagine.com")));
+      return Boolean(email && (profile.role === "admin" || profile.role === "broker" || profile.role === "mapiq" || email.endsWith("@reimagine.com")));
     })
     .map((profile) => {
       const email = profile.email?.trim().toLowerCase() ?? "";

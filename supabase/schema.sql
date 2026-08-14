@@ -9,6 +9,7 @@ drop trigger if exists on_auth_user_created on auth.users;
 
 drop table if exists public.ai_feedback cascade;
 drop table if exists public.ai_insights cascade;
+drop table if exists public.account_requests cascade;
 drop table if exists public.brand_action_items cascade;
 drop table if exists public.take_action_items cascade;
 drop table if exists public.tour_books cascade;
@@ -46,7 +47,7 @@ drop type if exists public.prospect_status cascade;
 drop type if exists public.deal_stage cascade;
 drop type if exists public.user_role cascade;
 
-create type public.user_role as enum ('admin', 'broker', 'brand', 'deal');
+create type public.user_role as enum ('admin', 'broker', 'brand', 'deal', 'mapiq');
 create type public.deal_stage as enum (
   'Kick Off',
   'Market Study',
@@ -75,6 +76,7 @@ as $$
     when lower(coalesce(value, '')) in ('broker', 'reimagine_broker') then 'broker'::public.user_role
     when lower(coalesce(value, '')) in ('brand', 'franchisor') then 'brand'::public.user_role
     when lower(coalesce(value, '')) in ('deal', 'franchisee') then 'deal'::public.user_role
+    when lower(coalesce(value, '')) in ('mapiq', 'map_iq', 'mapiq_only') then 'mapiq'::public.user_role
     else 'deal'::public.user_role
   end;
 $$;
@@ -285,6 +287,26 @@ create table public.brand_action_items (
   updated_at timestamptz not null default now()
 );
 
+create table public.account_requests (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  email text not null,
+  requested_role public.user_role not null check (requested_role in ('broker', 'brand', 'deal')),
+  company text,
+  brand_name text,
+  deal_name text,
+  brand_id uuid references public.brands(id) on delete set null,
+  deal_id uuid references public.deals(id) on delete set null,
+  broker_name text,
+  message text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  admin_notes text,
+  reviewed_by uuid references public.profiles(id),
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.ai_insights (
   id uuid primary key default gen_random_uuid(),
   insight_type public.ai_insight_type not null,
@@ -321,6 +343,10 @@ create index prospects_status_idx on public.prospects (status);
 create index space_requirements_brand_id_idx on public.space_requirements (brand_id);
 create index take_action_items_deal_id_idx on public.take_action_items (deal_id);
 create index brand_action_items_brand_id_idx on public.brand_action_items (brand_id);
+create index account_requests_status_idx on public.account_requests (status, created_at desc);
+create index account_requests_email_idx on public.account_requests (lower(email));
+create index account_requests_brand_id_idx on public.account_requests (brand_id);
+create index account_requests_deal_id_idx on public.account_requests (deal_id);
 create index ai_insights_lookup_idx on public.ai_insights (insight_type, entity_type, entity_id, created_at desc);
 
 create or replace function public.set_updated_at()
@@ -342,6 +368,7 @@ create trigger space_requirements_set_updated_at before update on public.space_r
 create trigger tour_books_set_updated_at before update on public.tour_books for each row execute function public.set_updated_at();
 create trigger take_action_items_set_updated_at before update on public.take_action_items for each row execute function public.set_updated_at();
 create trigger brand_action_items_set_updated_at before update on public.brand_action_items for each row execute function public.set_updated_at();
+create trigger account_requests_set_updated_at before update on public.account_requests for each row execute function public.set_updated_at();
 create trigger ai_insights_set_updated_at before update on public.ai_insights for each row execute function public.set_updated_at();
 
 create or replace function public.handle_new_user()
@@ -385,6 +412,7 @@ alter table public.space_requirements enable row level security;
 alter table public.tour_books enable row level security;
 alter table public.take_action_items enable row level security;
 alter table public.brand_action_items enable row level security;
+alter table public.account_requests enable row level security;
 alter table public.ai_insights enable row level security;
 alter table public.ai_feedback enable row level security;
 
@@ -491,6 +519,7 @@ as $$
       where b.id = brand_uuid
         and b.is_hidden
     ) then false
+    when public.current_user_role() = 'mapiq' then true
     when public.current_user_role() = 'broker' then exists (
       select 1
       from public.deals d,
@@ -524,6 +553,7 @@ as $$
       where d.id = deal_uuid
         and b.is_hidden
     ) then false
+    when public.current_user_role() = 'mapiq' then true
     when public.current_user_role() = 'broker' then exists (
       select 1
       from public.deals d,
@@ -608,6 +638,10 @@ create policy "brand action insert by brand scope" on public.brand_action_items 
 create policy "brand action update by brand scope" on public.brand_action_items for update using (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id())) with check (public.current_user_role() = 'admin' or (public.current_user_role() = 'brand' and brand_id = public.current_profile_brand_id()));
 create policy "admins manage brand action" on public.brand_action_items for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
+create policy "anyone can create account requests" on public.account_requests for insert with check (requested_role in ('broker', 'brand', 'deal'));
+create policy "admins select account requests" on public.account_requests for select using (public.current_user_role() = 'admin');
+create policy "admins update account requests" on public.account_requests for update using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
 create policy "ai insights select by entity scope" on public.ai_insights for select using (
   created_by = auth.uid()
   or public.current_user_role() = 'admin'
@@ -620,3 +654,6 @@ create policy "service or admin manages ai insights" on public.ai_insights for a
 
 create policy "ai feedback select own or admin" on public.ai_feedback for select using (user_id = auth.uid() or public.current_user_role() = 'admin');
 create policy "ai feedback upsert own" on public.ai_feedback for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+grant insert on public.account_requests to anon, authenticated;
+grant select, update on public.account_requests to authenticated;

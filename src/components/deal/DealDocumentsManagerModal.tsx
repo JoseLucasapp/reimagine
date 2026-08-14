@@ -5,12 +5,12 @@ import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructu
 
 export type DealDocumentKey = keyof DealDocuments;
 
-type DealDocumentDescriptor = {
+export type DealDocumentDescriptor = {
   key: DealDocumentKey;
   label: string;
 };
 
-type DealDocumentGroup = {
+export type DealDocumentGroup = {
   label: string;
   docs: DealDocumentDescriptor[];
 };
@@ -20,7 +20,6 @@ export const DEAL_DOCUMENT_GROUPS: DealDocumentGroup[] = [
     label: "AGREEMENTS",
     docs: [
       { key: "engagementLetter", label: "Engagement Letter" },
-      { key: "cobrokerAgreement", label: "Co-Broker Agreement" },
     ],
   },
   {
@@ -36,13 +35,24 @@ export const DEAL_DOCUMENT_GROUPS: DealDocumentGroup[] = [
       { key: "signedLOI", label: "Signed LOI" },
       { key: "floorPlan", label: "Floor Plan" },
       { key: "approvalPackage", label: "Approval Package" },
-      { key: "commissionAgreement", label: "Commission Agreement" },
       { key: "signedLease", label: "Signed Lease" },
     ],
   },
 ];
 
-export const ALL_DEAL_DOCUMENTS = DEAL_DOCUMENT_GROUPS.flatMap((group) => group.docs);
+export const BROKER_DOCUMENT_GROUPS: DealDocumentGroup[] = [
+  {
+    label: "BROKER",
+    docs: [
+      { key: "cobrokerAgreement", label: "Co-Broker Agreement" },
+      { key: "commissionAgreement", label: "Commission Agreement" },
+    ],
+  },
+];
+
+export const CLIENT_DEAL_DOCUMENTS = DEAL_DOCUMENT_GROUPS.flatMap((group) => group.docs);
+export const BROKER_DOCUMENTS = BROKER_DOCUMENT_GROUPS.flatMap((group) => group.docs);
+export const ALL_DEAL_DOCUMENTS = [...CLIENT_DEAL_DOCUMENTS, ...BROKER_DOCUMENTS];
 
 function normalizeDocumentValue(value: string): string | null {
   const trimmed = value.trim();
@@ -73,6 +83,9 @@ export function DealDocumentsManagerModal({
   editable,
   onSave,
   dealId,
+  groups = DEAL_DOCUMENT_GROUPS,
+  title = "Deal Documents",
+  description,
 }: {
   open: boolean;
   onClose: () => void;
@@ -80,6 +93,9 @@ export function DealDocumentsManagerModal({
   editable: boolean;
   onSave: (documents: DealDocuments) => Promise<void> | void;
   dealId: string;
+  groups?: DealDocumentGroup[];
+  title?: string;
+  description?: string;
 }) {
   const [draft, setDraft] = useState<DealDocuments>(documents);
   const [saving, setSaving] = useState(false);
@@ -94,10 +110,11 @@ export function DealDocumentsManagerModal({
     setUploadingKey(null);
   }, [documents, open]);
 
-  const filedCount = useMemo(() => Object.values(draft).filter(Boolean).length, [draft]);
+  const selectedDocs = useMemo(() => groups.flatMap((group) => group.docs), [groups]);
+  const filedCount = useMemo(() => selectedDocs.filter((doc) => Boolean(draft[doc.key])).length, [draft, selectedDocs]);
   const invalidKeys = useMemo(
-    () => ALL_DEAL_DOCUMENTS.filter((doc) => !isLikelyUrlOrPath(draft[doc.key] ?? "")).map((doc) => doc.label),
-    [draft],
+    () => selectedDocs.filter((doc) => !isLikelyUrlOrPath(draft[doc.key] ?? "")).map((doc) => doc.label),
+    [draft, selectedDocs],
   );
 
   if (!open) return null;
@@ -129,7 +146,7 @@ export function DealDocumentsManagerModal({
       return;
     }
 
-    const cleaned = ALL_DEAL_DOCUMENTS.reduce<DealDocuments>((acc, doc) => {
+    const cleaned = selectedDocs.reduce<DealDocuments>((acc, doc) => {
       acc[doc.key] = normalizeDocumentValue(draft[doc.key] ?? "");
       return acc;
     }, { ...draft });
@@ -166,9 +183,9 @@ export function DealDocumentsManagerModal({
               <FileText className="w-4 h-4" />
             </div>
             <div>
-              <h2 style={{ fontSize: 18, lineHeight: 1.25, fontWeight: 750, color: "var(--text-primary)" }}>Deal Documents</h2>
+              <h2 style={{ fontSize: 18, lineHeight: 1.25, fontWeight: 750, color: "var(--text-primary)" }}>{title}</h2>
               <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-            {editable ? "Paste a document link or upload a file directly to Supabase Storage." : "Review the documents filed for this deal."}
+                {description ?? (editable ? "Paste a document link or upload a file directly to Supabase Storage." : "Review the documents filed for this deal.")}
               </p>
             </div>
           </div>
@@ -188,14 +205,14 @@ export function DealDocumentsManagerModal({
               <div
                 style={{
                   height: "100%",
-                  width: `${Math.round((filedCount / ALL_DEAL_DOCUMENTS.length) * 100)}%`,
+                  width: `${Math.round((filedCount / Math.max(1, selectedDocs.length)) * 100)}%`,
                   borderRadius: 999,
-                  background: filedCount === ALL_DEAL_DOCUMENTS.length ? "#059669" : "linear-gradient(90deg, #243c51, #E18739)",
+                  background: filedCount === selectedDocs.length ? "#059669" : "linear-gradient(90deg, #243c51, #E18739)",
                 }}
               />
             </div>
             <span style={{ marginLeft: 14, fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
-              {filedCount} of {ALL_DEAL_DOCUMENTS.length} filed
+              {filedCount} of {selectedDocs.length} filed
             </span>
           </div>
 
@@ -206,7 +223,7 @@ export function DealDocumentsManagerModal({
           )}
 
           <div className="flex flex-col gap-5">
-            {DEAL_DOCUMENT_GROUPS.map((group) => (
+            {groups.map((group) => (
               <section key={group.label}>
                 <span style={{ display: "block", marginBottom: 8, fontSize: 11, fontWeight: 750, letterSpacing: "0.12em", color: "var(--text-muted)", textTransform: "uppercase" }}>
                   {group.label}

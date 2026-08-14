@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useCurrentProfile, useRealUserRole, useUserRole, roleStore, ROLE_LABELS, type UserRole } from "@/hooks/useUserRole";
-import { Shield, Building2, Store, Check, KeyRound, LogOut } from "lucide-react";
+import { Shield, Building2, Store, Check, KeyRound, LogOut, Compass } from "lucide-react";
 import { toast } from "sonner";
 import { changeSupabasePassword, signOutOfSupabase } from "@/infrastructure/supabase/auth";
 
@@ -39,6 +39,13 @@ const ROLE_OPTIONS: RoleOption[] = [
     icon: Store,
     description:
       "Sees only the deal they are working on, including Top Sites. Can upload site photos and request updates. Financials and broker files hidden.",
+  },
+  {
+    key: "mapiq",
+    label: "MapIQ Only",
+    icon: Compass,
+    description:
+      "Test-only access for the standalone MapIQ tool. Navigation is limited to MapIQ and Settings.",
   },
 ];
 

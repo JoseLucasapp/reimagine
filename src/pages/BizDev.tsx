@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, MoreHorizontal, ExternalLink, ChevronDown, X, Info, Download,
 } from "lucide-react";
@@ -76,9 +76,12 @@ export default function BizDevPage() {
   const runtimeDataVersion = useRuntimeDataVersion();
   const [tab, setTab] = useState<TabKey>("all");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [catFilter, setCatFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [records, setRecords] = useState<BizDevRecord[]>(() => [...bizDevRecords]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<BizDevRecord | null>(null);
   const [formData, setFormData] = useState<Omit<BizDevRecord, "id">>(emptyRecord);
@@ -127,12 +130,13 @@ export default function BizDevPage() {
 
   const filtered = useMemo(() => {
     const tabFilter = tabs.find((t) => t.key === tab)?.filter;
+    const searchTerm = deferredSearch.trim().toLowerCase();
     return records
       .filter((r) => {
         if (tabFilter && r.status !== tabFilter) return false;
         if (catFilter !== "all" && r.category !== catFilter) return false;
         if (ownerFilter !== "all" && r.owner !== ownerFilter) return false;
-        if (search) return r.companyName.toLowerCase().includes(search.toLowerCase());
+        if (searchTerm) return r.companyName.toLowerCase().includes(searchTerm);
         return true;
       })
       .sort((a, b) => {
@@ -141,7 +145,28 @@ export default function BizDevPage() {
         const cmp = String(aVal).localeCompare(String(bVal));
         return sortDir === "asc" ? cmp : -cmp;
       });
-  }, [records, tab, search, catFilter, ownerFilter, sortCol, sortDir]);
+  }, [records, tab, deferredSearch, catFilter, ownerFilter, sortCol, sortDir]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab, deferredSearch, catFilter, ownerFilter, sortCol, sortDir, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const pageEnd = Math.min(safePage * pageSize, filtered.length);
+  const pagedRecords = useMemo(
+    () => filtered.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filtered, safePage, pageSize],
+  );
+
+  const visiblePageNumbers = useMemo(() => {
+    const pages = new Set<number>([1, totalPages]);
+    for (let current = safePage - 2; current <= safePage + 2; current += 1) {
+      if (current >= 1 && current <= totalPages) pages.add(current);
+    }
+    return Array.from(pages).sort((a, b) => a - b);
+  }, [safePage, totalPages]);
 
   const ownerOptions = useMemo(
     () => Array.from(new Set(records.map((record) => record.owner).filter(Boolean))).sort(),
@@ -367,7 +392,7 @@ export default function BizDevPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {pagedRecords.map((r) => (
                 <tr key={r.id} className="transition-colors">
                   <td className="px-4 py-3.5">
                     <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold", statusBadgeClasses[r.status])}>
@@ -418,6 +443,69 @@ export default function BizDevPage() {
             </tbody>
           </table>
         </div>
+        {filtered.length > 0 && (
+          <div
+            className="flex flex-col gap-3 border-t px-4 py-3 md:flex-row md:items-center md:justify-between"
+            style={{ borderColor: "var(--border-divider)" }}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Showing {pageStart}-{pageEnd} of {filtered.length}
+              </span>
+              <select
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="glass-input px-2 py-1 text-xs"
+                style={{ width: 96 }}
+              >
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={safePage <= 1}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ border: "1px solid var(--border-input)", color: "var(--text-primary)" }}
+              >
+                Previous
+              </button>
+              {visiblePageNumbers.map((pageNumber, index) => {
+                const previous = visiblePageNumbers[index - 1];
+                const showGap = previous !== undefined && pageNumber - previous > 1;
+                return (
+                  <span key={pageNumber} className="inline-flex items-center gap-1">
+                    {showGap && <span className="px-1 text-xs" style={{ color: "var(--text-muted)" }}>...</span>}
+                    <button
+                      type="button"
+                      onClick={() => setPage(pageNumber)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+                      style={{
+                        border: "1px solid var(--border-input)",
+                        background: safePage === pageNumber ? "rgba(225,135,57,0.16)" : "transparent",
+                        color: safePage === pageNumber ? "#E18739" : "var(--text-primary)",
+                      }}
+                    >
+                      {pageNumber}
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={safePage >= totalPages}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ border: "1px solid var(--border-input)", color: "var(--text-primary)" }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>

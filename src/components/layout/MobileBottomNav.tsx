@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Grid3X3, Filter, Handshake, Settings } from "lucide-react";
+import { Compass, LayoutDashboard, Grid3X3, Filter, Handshake, Settings } from "lucide-react";
 import { canSeeRoute, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 
 const tabs = [
@@ -7,6 +7,7 @@ const tabs = [
   { label: "Brands", to: "/brands", icon: Grid3X3 },
   { label: "Prospects", to: "/bizdev", icon: Filter },
   { label: "Deals", to: "/deals", icon: Handshake },
+  { label: "MapIQ", to: "/map", icon: Compass },
   { label: "Settings", to: "/settings", icon: Settings },
 ];
 
@@ -15,11 +16,6 @@ export function MobileBottomNav() {
   const role = useUserRole();
   const user = useScopedUser();
   const scopedTabs = tabs.flatMap((tab) => {
-    if (role === "broker") {
-      // Brokers should land on Deals and must not see Dashboard in navigation.
-      if (tab.to === "/") return [];
-      return [tab];
-    }
     if (role === "brand") {
       if (tab.to === "/") return [];
       if (tab.to === "/brands") return [{ ...tab, to: "/brand" }];

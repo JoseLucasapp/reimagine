@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import LoginPage from "./pages/LoginPage";
+import PasswordSetupPage from "./pages/PasswordSetupPage";
 import { RouteGuard } from "@/components/access/RouteGuard";
 import { AppDataProvider } from "@/application/data/AppDataProvider";
 
@@ -24,6 +25,8 @@ const SpaceRequirementsPage = lazy(() => import("./pages/SpaceRequirements"));
 const OneOffDealsPage = lazy(() => import("./pages/OneOffDeals"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AdminActionItemsPage = lazy(() => import("./pages/AdminActionItems"));
+const AdminAccountRequestsPage = lazy(() => import("./pages/AdminAccountRequests"));
+const AdminUsersPage = lazy(() => import("./pages/AdminUsers"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const TourBookPage = lazy(() => import("./pages/TourBookPage"));
 const FranchisorDashboard = lazy(() => import("./pages/FranchisorDashboard"));
@@ -66,6 +69,8 @@ function MainAppRoutes() {
           <Route path="/map" element={<MapView />} />
           <Route path="/space-requirements" element={<SpaceRequirementsPage />} />
           <Route path="/one-off" element={<OneOffDealsPage />} />
+          <Route path="/account-requests" element={<AdminAccountRequestsPage />} />
+          <Route path="/users" element={<AdminUsersPage />} />
           <Route path="/action-items" element={<AdminActionItemsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFound />} />
@@ -92,6 +97,16 @@ const App = () => {
     persistSession(session);
     setIsLoggedIn(true);
   };
+
+  if (typeof window !== "undefined" && window.location.pathname === "/set-password") {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <PasswordSetupPage onComplete={handleLogin} />
+        </TooltipProvider>
+      </QueryClientProvider>
+    );
+  }
 
   if (!isLoggedIn) {
     return (

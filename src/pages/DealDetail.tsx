@@ -11,7 +11,7 @@ import { DealSummaryTab } from "@/components/deal/DealSummaryTab";
 import { BrandAvatar } from "@/components/BrandAvatar";
 import { ArrowRight, MapPin, Clock, FileText, Check, Plus, Map, BookOpen, BarChart3, Zap, Store, Layers, FolderOpen, X, Send, RefreshCw, ClipboardList, MessageSquare, CheckCircle2, Link2, Loader2, Upload } from "lucide-react";
 import { TakeActionDrawer, TakeActionSubmission } from "@/components/deal/TakeActionDrawer";
-import { canAccessDeal, canEditDeal, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
+import { canAccessDeal, canEditDeal, canViewBrokerFiles, useCurrentProfile, useScopedUser, useUserRole } from "@/hooks/useUserRole";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DealLinksEditorModal } from "@/components/deal/DealLinksEditorModal";
@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { getSitesByDeal } from "@/data/mapRuntimeData";
 import { createDealActionItem, createDealNote, createTourBook, siteToMutationInput, updateDeal, updateSite, type DealMutationInput } from "@/application/data/runtimeMutations";
 import { useRuntimeDataVersion } from "@/application/data/runtimeStore";
-import { ALL_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
+import { BROKER_DOCUMENTS, BROKER_DOCUMENT_GROUPS, CLIENT_DEAL_DOCUMENTS, DEAL_DOCUMENT_GROUPS, DealDocumentsManagerModal, type DealDocumentKey } from "@/components/deal/DealDocumentsManagerModal";
 import { fileNameFromStorageValue, uploadDealDocumentFile } from "@/infrastructure/supabase/storage";
 import { dealActionStore, type DealActionItem } from "@/lib/dealActionStore";
 import { MapIQModal } from "@/components/mapiq/MapIQModal";
@@ -34,7 +34,7 @@ type DealDocumentDescriptor = {
   label: string;
 };
 
-const ALL_DOC_KEYS = ALL_DEAL_DOCUMENTS;
+const ALL_DOC_KEYS = CLIENT_DEAL_DOCUMENTS;
 const hiddenScrollbarStyle: React.CSSProperties = { scrollbarWidth: "none", msOverflowStyle: "none" };
 
 type DealTab = "project" | "topsites" | "loi" | "summary";
@@ -221,7 +221,7 @@ function DealVelocityWidget({ deal, onViewKanban }: { deal: DealRecord; onViewKa
 function DocCompletionWidget({ deal, onViewAll }: { deal: DealRecord; onViewAll?: () => void }) {
   const docs = deal.documents;
   const total = ALL_DOC_KEYS.length;
-  const filed = Object.values(docs).filter(Boolean).length;
+  const filed = ALL_DOC_KEYS.filter((doc) => Boolean(docs[doc.key])).length;
   const pct = Math.round((filed / total) * 100);
   const radius = 31;
   const circumference = 2 * Math.PI * radius;
@@ -230,7 +230,7 @@ function DocCompletionWidget({ deal, onViewAll }: { deal: DealRecord; onViewAll?
   const criticalDocs: DealDocumentDescriptor[] = [
     { key: "engagementLetter", label: "Engagement Letter" },
     { key: "signedLOI", label: "Signed LOI" },
-    { key: "cobrokerAgreement", label: "Co-Broker Agmt" },
+    { key: "floorPlan", label: "Floor Plan" },
     { key: "signedLease", label: "Signed Lease" },
   ];
 
@@ -578,6 +578,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
   const [showSignedModal, setShowSignedModal] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<DealStatusNew | null>(null);
   const [showDocsModal, setShowDocsModal] = useState(false);
+  const [showBrokerDocsModal, setShowBrokerDocsModal] = useState(false);
   const [showTakeAction, setShowTakeAction] = useState(false);
   const [showLinksEditor, setShowLinksEditor] = useState(false);
   const [mapModalOpen, setMapModalOpen] = useState(false);
@@ -603,6 +604,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
   );
   const hasDealAccess = deal ? canAccessDeal(user ?? role, deal) : false;
   const canEditCurrentDeal = canEditDeal(user ?? role);
+  const canViewBrokerDocuments = canViewBrokerFiles(user ?? role);
 
   useEffect(() => {
     if (deal?.id && deal?.brandId) recordDealVisit(deal.brandId, deal.id);
@@ -665,6 +667,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
       await persistDealChanges({ documents });
       toast.success("Deal documents updated");
       setShowDocsModal(false);
+      setShowBrokerDocsModal(false);
     } catch (error) {
       toast.error("Unable to save deal documents", {
         description: error instanceof Error ? error.message : "Please try again.",
@@ -899,7 +902,24 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
         editable={role === "admin"}
         onSave={handleSaveDealDocuments}
         dealId={deal.id}
+        groups={DEAL_DOCUMENT_GROUPS}
+        title="Deal Documents"
+        description={role === "admin" ? "Manage client-facing deal documents." : "Review the client-facing documents filed for this deal."}
       />
+
+      {canViewBrokerDocuments && (
+        <DealDocumentsManagerModal
+          open={showBrokerDocsModal}
+          onClose={() => setShowBrokerDocsModal(false)}
+          documents={deal.documents}
+          editable={role === "admin"}
+          onSave={handleSaveDealDocuments}
+          dealId={deal.id}
+          groups={BROKER_DOCUMENT_GROUPS}
+          title="Broker Documents"
+          description={role === "admin" ? "Manage Reimagine-only broker documents." : "Review broker documents for this deal."}
+        />
+      )}
 
       {/* Header Band */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-3" style={{ marginBottom: 0 }}>
@@ -1330,7 +1350,7 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                   </div>
                   <div className="flex items-center gap-2">
                     <span style={{ fontSize: 12, fontWeight: 600, color: "#065f46" }}>
-                      {Object.values(deal.documents).filter(Boolean).length} of {ALL_DOC_KEYS.length}
+                      {ALL_DOC_KEYS.filter(({ key }) => Boolean(deal.documents[key])).length} of {ALL_DOC_KEYS.length}
                     </span>
                     <button
                       type="button"
@@ -1380,6 +1400,72 @@ export default function DealDetail({ dealIdOverride }: { dealIdOverride?: string
                   </div>
                 ))}
               </div>
+
+              {canViewBrokerDocuments && (
+                <div className="glass-card-static" style={{ padding: 0 }}>
+                  <div className="flex items-center justify-between" style={{ padding: "16px 20px 12px", borderBottom: "1px solid var(--border-divider)" }}>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="w-4 h-4" style={{ color: "#E18739" }} />
+                        <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--text-muted)" }}>Broker Documents</span>
+                      </div>
+                      <span style={{ fontSize: 12, background: "rgba(225,135,57,0.08)", borderRadius: 4, padding: "4px 8px", color: "var(--text-muted)", display: "inline-block", marginTop: 4 }}>
+                        Reimagine Only
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#065f46" }}>
+                        {BROKER_DOCUMENTS.filter(({ key }) => Boolean(deal.documents[key])).length} of {BROKER_DOCUMENTS.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowBrokerDocsModal(true)}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "var(--text-orange-ui)",
+                          background: "rgba(225,135,57,0.08)",
+                          border: "1px solid rgba(225,135,57,0.16)",
+                          borderRadius: 999,
+                          padding: "5px 10px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {role === "admin" ? "Manage" : "View"}
+                      </button>
+                    </div>
+                  </div>
+                  {BROKER_DOCUMENT_GROUPS.map((group) => (
+                    <div key={group.label}>
+                      <div style={{ padding: "8px 20px 4px" }}>
+                        <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-faint)" }}>{group.label}</span>
+                      </div>
+                      {group.docs.map(({ key, label }) => {
+                        const val = deal.documents[key];
+                        const hasDoc = !!val;
+                        return (
+                          <div key={key} className="flex items-center justify-between transition-colors hover:bg-[rgba(36,60,81,0.02)]" style={{ padding: "8px 20px", borderBottom: "1px solid var(--border-divider)" }}>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-3 h-3" style={{ color: "#E18739" }} />
+                              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{label}</span>
+                            </div>
+                            {hasDoc ? (
+                              <div className="flex items-center gap-2">
+                                <Check className="w-3 h-3" style={{ color: "#065f46" }} />
+                                <a href={val} target="_blank" rel="noopener" style={{ fontSize: 12, fontWeight: 600, color: "var(--text-orange-ui)" }}>View</a>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", background: "rgba(100,116,139,0.08)", borderRadius: 9999, padding: "4px 8px" }}>
+                                Not filed
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {deal.corporate && deal.corporateComments && (
                 <div className="glass-card-static" style={{ padding: 20 }}>

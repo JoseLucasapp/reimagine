@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { buildAddressQuery, geocodeAddress } from "@/lib/geocoding";
 
 const SITE_STAGES: DealStage[] = ["Prospecting", "LOI", "Lease", "Open", "Closed"];
+const TOP_SITE_CSV_TEMPLATE = "property_name,address,city,state,zip,lat,lng,stage,square_footage,space_type,property_type,landlord,landlord_contact,lease_term,possession_date,tour_time,broker_name,broker_phone,photo_urls,brochure_url,floor_plan_url,loi_url,lease_url,base_rent,nnn,gross_monthly_rent,commencement_date,ti_allowance,loi_notes,notes\n";
 
 const STATUS_COLORS: Record<DealStage, { bg: string; border: string; text: string; dot: string }> = {
   Prospecting: { bg: "rgba(30,96,145,0.08)", border: "rgba(30,96,145,0.22)", text: "#1e6091", dot: "#1e6091" },
@@ -62,33 +63,88 @@ function blankSiteInput(deal: DealRecord): SiteMutationInput {
   };
 }
 
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && inQuotes && next === '"') {
+      value += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      values.push(value.trim());
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  values.push(value.trim());
+  return values;
+}
+
+function normalizeCsvHeader(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function splitMultiValue(value: string): string[] {
+  return value.split(/[|;\n]+/).map((item) => item.trim()).filter(Boolean);
+}
+
 function parseCsvRows(csv: string, deal: DealRecord): SiteMutationInput[] {
   const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((header) => header.trim().toLowerCase());
+  const headers = parseCsvLine(lines[0]).map(normalizeCsvHeader);
   const rows = lines.slice(1);
 
   return rows.map((line) => {
-    const values = line.split(",").map((value) => value.trim());
-    const get = (name: string) => values[headers.indexOf(name)] ?? "";
-    const stageCandidate = get("stage") as DealStage;
+    const values = parseCsvLine(line);
+    const get = (...names: string[]) => {
+      for (const name of names) {
+        const value = values[headers.indexOf(normalizeCsvHeader(name))];
+        if (value !== undefined && value.trim()) return value.trim();
+      }
+      return "";
+    };
+    const stageCandidate = get("stage", "site_stage") as DealStage;
     return {
       ...blankSiteInput(deal),
-      name: get("property_name") || get("name") || get("property"),
-      address: get("address"),
-      city: get("city") || deal.city,
+      name: get("property_name", "name", "property", "site_name"),
+      address: get("address", "street_address", "site_address"),
+      city: get("city", "market") || deal.city,
       state: get("state") || deal.state,
-      zipCode: get("zip") || get("zip_code"),
-      lat: Number(get("lat")) || 0,
-      lng: Number(get("lng")) || Number(get("lon")) || 0,
+      zipCode: get("zip", "zip_code", "postal_code"),
+      lat: Number(get("lat", "latitude")) || 0,
+      lng: Number(get("lng", "lon", "longitude")) || 0,
       stage: SITE_STAGES.includes(stageCandidate) ? stageCandidate : "Prospecting",
-      statusLabel: get("status") || get("stage") || "Prospecting",
-      notes: get("notes"),
-      squareFootage: get("square_footage") || get("sf"),
+      statusLabel: get("status", "status_label") || get("stage", "site_stage") || "Prospecting",
+      notes: get("notes", "comments"),
+      squareFootage: get("square_footage", "sf", "size", "size_sf"),
       spaceType: get("space_type"),
-      propertyType: get("property_type"),
-      landlord: get("landlord"),
-      landlordContact: get("landlord_contact"),
+      propertyType: get("property_type", "property_category"),
+      landlord: get("landlord", "owner"),
+      landlordContact: get("landlord_contact", "landlord_email", "landlord_phone"),
+      leaseTerm: get("lease_term", "term"),
+      possessionDate: get("possession_date", "delivery_date"),
+      tourTime: get("tour_time", "tour_date", "tour"),
+      brokerName: get("broker_name", "broker"),
+      brokerPhone: get("broker_phone"),
+      photoUrls: splitMultiValue(get("photo_urls", "photos", "image_urls")),
+      brochureUrl: get("brochure_url", "brochure"),
+      floorPlanUrl: get("floor_plan_url", "floor_plan"),
+      loiUrl: get("loi_url", "loi"),
+      leaseUrl: get("lease_url", "lease"),
+      baseRent: get("base_rent", "rent"),
+      nnn: get("nnn"),
+      grossMonthlyRent: get("gross_monthly_rent", "monthly_rent"),
+      commencementDate: get("commencement_date"),
+      tiAllowance: get("ti_allowance", "ti"),
+      loiNotes: get("loi_notes", "loi_comments"),
     };
   }).filter((row) => row.address);
 }
@@ -186,9 +242,14 @@ function Field({ label, wide, children }: { label: string; wide?: boolean; child
 }
 
 function ImportSitesDialog({ deal, open, onOpenChange }: { deal: DealRecord; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [csv, setCsv] = useState("property_name,address,city,state,zip,lat,lng,stage,square_footage,space_type,property_type,landlord,notes\n");
+  const [csv, setCsv] = useState(TOP_SITE_CSV_TEMPLATE);
   const [saving, setSaving] = useState(false);
   const rows = useMemo(() => parseCsvRows(csv, deal), [csv, deal]);
+
+  const handleFileUpload = async (file: File | null) => {
+    if (!file) return;
+    setCsv(await file.text());
+  };
 
   const importRows = async () => {
     if (rows.length === 0) {
@@ -214,6 +275,25 @@ function ImportSitesDialog({ deal, open, onOpenChange }: { deal: DealRecord; ope
           <DialogTitle>Import Sites from CSV</DialogTitle>
           <DialogDescription>Paste CSV data. Rows are saved into the Supabase `sites` table for this deal.</DialogDescription>
         </DialogHeader>
+        <label
+          className="flex items-center justify-between gap-3 rounded-[10px] px-4 py-3 text-sm"
+          style={{ border: "1px dashed var(--border-subtle)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer" }}
+        >
+          <span className="inline-flex items-center gap-2 font-semibold">
+            <Upload className="h-4 w-4" />
+            Choose CSV file
+          </span>
+          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>or paste rows below</span>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="sr-only"
+            onChange={(event) => {
+              void handleFileUpload(event.currentTarget.files?.[0] ?? null);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
         <Textarea value={csv} onChange={(e) => setCsv(e.target.value)} className="min-h-[240px] font-mono text-xs" />
         <div className="flex items-center justify-between">
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>{rows.length} valid row{rows.length === 1 ? "" : "s"} detected</span>

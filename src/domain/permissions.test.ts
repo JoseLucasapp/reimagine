@@ -29,6 +29,7 @@ const adminUser: ScopedUser = { role: "admin", brandId: null, dealId: null };
 const brokerUser: ScopedUser = { role: "broker", brokerName: "JH", brandId: null, dealId: null };
 const brandUser: ScopedUser = { role: "brand", brandId: "brand-1", dealId: null };
 const dealUser: ScopedUser = { role: "deal", brandId: "brand-2", dealId: "deal-2" };
+const mapIqUser: ScopedUser = { role: "mapiq", brandId: null, dealId: null };
 
 describe("role permissions", () => {
   it("defaults invalid roles to the least privileged role", () => {
@@ -40,6 +41,7 @@ describe("role permissions", () => {
     expect(parseUserRole("reimagine_broker")).toBe("broker");
     expect(parseUserRole("franchisor")).toBe("brand");
     expect(parseUserRole("franchisee")).toBe("deal");
+    expect(parseUserRole("mapiq_only")).toBe("mapiq");
   });
 
   it("allows admins to access every route", () => {
@@ -72,8 +74,18 @@ describe("role permissions", () => {
     expect(canSeeRoute("broker", "/action-items")).toBe(true);
     expect(canSeeRoute("broker", "/brands")).toBe(true);
     expect(canSeeRoute("broker", "/bizdev")).toBe(true);
-    expect(roleToHomeRoute("broker")).toBe("/deals");
+    expect(roleToHomeRoute("broker")).toBe("/");
     expect(getVisibleDealsForUser(brokerUser, deals).map((deal) => deal.id)).toEqual(["deal-1", "deal-3"]);
+  });
+
+  it("limits MapIQ-only users to the standalone map route", () => {
+    expect(canSeeRoute("mapiq", "/map")).toBe(true);
+    expect(canSeeRoute("mapiq", "/mapiq")).toBe(true);
+    expect(canSeeRoute("mapiq", "/settings")).toBe(true);
+    expect(canSeeRoute("mapiq", "/deals")).toBe(false);
+    expect(canSeeRoute("mapiq", "/brands")).toBe(false);
+    expect(roleToHomeRoute("mapiq")).toBe("/map");
+    expect(getVisibleDealsForUser(mapIqUser, deals).map((deal) => deal.id)).toEqual(["deal-1", "deal-2", "deal-3"]);
   });
 
   it("allows brand-level users to see brand portfolio routes without admin-only sections", () => {
