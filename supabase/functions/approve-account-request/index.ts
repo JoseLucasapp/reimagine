@@ -52,11 +52,6 @@ function env(name: string): string {
   return value;
 }
 
-function optionalEnv(name: string): string | null {
-  const value = Deno.env.get(name)?.trim();
-  return value || null;
-}
-
 function asString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -78,10 +73,8 @@ function brokerCodeFromName(fullName: string): string {
   return `${parts[0][0] ?? ""}${parts[parts.length - 1][0] ?? ""}`.toUpperCase();
 }
 
-function redirectUrl(request: Request): string {
-  const configured = optionalEnv("APP_URL") ?? optionalEnv("SITE_URL") ?? optionalEnv("PUBLIC_SITE_URL");
-  const origin = configured ?? request.headers.get("origin") ?? "http://localhost:8080";
-  return `${origin.replace(/\/$/, "")}/set-password`;
+function redirectUrl(): string {
+  return `${env("APP_URL").replace(/\/$/, "")}/set-password`;
 }
 
 function sanitizeUpdates(input: Record<string, unknown> | undefined): Partial<AccountRequestRow> {
@@ -219,7 +212,7 @@ serve(async (request) => {
     }
 
     const email = normalizeEmail(accountRequest.email);
-    const setupRedirectUrl = redirectUrl(request);
+    const setupRedirectUrl = redirectUrl();
     let brandId = await resolveBrandId(supabase, accountRequest);
     let dealId: string | null = null;
     let brokerName: string | null = accountRequest.broker_name?.trim() || null;

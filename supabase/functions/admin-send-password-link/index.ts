@@ -36,11 +36,6 @@ function env(name: string): string {
   return value;
 }
 
-function optionalEnv(name: string): string | null {
-  const value = Deno.env.get(name)?.trim();
-  return value || null;
-}
-
 function asString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -51,10 +46,8 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function redirectUrl(request: Request): string {
-  const configured = optionalEnv("APP_URL") ?? optionalEnv("SITE_URL") ?? optionalEnv("PUBLIC_SITE_URL");
-  const origin = configured ?? request.headers.get("origin") ?? "http://localhost:8080";
-  return `${origin.replace(/\/$/, "")}/set-password`;
+function redirectUrl(): string {
+  return `${env("APP_URL").replace(/\/$/, "")}/set-password`;
 }
 
 async function getAdminUser(supabase: ReturnType<typeof createClient>, authHeader: string | null): Promise<AuthUser> {
@@ -132,7 +125,7 @@ serve(async (request) => {
     if (!authUser?.email) return json({ error: "Supabase Auth user was not found for this profile." }, 404);
 
     const email = normalizeEmail(authUser.email);
-    const redirectTo = redirectUrl(request);
+    const redirectTo = redirectUrl();
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
     });
