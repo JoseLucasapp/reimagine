@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserPlus, UserX } from "lucide-react";
+import { KeyRound, RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserPlus, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCurrentProfile, useUserRole } from "@/hooks/useUserRole";
@@ -11,6 +11,7 @@ import {
   loadAdminUsers,
   loadAdminUserScopeOptions,
   saveAdminUser,
+  sendAdminUserPasswordLink,
   setAdminUserDisabled,
   type AdminUserProfile,
   type AdminUserScopeOptions,
@@ -110,6 +111,8 @@ export default function AdminUsers() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
   const [togglingDisabled, setTogglingDisabled] = useState(false);
+  const [passwordConfirmOpen, setPasswordConfirmOpen] = useState(false);
+  const [sendingPasswordLink, setSendingPasswordLink] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
 
@@ -176,6 +179,7 @@ export default function AdminUsers() {
   const isOnlyAdmin = Boolean(!isCreating && selectedUser?.role === "admin" && stats.admin <= 1);
   const selectedUserDisabled = Boolean(selectedUser?.disabledAt);
   const canToggleDisabled = Boolean(selectedUser && !isCreating && selectedUser.role !== "admin");
+  const canSendPasswordLink = Boolean(selectedUser && !isCreating && selectedUser.email && !selectedUser.disabledAt);
   const roleLocked = isEditingSelf || isOnlyAdmin;
   const roleLockMessage = isEditingSelf
     ? "You cannot change your own role from this screen."
@@ -314,6 +318,38 @@ export default function AdminUsers() {
       });
     } finally {
       setTogglingDisabled(false);
+    }
+  };
+
+  const requestSendPasswordLink = () => {
+    if (!selectedUser || isCreating || sendingPasswordLink) return;
+    if (!selectedUser.email) {
+      toast.error("This user does not have an email address.");
+      return;
+    }
+    if (selectedUser.disabledAt) {
+      toast.error("Reactivate this user before sending a password link.");
+      return;
+    }
+    setPasswordConfirmOpen(true);
+  };
+
+  const sendPasswordLink = async () => {
+    if (!selectedUser || sendingPasswordLink) return;
+    setPasswordConfirmOpen(false);
+    setSendingPasswordLink(true);
+    try {
+      const result = await sendAdminUserPasswordLink(selectedUser);
+      toast.success("Password link sent.", {
+        description: `Sent to ${result.email}.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Unable to send password link.", {
+        description: errorMessage(error, "Check the admin-send-password-link Edge Function settings."),
+      });
+    } finally {
+      setSendingPasswordLink(false);
     }
   };
 
@@ -571,6 +607,18 @@ export default function AdminUsers() {
                 {!isCreating ? (
                   <button
                     type="button"
+                    onClick={requestSendPasswordLink}
+                    disabled={!canSendPasswordLink || sendingPasswordLink}
+                    className="cta-secondary inline-flex items-center gap-2 disabled:opacity-50"
+                    title={selectedUserDisabled ? "Reactivate this user before sending a password link." : !selectedUser?.email ? "This user does not have an email address." : undefined}
+                  >
+                    {sendingPasswordLink ? <RefreshCw className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    Send Password Link
+                  </button>
+                ) : null}
+                {!isCreating ? (
+                  <button
+                    type="button"
                     onClick={requestToggleDisabled}
                     disabled={!canToggleDisabled || togglingDisabled}
                     className="cta-secondary inline-flex items-center gap-2 disabled:opacity-50"
@@ -637,6 +685,43 @@ export default function AdminUsers() {
           <button type="button" onClick={() => void save()} disabled={saving} className="cta-primary inline-flex items-center gap-2 disabled:opacity-60">
             {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
             Confirm
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={passwordConfirmOpen} onOpenChange={(open) => !sendingPasswordLink && setPasswordConfirmOpen(open)}>
+      <DialogContent
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text-primary)",
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Send password setup link?</DialogTitle>
+          <DialogDescription style={{ color: "var(--text-muted)" }}>
+            Supabase will email this user a secure link to set or reset their password.
+          </DialogDescription>
+        </DialogHeader>
+        <div style={{ border: "1px solid var(--border-subtle)", borderRadius: 12, overflow: "hidden" }}>
+          {[
+            ["User", selectedUser?.fullName || selectedUser?.email || "Unnamed user"],
+            ["Email", selectedUser?.email || "No email"],
+            ["Redirect", "/set-password"],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between gap-4" style={{ padding: "10px 12px", borderBottom: label === "Redirect" ? 0 : "1px solid var(--border-divider)" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{label}</span>
+              <span style={{ fontSize: 13, color: "var(--text-primary)", textAlign: "right" }}>{value}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="gap-2 sm:space-x-0">
+          <button type="button" onClick={() => setPasswordConfirmOpen(false)} disabled={sendingPasswordLink} className="cta-secondary disabled:opacity-60">
+            Cancel
+          </button>
+          <button type="button" onClick={() => void sendPasswordLink()} disabled={sendingPasswordLink} className="cta-primary inline-flex items-center gap-2 disabled:opacity-60">
+            {sendingPasswordLink ? <RefreshCw className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+            Send Link
           </button>
         </DialogFooter>
       </DialogContent>

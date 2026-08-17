@@ -167,3 +167,15 @@ export async function setAdminUserDisabled(user: AdminUserProfile, disabled: boo
     disabled,
   });
 }
+
+export async function sendAdminUserPasswordLink(user: AdminUserProfile): Promise<{ email: string; redirectTo: string }> {
+  if (!user.email) throw new Error("This user does not have an email address.");
+  return supabaseFunctionRequest<{ email: string; redirectTo: string }>(
+    "admin-send-password-link",
+    {
+      id: user.id,
+      email: user.email.trim().toLowerCase(),
+    } satisfies JsonObject,
+    currentAccessToken(),
+  );
+}
