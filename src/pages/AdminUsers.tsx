@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { RefreshCw, Search, ShieldCheck, UserCog, UserPlus } from "lucide-react";
+import { RefreshCw, Search, ShieldCheck, UserCheck, UserCog, UserPlus, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useCurrentProfile, useUserRole } from "@/hooks/useUserRole";
@@ -11,6 +11,7 @@ import {
   loadAdminUsers,
   loadAdminUserScopeOptions,
   saveAdminUser,
+  setAdminUserDisabled,
   type AdminUserProfile,
   type AdminUserScopeOptions,
 } from "@/lib/adminUserStore";
@@ -95,6 +96,8 @@ export default function AdminUsers() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
+  const [togglingDisabled, setTogglingDisabled] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
 
@@ -144,6 +147,7 @@ export default function AdminUsers() {
         user.email ?? "",
         user.username ?? "",
         user.brokerName ?? "",
+        user.disabledAt ? "disabled" : "active",
         adminUserRoleLabels[user.role],
       ].some((value) => value.toLowerCase().includes(term));
     });
@@ -153,11 +157,13 @@ export default function AdminUsers() {
     total: users.length,
     admin: users.filter((user) => user.role === "admin").length,
     internal: users.filter((user) => user.role === "broker" || user.role === "mapiq").length,
-    external: users.filter((user) => user.role === "brand" || user.role === "deal").length,
+    disabled: users.filter((user) => user.disabledAt).length,
   }), [users]);
 
   const isEditingSelf = Boolean(!isCreating && draft.id && currentProfile?.id === draft.id);
   const isOnlyAdmin = Boolean(!isCreating && selectedUser?.role === "admin" && stats.admin <= 1);
+  const selectedUserDisabled = Boolean(selectedUser?.disabledAt);
+  const canToggleDisabled = Boolean(selectedUser && !isCreating && selectedUser.role !== "admin");
   const roleLocked = isEditingSelf || isOnlyAdmin;
   const roleLockMessage = isEditingSelf
     ? "You cannot change your own role from this screen."
@@ -189,6 +195,10 @@ export default function AdminUsers() {
       toast.error(roleLockMessage || "This user's role is locked.");
       return;
     }
+    if (selectedUserDisabled && nextRole === "admin") {
+      toast.error("Reactivate this user before assigning admin access.");
+      return;
+    }
     setDraft((current) => ({
       ...current,
       role: nextRole,
@@ -202,6 +212,7 @@ export default function AdminUsers() {
     if (!draft.email.trim() || !draft.fullName.trim()) return "Full name and email are required.";
     if (isEditingSelf && selectedUser && draft.role !== selectedUser.role) return "You cannot change your own role.";
     if (isOnlyAdmin && draft.role !== "admin") return "At least one admin must remain in the system.";
+    if (selectedUserDisabled && draft.role === "admin") return "Reactivate this user before assigning admin access.";
     if (draft.role === "brand" && !draft.brandId) return "Brand Level users require a brand scope.";
     if (draft.role === "deal" && !draft.dealId) return "Deal Level users require a deal scope.";
     if (draft.role === "broker" && !draft.brokerName.trim()) return "Broker users require a broker code.";
@@ -255,6 +266,39 @@ export default function AdminUsers() {
     }
   };
 
+  const requestToggleDisabled = () => {
+    if (!selectedUser || isCreating || togglingDisabled) return;
+    if (selectedUser.role === "admin") {
+      toast.error("Admin users cannot be deactivated.");
+      return;
+    }
+    setDisableConfirmOpen(true);
+  };
+
+  const toggleDisabled = async () => {
+    if (!selectedUser || togglingDisabled) return;
+    if (selectedUser.role === "admin") {
+      toast.error("Admin users cannot be deactivated.");
+      setDisableConfirmOpen(false);
+      return;
+    }
+    const nextDisabled = !selectedUser.disabledAt;
+    setTogglingDisabled(true);
+    setDisableConfirmOpen(false);
+    try {
+      const saved = await setAdminUserDisabled(selectedUser, nextDisabled);
+      setUsers((current) => current.map((user) => user.id === saved.id ? saved : user));
+      toast.success(nextDisabled ? "User deactivated." : "User reactivated.");
+    } catch (error) {
+      console.error(error);
+      toast.error(nextDisabled ? "Unable to deactivate user." : "Unable to reactivate user.", {
+        description: errorMessage(error, "Check Supabase Auth function settings."),
+      });
+    } finally {
+      setTogglingDisabled(false);
+    }
+  };
+
   if (role !== "admin") {
     return (
       <div className="p-7">
@@ -295,7 +339,7 @@ export default function AdminUsers() {
             ["Total", stats.total],
             ["Admins", stats.admin],
             ["Internal", stats.internal],
-            ["External", stats.external],
+            ["Disabled", stats.disabled],
           ].map(([label, value]) => (
             <div key={label} style={{ ...cardStyle, padding: 16 }}>
               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-muted)" }}>{label}</span>
@@ -379,9 +423,16 @@ export default function AdminUsers() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span style={{ fontSize: 14, fontWeight: 750, color: "var(--text-primary)" }}>{user.fullName || user.email || "Unnamed User"}</span>
-                          <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "4px 8px", ...roleStyles(user.role) }}>
-                            {adminUserRoleLabels[user.role]}
-                          </span>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {user.disabledAt ? (
+                              <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "4px 8px", color: "#fca5a5", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                                Disabled
+                              </span>
+                            ) : null}
+                            <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "4px 8px", ...roleStyles(user.role) }}>
+                              {adminUserRoleLabels[user.role]}
+                            </span>
+                          </div>
                         </div>
                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>{user.email || "No email"}</p>
                         <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>
@@ -406,9 +457,16 @@ export default function AdminUsers() {
                     {isCreating ? "Creates a Supabase Auth user, profile, and password setup email." : `Profile ID: ${draft.id}`}
                   </p>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "5px 10px", ...roleStyles(draft.role) }}>
-                  {adminUserRoleLabels[draft.role]}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "5px 10px", ...roleStyles(draft.role) }}>
+                    {adminUserRoleLabels[draft.role]}
+                  </span>
+                  {selectedUserDisabled ? (
+                    <span style={{ fontSize: 11, fontWeight: 750, borderRadius: 999, padding: "5px 10px", color: "#fca5a5", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                      Disabled
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               <div className="themed-scrollbar overflow-y-auto" style={{ padding: 20, flex: 1 }}>
@@ -492,6 +550,25 @@ export default function AdminUsers() {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2" style={{ padding: 16, borderTop: "1px solid var(--border-divider)" }}>
+                {!isCreating ? (
+                  <button
+                    type="button"
+                    onClick={requestToggleDisabled}
+                    disabled={!canToggleDisabled || togglingDisabled}
+                    className="cta-secondary inline-flex items-center gap-2 disabled:opacity-50"
+                    style={canToggleDisabled && !selectedUserDisabled ? { color: "#fca5a5", borderColor: "rgba(239,68,68,0.35)" } : undefined}
+                    title={!canToggleDisabled ? "Admin users cannot be deactivated." : undefined}
+                  >
+                    {togglingDisabled ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : selectedUserDisabled ? (
+                      <UserCheck className="h-4 w-4" />
+                    ) : (
+                      <UserX className="h-4 w-4" />
+                    )}
+                    {selectedUserDisabled ? "Reactivate User" : "Deactivate User"}
+                  </button>
+                ) : null}
                 <button type="button" onClick={requestSave} disabled={saving} className="cta-primary inline-flex items-center gap-2 disabled:opacity-60">
                   {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <UserCog className="h-4 w-4" />}
                   {isCreating ? "Create User" : "Save Access"}
@@ -521,6 +598,7 @@ export default function AdminUsers() {
             ["User", draft.fullName || draft.email || "Unnamed user"],
             ["Email", draft.email || "No email"],
             ["Role", adminUserRoleLabels[draft.role]],
+            ["Status", selectedUserDisabled ? "Disabled" : "Active"],
             ["Scope", draftScopeLabel],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-4" style={{ padding: "10px 12px", borderBottom: label === "Scope" ? 0 : "1px solid var(--border-divider)" }}>
@@ -541,6 +619,52 @@ export default function AdminUsers() {
           <button type="button" onClick={() => void save()} disabled={saving} className="cta-primary inline-flex items-center gap-2 disabled:opacity-60">
             {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
             Confirm
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={disableConfirmOpen} onOpenChange={(open) => !togglingDisabled && setDisableConfirmOpen(open)}>
+      <DialogContent
+        style={{
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-subtle)",
+          color: "var(--text-primary)",
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{selectedUserDisabled ? "Reactivate this user?" : "Deactivate this user?"}</DialogTitle>
+          <DialogDescription style={{ color: "var(--text-muted)" }}>
+            {selectedUserDisabled
+              ? "This will restore login access for this account."
+              : "This will block login access for this account. Admin accounts are protected from this action."}
+          </DialogDescription>
+        </DialogHeader>
+        <div style={{ border: "1px solid var(--border-subtle)", borderRadius: 12, overflow: "hidden" }}>
+          {[
+            ["User", selectedUser?.fullName || selectedUser?.email || "Unnamed user"],
+            ["Email", selectedUser?.email || "No email"],
+            ["Role", selectedUser ? adminUserRoleLabels[selectedUser.role] : ""],
+            ["New status", selectedUserDisabled ? "Active" : "Disabled"],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between gap-4" style={{ padding: "10px 12px", borderBottom: label === "New status" ? 0 : "1px solid var(--border-divider)" }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700 }}>{label}</span>
+              <span style={{ fontSize: 13, color: "var(--text-primary)", textAlign: "right" }}>{value}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="gap-2 sm:space-x-0">
+          <button type="button" onClick={() => setDisableConfirmOpen(false)} disabled={togglingDisabled} className="cta-secondary disabled:opacity-60">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleDisabled()}
+            disabled={togglingDisabled}
+            className="cta-primary inline-flex items-center gap-2 disabled:opacity-60"
+            style={!selectedUserDisabled ? { background: "#dc2626", borderColor: "#dc2626" } : undefined}
+          >
+            {togglingDisabled ? <RefreshCw className="h-4 w-4 animate-spin" /> : selectedUserDisabled ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+            {selectedUserDisabled ? "Reactivate" : "Deactivate"}
           </button>
         </DialogFooter>
       </DialogContent>

@@ -130,6 +130,7 @@ create table public.profiles (
   brand_id uuid references public.brands(id) on delete set null,
   deal_id uuid references public.deals(id) on delete set null,
   broker_name text,
+  disabled_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -336,6 +337,7 @@ create index brands_is_hidden_idx on public.brands (is_hidden);
 create index profiles_role_idx on public.profiles (role);
 create index profiles_brand_id_idx on public.profiles (brand_id);
 create index profiles_deal_id_idx on public.profiles (deal_id);
+create index profiles_disabled_at_idx on public.profiles (disabled_at);
 create index deals_brand_id_idx on public.deals (brand_id);
 create index deals_stage_idx on public.deals (stage);
 create index sites_deal_id_idx on public.sites (deal_id);
@@ -448,7 +450,10 @@ language sql
 security definer
 stable
 as $$
-  select coalesce((select role from public.profiles where id = auth.uid()), 'deal'::public.user_role);
+  select case
+    when exists (select 1 from public.profiles where id = auth.uid() and disabled_at is not null) then null::public.user_role
+    else coalesce((select role from public.profiles where id = auth.uid()), 'deal'::public.user_role)
+  end;
 $$;
 
 create or replace function public.current_profile_brand_id()

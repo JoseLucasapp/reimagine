@@ -108,11 +108,11 @@ async function getAdminUser(supabase: ReturnType<typeof createClient>, authHeade
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id,role")
+    .select("id,role,disabled_at")
     .eq("id", authData.user.id)
     .maybeSingle();
   if (profileError) throw profileError;
-  if (profile?.role !== "admin") throw new Response("Forbidden", { status: 403 });
+  if (profile?.role !== "admin" || profile.disabled_at) throw new Response("Forbidden", { status: 403 });
   return { id: authData.user.id, email: authData.user.email };
 }
 
@@ -260,6 +260,7 @@ serve(async (request) => {
           full_name: accountRequest.full_name,
           role: accountRequest.requested_role,
         },
+        ban_duration: "none",
       });
       if (metadataError) throw metadataError;
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
@@ -279,6 +280,7 @@ serve(async (request) => {
         brand_id: accountRequest.requested_role === "broker" ? null : brandId,
         deal_id: accountRequest.requested_role === "deal" ? dealId : null,
         broker_name: accountRequest.requested_role === "broker" ? brokerName : null,
+        disabled_at: null,
       }, { onConflict: "id" });
     if (profileError) throw profileError;
 

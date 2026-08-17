@@ -12,11 +12,17 @@ type Payload = {
   brandId?: unknown;
   dealId?: unknown;
   brokerName?: unknown;
+  disabled?: unknown;
 };
 
 type AuthUser = {
   id: string;
   email?: string | null;
+};
+
+type ProfileState = {
+  role: UserRole | null;
+  disabledAt: string | null;
 };
 
 const corsHeaders = {
@@ -53,6 +59,10 @@ function asRole(value: unknown): UserRole | null {
   return value === "admin" || value === "broker" || value === "brand" || value === "deal" || value === "mapiq" ? value : null;
 }
 
+function asOptionalBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -75,11 +85,11 @@ async function getAdminUser(supabase: ReturnType<typeof createClient>, authHeade
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id,role")
+    .select("id,role,disabled_at")
     .eq("id", authData.user.id)
     .maybeSingle();
   if (profileError) throw profileError;
-  if (profile?.role !== "admin") throw new Response("Forbidden", { status: 403 });
+  if (profile?.role !== "admin" || profile.disabled_at) throw new Response("Forbidden", { status: 403 });
   return { id: authData.user.id, email: authData.user.email };
 }
 
@@ -104,21 +114,25 @@ async function resolveDealBrandId(supabase: ReturnType<typeof createClient>, dea
   return data?.brand_id ?? null;
 }
 
-async function getProfileRole(supabase: ReturnType<typeof createClient>, userId: string): Promise<UserRole | null> {
+async function getProfileState(supabase: ReturnType<typeof createClient>, userId: string): Promise<ProfileState> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role,disabled_at")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
-  return asRole(data?.role);
+  return {
+    role: asRole(data?.role),
+    disabledAt: typeof data?.disabled_at === "string" ? data.disabled_at : null,
+  };
 }
 
 async function countAdminProfiles(supabase: ReturnType<typeof createClient>): Promise<number> {
   const { count, error } = await supabase
     .from("profiles")
     .select("id", { count: "exact", head: true })
-    .eq("role", "admin");
+    .eq("role", "admin")
+    .is("disabled_at", null);
   if (error) throw error;
   return count ?? 0;
 }
@@ -141,6 +155,7 @@ serve(async (request) => {
     const fullName = asString(payload.fullName);
     const username = asString(payload.username);
     const role = asRole(payload.role);
+    const disabled = asOptionalBoolean(payload.disabled);
     let brandId = asString(payload.brandId);
     let dealId = asString(payload.dealId);
     let brokerName = asString(payload.brokerName);
@@ -182,7 +197,8 @@ serve(async (request) => {
     const normalizedEmail = normalizeEmail(email);
     let authUser: AuthUser | null = requestedId ? { id: requestedId, email: normalizedEmail } : await findAuthUserByEmail(supabase, normalizedEmail);
     let emailMode: "invite" | "none" = "none";
-    const existingRole = authUser ? await getProfileRole(supabase, authUser.id) : null;
+    const existingProfile = authUser ? await getProfileState(supabase, authUser.id) : { role: null, disabledAt: null };
+    const existingRole = existingProfile.role;
 
     if (authUser?.id === adminUser.id && existingRole && role !== existingRole) {
       return json({ error: "Admins cannot change their own role." }, 400);
@@ -193,6 +209,14 @@ serve(async (request) => {
       if (adminCount <= 1) {
         return json({ error: "At least one admin must remain in the system." }, 400);
       }
+    }
+
+    if (disabled === true && (existingRole === "admin" || role === "admin")) {
+      return json({ error: "Admin users cannot be deactivated." }, 400);
+    }
+
+    if (existingProfile.disabledAt && role === "admin") {
+      return json({ error: "Reactivate this user before assigning admin access." }, 400);
     }
 
     if (!authUser) {
@@ -207,6 +231,12 @@ serve(async (request) => {
       if (!inviteData.user?.id) return json({ error: "Supabase Auth did not return the invited user." }, 502);
       authUser = { id: inviteData.user.id, email: inviteData.user.email };
       emailMode = "invite";
+      if (disabled !== null) {
+        const { error: banError } = await supabase.auth.admin.updateUserById(authUser.id, {
+          ban_duration: disabled ? "876000h" : "none",
+        });
+        if (banError) throw banError;
+      }
     } else {
       const { error: authUpdateError } = await supabase.auth.admin.updateUserById(authUser.id, {
         email: normalizedEmail,
@@ -214,23 +244,27 @@ serve(async (request) => {
           full_name: fullName,
           role,
         },
+        ...(disabled !== null ? { ban_duration: disabled ? "876000h" : "none" } : {}),
       });
       if (authUpdateError) throw authUpdateError;
     }
 
+    const profileValues: Record<string, unknown> = {
+      id: authUser.id,
+      email: normalizedEmail,
+      full_name: fullName,
+      username: username || usernameFromEmail(normalizedEmail),
+      role,
+      brand_id: brandId,
+      deal_id: dealId,
+      broker_name: brokerName,
+    };
+    if (disabled !== null) profileValues.disabled_at = disabled ? new Date().toISOString() : null;
+
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .upsert({
-        id: authUser.id,
-        email: normalizedEmail,
-        full_name: fullName,
-        username: username || usernameFromEmail(normalizedEmail),
-        role,
-        brand_id: brandId,
-        deal_id: dealId,
-        broker_name: brokerName,
-      }, { onConflict: "id" })
-      .select("id,email,full_name,username,role,brand_id,deal_id,broker_name,created_at,updated_at")
+      .upsert(profileValues, { onConflict: "id" })
+      .select("id,email,full_name,username,role,brand_id,deal_id,broker_name,disabled_at,created_at,updated_at")
       .single();
     if (profileError) throw profileError;
 

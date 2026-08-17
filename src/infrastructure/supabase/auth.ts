@@ -49,6 +49,7 @@ type ProfileRow = {
   brand_id: string | null;
   deal_id: string | null;
   broker_name?: string | null;
+  disabled_at?: string | null;
 };
 
 function normalizeAuthResponse(payload: unknown): SupabaseAuthSession | null {
@@ -66,6 +67,9 @@ function normalizeAuthResponse(payload: unknown): SupabaseAuthSession | null {
 }
 
 function mapProfile(row: ProfileRow, authEmail: string | null): SessionProfile {
+  if (row.disabled_at) {
+    throw new Error("This account is disabled. Contact an admin to restore access.");
+  }
   return {
     id: row.id,
     email: row.email ?? authEmail,
@@ -91,19 +95,26 @@ async function fetchProfileRows(accessToken: string, userId: string, select: str
 
 export async function fetchCurrentProfile(accessToken: string, userId: string, authEmail: string | null): Promise<SessionProfile> {
   try {
-    const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id,broker_name");
+    const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id,broker_name,disabled_at");
     if (rows[0]) return mapProfile(rows[0], authEmail);
   } catch (error) {
-    const canFallbackWithoutBrokerName = error instanceof SupabaseHttpError && error.status === 400;
-    if (!canFallbackWithoutBrokerName) throw error;
+    const canFallbackWithoutDisabledAt = error instanceof SupabaseHttpError && error.status === 400;
+    if (!canFallbackWithoutDisabledAt) throw error;
     try {
-      const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id");
+      const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id,broker_name");
       if (rows[0]) return mapProfile(rows[0], authEmail);
     } catch (fallbackError) {
-      const canFallbackWithoutEmail = fallbackError instanceof SupabaseHttpError && fallbackError.status === 400;
-      if (!canFallbackWithoutEmail) throw fallbackError;
-      const rows = await fetchProfileRows(accessToken, userId, "id,full_name,username,role,brand_id,deal_id");
-      if (rows[0]) return mapProfile(rows[0], authEmail);
+      const canFallbackWithoutBrokerName = fallbackError instanceof SupabaseHttpError && fallbackError.status === 400;
+      if (!canFallbackWithoutBrokerName) throw fallbackError;
+      try {
+        const rows = await fetchProfileRows(accessToken, userId, "id,email,full_name,username,role,brand_id,deal_id");
+        if (rows[0]) return mapProfile(rows[0], authEmail);
+      } catch (secondFallbackError) {
+        const canFallbackWithoutEmail = secondFallbackError instanceof SupabaseHttpError && secondFallbackError.status === 400;
+        if (!canFallbackWithoutEmail) throw secondFallbackError;
+        const rows = await fetchProfileRows(accessToken, userId, "id,full_name,username,role,brand_id,deal_id");
+        if (rows[0]) return mapProfile(rows[0], authEmail);
+      }
     }
   }
 

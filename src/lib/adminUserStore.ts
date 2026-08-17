@@ -12,6 +12,7 @@ export type AdminUserProfile = {
   brandId: string | null;
   dealId: string | null;
   brokerName: string | null;
+  disabledAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -25,6 +26,7 @@ type ProfileRow = {
   brand_id: string | null;
   deal_id: string | null;
   broker_name?: string | null;
+  disabled_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +45,7 @@ export type AdminUserInput = {
   brandId?: string | null;
   dealId?: string | null;
   brokerName?: string | null;
+  disabled?: boolean | null;
 };
 
 export const adminUserRoleOptions: UserRole[] = ["admin", "broker", "brand", "deal", "mapiq"];
@@ -64,19 +67,33 @@ function mapProfile(row: ProfileRow): AdminUserProfile {
     brandId: row.brand_id,
     dealId: row.deal_id,
     brokerName: row.broker_name ?? null,
+    disabledAt: row.disabled_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
 export async function loadAdminUsers(): Promise<AdminUserProfile[]> {
-  const rows = await supabaseRequest<ProfileRow[]>("/rest/v1/profiles", {
-    query: new URLSearchParams({
-      select: "id,email,full_name,username,role,brand_id,deal_id,broker_name,created_at,updated_at",
-      order: "full_name.asc.nullslast,email.asc",
-    }),
-    accessToken: currentAccessToken(),
-  });
+  let rows: ProfileRow[];
+  try {
+    rows = await supabaseRequest<ProfileRow[]>("/rest/v1/profiles", {
+      query: new URLSearchParams({
+        select: "id,email,full_name,username,role,brand_id,deal_id,broker_name,disabled_at,created_at,updated_at",
+        order: "full_name.asc.nullslast,email.asc",
+      }),
+      accessToken: currentAccessToken(),
+    });
+  } catch (error) {
+    const canFallbackWithoutDisabledAt = error instanceof SupabaseHttpError && error.status === 400;
+    if (!canFallbackWithoutDisabledAt) throw error;
+    rows = await supabaseRequest<ProfileRow[]>("/rest/v1/profiles", {
+      query: new URLSearchParams({
+        select: "id,email,full_name,username,role,brand_id,deal_id,broker_name,created_at,updated_at",
+        order: "full_name.asc.nullslast,email.asc",
+      }),
+      accessToken: currentAccessToken(),
+    });
+  }
   return rows.map(mapProfile);
 }
 
@@ -117,19 +134,36 @@ function nullable(value: string | null | undefined): string | null {
 }
 
 export async function saveAdminUser(input: AdminUserInput): Promise<AdminUserProfile> {
+  const body: JsonObject = {
+    id: nullable(input.id),
+    email: input.email.trim().toLowerCase(),
+    fullName: input.fullName.trim(),
+    username: nullable(input.username),
+    role: input.role,
+    brandId: nullable(input.brandId),
+    dealId: nullable(input.dealId),
+    brokerName: nullable(input.brokerName),
+  };
+  if (typeof input.disabled === "boolean") body.disabled = input.disabled;
+
   const response = await supabaseFunctionRequest<{ profile: ProfileRow; emailMode: "invite" | "none" }>(
     "admin-upsert-user",
-    {
-      id: nullable(input.id),
-      email: input.email.trim().toLowerCase(),
-      fullName: input.fullName.trim(),
-      username: nullable(input.username),
-      role: input.role,
-      brandId: nullable(input.brandId),
-      dealId: nullable(input.dealId),
-      brokerName: nullable(input.brokerName),
-    } satisfies JsonObject,
+    body,
     currentAccessToken(),
   );
   return mapProfile(response.profile);
+}
+
+export async function setAdminUserDisabled(user: AdminUserProfile, disabled: boolean): Promise<AdminUserProfile> {
+  return saveAdminUser({
+    id: user.id,
+    email: user.email ?? "",
+    fullName: user.fullName ?? user.email ?? "",
+    username: user.username,
+    role: user.role,
+    brandId: user.brandId,
+    dealId: user.dealId,
+    brokerName: user.brokerName,
+    disabled,
+  });
 }
