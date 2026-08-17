@@ -469,11 +469,40 @@ function mapSite(row: SiteRow): Site {
   };
 }
 
-async function readTable<T>(table: string, accessToken: string | null): Promise<T[]> {
+async function readTable<T>(table: string, accessToken: string | null, columns = "*"): Promise<T[]> {
   return supabaseRequest<T[]>(`/rest/v1/${table}`, {
-    query: new URLSearchParams({ select: "*" }),
+    query: new URLSearchParams({ select: columns }),
     accessToken,
   });
+}
+
+async function readRowsByDealIds<T>(
+  table: string,
+  accessToken: string | null,
+  dealIds: string[],
+  columns = "*",
+): Promise<T[]> {
+  if (dealIds.length === 0) return [];
+
+  const chunkSize = 75;
+  const chunks: string[][] = [];
+  for (let index = 0; index < dealIds.length; index += chunkSize) {
+    chunks.push(dealIds.slice(index, index + chunkSize));
+  }
+
+  const rows = await Promise.all(
+    chunks.map((chunk) =>
+      supabaseRequest<T[]>(`/rest/v1/${table}`, {
+        query: new URLSearchParams({
+          select: columns,
+          deal_id: `in.(${chunk.join(",")})`,
+        }),
+        accessToken,
+      }),
+    ),
+  );
+
+  return rows.flat();
 }
 
 function applyCoreRuntimeData(
@@ -557,12 +586,10 @@ async function loadSecondaryRuntimeAppData({ accessToken, currentUser }: Runtime
 }
 
 export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLoadOptions): Promise<void> {
-  const [brandRows, profileRows, dealRows, noteRows, documentRows] = await Promise.all([
+  const [brandRows, profileRows, dealRows] = await Promise.all([
     readTable<BrandRow>("brands", accessToken),
     readTable<ProfileRow>("profiles", accessToken),
     readTable<DealRow>("deals", accessToken),
-    readTable<DealNoteRow>("deal_notes", accessToken),
-    readTable<DealDocumentRow>("deal_documents", accessToken),
   ]);
 
   const visibleBrandRows = currentUser?.role === "admin" ? brandRows : brandRows.filter((row) => !row.is_hidden);
@@ -572,8 +599,18 @@ export async function loadRuntimeAppData({ accessToken, currentUser }: RuntimeLo
   const scopedDealRows = shouldScopeCoreData ? getVisibleDealsForUser(currentUser, visibleDealRows) : visibleDealRows;
   const scopedBrandRows = shouldScopeCoreData ? getVisibleBrandsForUser(currentUser, visibleBrandRows, scopedDealRows) : visibleBrandRows;
   const visibleDealIds = new Set(scopedDealRows.map((row) => row.id));
-  const scopedNoteRows = noteRows.filter((row) => visibleDealIds.has(row.deal_id));
-  const scopedDocumentRows = documentRows.filter((row) => visibleDealIds.has(row.deal_id));
+  const dealAttachmentIds = currentUser?.role === "mapiq" ? [] : [...visibleDealIds];
+
+  const [scopedNoteRows, scopedDocumentRows] = await Promise.all([
+    readRowsByDealIds<DealNoteRow>("deal_notes", accessToken, dealAttachmentIds, "deal_id,body,author_name,created_at").catch((error) => {
+      console.error("Deal notes Supabase data load failed", error);
+      return [];
+    }),
+    readRowsByDealIds<DealDocumentRow>("deal_documents", accessToken, dealAttachmentIds, "deal_id,document_key,file_path").catch((error) => {
+      console.error("Deal documents Supabase data load failed", error);
+      return [];
+    }),
+  ]);
 
   applyCoreRuntimeData(scopedBrandRows, profileRows, scopedDealRows, scopedNoteRows, scopedDocumentRows);
   notifyRuntimeDataChanged();

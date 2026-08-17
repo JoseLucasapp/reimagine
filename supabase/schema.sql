@@ -23,6 +23,8 @@ drop table if exists public.profiles cascade;
 drop table if exists public.brands cascade;
 
 drop function if exists public.handle_new_user() cascade;
+drop function if exists public.current_user_is_disabled() cascade;
+drop function if exists public.current_user_is_active_admin() cascade;
 drop function if exists public.current_user_role() cascade;
 drop function if exists public.current_profile_brand_id() cascade;
 drop function if exists public.current_profile_deal_id() cascade;
@@ -341,8 +343,11 @@ create index profiles_disabled_at_idx on public.profiles (disabled_at);
 create index deals_brand_id_idx on public.deals (brand_id);
 create index deals_stage_idx on public.deals (stage);
 create index sites_deal_id_idx on public.sites (deal_id);
+create index deal_documents_deal_id_idx on public.deal_documents (deal_id);
+create index deal_notes_deal_id_idx on public.deal_notes (deal_id);
 create index prospects_status_idx on public.prospects (status);
 create index space_requirements_brand_id_idx on public.space_requirements (brand_id);
+create index tour_books_deal_id_idx on public.tour_books (deal_id);
 create index take_action_items_deal_id_idx on public.take_action_items (deal_id);
 create index brand_action_items_brand_id_idx on public.brand_action_items (brand_id);
 create index account_requests_status_idx on public.account_requests (status, created_at desc);
@@ -444,16 +449,51 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+create or replace function public.current_user_is_disabled()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce((
+    select p.disabled_at is not null
+    from public.profiles p
+    where p.id = auth.uid()
+    limit 1
+  ), false);
+$$;
+
+create or replace function public.current_user_is_active_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+      and p.disabled_at is null
+  );
+$$;
+
 create or replace function public.current_user_role()
 returns public.user_role
 language sql
 security definer
 stable
+set search_path = public
 as $$
   select case
-    when exists (select 1 from public.profiles where id = auth.uid() and disabled_at is not null) then null::public.user_role
-    else coalesce((select role from public.profiles where id = auth.uid()), 'deal'::public.user_role)
-  end;
+    when auth.role() <> 'authenticated' then null::public.user_role
+    when p.disabled_at is not null then null::public.user_role
+    else coalesce(p.role, 'deal'::public.user_role)
+  end
+  from (select auth.uid() as user_id) current_auth
+  left join public.profiles p on p.id = current_auth.user_id;
 $$;
 
 create or replace function public.current_profile_brand_id()
@@ -461,8 +501,14 @@ returns uuid
 language sql
 security definer
 stable
+set search_path = public
 as $$
-  select brand_id from public.profiles where id = auth.uid();
+  select case
+    when p.disabled_at is not null then null::uuid
+    else p.brand_id
+  end
+  from (select auth.uid() as user_id) current_auth
+  left join public.profiles p on p.id = current_auth.user_id;
 $$;
 
 create or replace function public.current_profile_deal_id()
@@ -470,8 +516,14 @@ returns uuid
 language sql
 security definer
 stable
+set search_path = public
 as $$
-  select deal_id from public.profiles where id = auth.uid();
+  select case
+    when p.disabled_at is not null then null::uuid
+    else p.deal_id
+  end
+  from (select auth.uid() as user_id) current_auth
+  left join public.profiles p on p.id = current_auth.user_id;
 $$;
 
 create or replace function public.current_profile_broker_name()
@@ -479,8 +531,14 @@ returns text
 language sql
 security definer
 stable
+set search_path = public
 as $$
-  select nullif(lower(trim(broker_name)), '') from public.profiles where id = auth.uid();
+  select case
+    when p.disabled_at is not null then null::text
+    else nullif(lower(trim(p.broker_name)), '')
+  end
+  from (select auth.uid() as user_id) current_auth
+  left join public.profiles p on p.id = current_auth.user_id;
 $$;
 
 create or replace function public.current_user_brand_id()
@@ -488,6 +546,7 @@ returns uuid
 language sql
 security definer
 stable
+set search_path = public
 as $$
   select public.current_profile_brand_id();
 $$;
@@ -497,6 +556,7 @@ returns uuid
 language sql
 security definer
 stable
+set search_path = public
 as $$
   select public.current_profile_deal_id();
 $$;
@@ -506,6 +566,7 @@ returns text
 language sql
 security definer
 stable
+set search_path = public
 as $$
   select public.current_profile_broker_name();
 $$;
@@ -515,29 +576,46 @@ returns boolean
 language sql
 security definer
 stable
+set search_path = public
 as $$
+  with profile_scope as (
+    select
+      coalesce(p.role, 'deal'::public.user_role) as role,
+      p.brand_id,
+      p.deal_id,
+      nullif(lower(trim(p.broker_name)), '') as broker_name,
+      p.disabled_at
+    from (select auth.uid() as user_id) current_auth
+    left join public.profiles p on p.id = current_auth.user_id
+  )
   select case
     when auth.role() <> 'authenticated' then false
-    when public.current_user_role() = 'admin' then true
+    when (select disabled_at from profile_scope) is not null then false
+    when (select role from profile_scope) = 'admin' then true
     when exists (
-      select 1 from public.brands b
+      select 1
+      from public.brands b
       where b.id = brand_uuid
         and b.is_hidden
     ) then false
-    when public.current_user_role() = 'mapiq' then true
-    when public.current_user_role() = 'broker' then exists (
+    when (select role from profile_scope) = 'mapiq' then true
+    when (select role from profile_scope) = 'broker' then exists (
       select 1
-      from public.deals d,
-      lateral regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+      from public.deals d
       where d.brand_id = brand_uuid
-        and broker_code = public.current_profile_broker_name()
+        and exists (
+          select 1
+          from regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+          where broker_code = (select broker_name from profile_scope)
+        )
     )
-    when public.current_user_role() = 'brand' then brand_uuid = public.current_profile_brand_id()
-    when public.current_user_role() = 'deal' then exists (
-      select 1 from public.deals d
-      where d.id = public.current_profile_deal_id()
+    when (select role from profile_scope) = 'brand' then brand_uuid = (select brand_id from profile_scope)
+    when (select role from profile_scope) = 'deal' then exists (
+      select 1
+      from public.deals d
+      where d.id = (select deal_id from profile_scope)
         and d.brand_id = brand_uuid
-    ) or brand_uuid = public.current_profile_brand_id()
+    ) or brand_uuid = (select brand_id from profile_scope)
     else false
   end;
 $$;
@@ -547,10 +625,22 @@ returns boolean
 language sql
 security definer
 stable
+set search_path = public
 as $$
+  with profile_scope as (
+    select
+      coalesce(p.role, 'deal'::public.user_role) as role,
+      p.brand_id,
+      p.deal_id,
+      nullif(lower(trim(p.broker_name)), '') as broker_name,
+      p.disabled_at
+    from (select auth.uid() as user_id) current_auth
+    left join public.profiles p on p.id = current_auth.user_id
+  )
   select case
     when auth.role() <> 'authenticated' then false
-    when public.current_user_role() = 'admin' then true
+    when (select disabled_at from profile_scope) is not null then false
+    when (select role from profile_scope) = 'admin' then true
     when exists (
       select 1
       from public.deals d
@@ -558,34 +648,38 @@ as $$
       where d.id = deal_uuid
         and b.is_hidden
     ) then false
-    when public.current_user_role() = 'mapiq' then true
-    when public.current_user_role() = 'broker' then exists (
+    when (select role from profile_scope) = 'mapiq' then true
+    when (select role from profile_scope) = 'broker' then exists (
       select 1
-      from public.deals d,
-      lateral regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+      from public.deals d
       where d.id = deal_uuid
-        and broker_code = public.current_profile_broker_name()
+        and exists (
+          select 1
+          from regexp_split_to_table(lower(coalesce(d.broker, '')), '\s*[,/&]\s*') broker_code
+          where broker_code = (select broker_name from profile_scope)
+        )
     )
-    when public.current_user_role() = 'brand' then exists (
-      select 1 from public.deals d
+    when (select role from profile_scope) = 'brand' then exists (
+      select 1
+      from public.deals d
       where d.id = deal_uuid
-        and d.brand_id = public.current_profile_brand_id()
+        and d.brand_id = (select brand_id from profile_scope)
     )
-    when public.current_user_role() = 'deal' then deal_uuid = public.current_profile_deal_id()
+    when (select role from profile_scope) = 'deal' then deal_uuid = (select deal_id from profile_scope)
     else false
   end;
 $$;
-
-
 
 create or replace function public.current_user_can_access_site(site_uuid uuid)
 returns boolean
 language sql
 security definer
 stable
+set search_path = public
 as $$
   select exists (
-    select 1 from public.sites s
+    select 1
+    from public.sites s
     where s.id = site_uuid
       and public.current_user_can_access_deal(s.deal_id)
   );
@@ -595,11 +689,16 @@ create policy "brands select by platform scope" on public.brands for select usin
 create policy "admins manage brands" on public.brands for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
 
 create policy "profiles select own admin or reimagine team" on public.profiles for select using (
-  id = auth.uid()
-  or public.current_user_role() = 'admin'
-  or lower(coalesce(email, '')) like '%@reimagine.com'
+  auth.role() = 'authenticated'
+  and not public.current_user_is_disabled()
+  and (
+    id = auth.uid()
+    or public.current_user_is_active_admin()
+    or lower(coalesce(email, '')) like '%@reimagine.com'
+    or lower(coalesce(email, '')) like '%@reimaginecre.com'
+  )
 );
-create policy "admins manage profiles" on public.profiles for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "admins manage profiles" on public.profiles for all using (public.current_user_is_active_admin()) with check (public.current_user_is_active_admin());
 
 create policy "deals select by platform scope" on public.deals for select using (public.current_user_can_access_deal(id));
 create policy "admins manage deals" on public.deals for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
@@ -659,6 +758,19 @@ create policy "service or admin manages ai insights" on public.ai_insights for a
 
 create policy "ai feedback select own or admin" on public.ai_feedback for select using (user_id = auth.uid() or public.current_user_role() = 'admin');
 create policy "ai feedback upsert own" on public.ai_feedback for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+grant execute on function public.current_user_is_disabled() to anon, authenticated;
+grant execute on function public.current_user_is_active_admin() to anon, authenticated;
+grant execute on function public.current_user_role() to anon, authenticated;
+grant execute on function public.current_profile_brand_id() to anon, authenticated;
+grant execute on function public.current_profile_deal_id() to anon, authenticated;
+grant execute on function public.current_profile_broker_name() to anon, authenticated;
+grant execute on function public.current_user_brand_id() to anon, authenticated;
+grant execute on function public.current_user_deal_id() to anon, authenticated;
+grant execute on function public.current_user_broker_name() to anon, authenticated;
+grant execute on function public.current_user_can_access_brand(uuid) to anon, authenticated;
+grant execute on function public.current_user_can_access_deal(uuid) to anon, authenticated;
+grant execute on function public.current_user_can_access_site(uuid) to anon, authenticated;
 
 grant insert on public.account_requests to anon, authenticated;
 grant select, update on public.account_requests to authenticated;
