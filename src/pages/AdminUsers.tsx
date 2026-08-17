@@ -26,6 +26,18 @@ const cardStyle: CSSProperties = {
   overflow: "hidden",
 };
 
+const deactivateButtonStyle: CSSProperties = {
+  background: "#dc2626",
+  borderColor: "#dc2626",
+  color: "#ffffff",
+};
+
+const reactivateButtonStyle: CSSProperties = {
+  background: "#1f6b49",
+  borderColor: "#1f6b49",
+  color: "#ffffff",
+};
+
 type UserDraft = {
   id: string | null;
   email: string;
@@ -287,6 +299,12 @@ export default function AdminUsers() {
     setDisableConfirmOpen(false);
     try {
       const saved = await setAdminUserDisabled(selectedUser, nextDisabled);
+      if (nextDisabled && !saved.disabledAt) {
+        throw new Error("Deactivate request completed, but disabled_at was not saved. Redeploy the admin-upsert-user Edge Function and try again.");
+      }
+      if (!nextDisabled && saved.disabledAt) {
+        throw new Error("Reactivate request completed, but disabled_at is still set. Redeploy the admin-upsert-user Edge Function and try again.");
+      }
       setUsers((current) => current.map((user) => user.id === saved.id ? saved : user));
       toast.success(nextDisabled ? "User deactivated." : "User reactivated.");
     } catch (error) {
@@ -556,7 +574,7 @@ export default function AdminUsers() {
                     onClick={requestToggleDisabled}
                     disabled={!canToggleDisabled || togglingDisabled}
                     className="cta-secondary inline-flex items-center gap-2 disabled:opacity-50"
-                    style={canToggleDisabled && !selectedUserDisabled ? { color: "#fca5a5", borderColor: "rgba(239,68,68,0.35)" } : undefined}
+                    style={canToggleDisabled ? selectedUserDisabled ? reactivateButtonStyle : deactivateButtonStyle : undefined}
                     title={!canToggleDisabled ? "Admin users cannot be deactivated." : undefined}
                   >
                     {togglingDisabled ? (
@@ -661,7 +679,7 @@ export default function AdminUsers() {
             onClick={() => void toggleDisabled()}
             disabled={togglingDisabled}
             className="cta-primary inline-flex items-center gap-2 disabled:opacity-60"
-            style={!selectedUserDisabled ? { background: "#dc2626", borderColor: "#dc2626" } : undefined}
+            style={selectedUserDisabled ? reactivateButtonStyle : deactivateButtonStyle}
           >
             {togglingDisabled ? <RefreshCw className="h-4 w-4 animate-spin" /> : selectedUserDisabled ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
             {selectedUserDisabled ? "Reactivate" : "Deactivate"}
